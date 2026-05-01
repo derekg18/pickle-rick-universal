@@ -1,0 +1,65 @@
+Internal review worker — not for direct user invocation.
+
+# REVIEW: $ARGUMENTS
+
+Review Worker (Meeseeks-lite). Persona via CLAUDE.md. **Text before every tool call.**
+
+## Init
+```bash
+node "$HOME/.claude/pickle-rick/extension/bin/worker-setup.js" $ARGUMENTS
+```
+Extract `${SESSION_ROOT}`, `${TICKET_ID}`, `${TICKET_DIR}`.
+
+## Lifecycle — ONE REVIEW, phases 1→4, then `<promise>I AM DONE</promise>`
+
+### Phase 1: Scope Discovery
+1. Read `${SESSION_ROOT}/${TICKET_ID}/linear_ticket_${TICKET_ID}.md`
+2. Extract `review_group` (comma-separated ticket IDs) from frontmatter
+3. Per ticket: read dir, check artifacts (`plan_*.md`, `research_*.md`), scan `git log --oneline --all --grep="${id}"`, collect modified files
+4. Dedupe, filter to source files only
+5. Write `${TICKET_DIR}/review_scope.md`: date, review group, tickets table (ID/Title/Status/Files), files in scope, exclusions
+
+### Phase 2: Spec Conformance
+Per ticket in `review_group`:
+1. Read spec at `${SESSION_ROOT}/${id}/linear_ticket_${id}.md`
+2. Read existing `${SESSION_ROOT}/${id}/conformance_*.md` if present
+3. **Acceptance criteria**: Re-run commands that could be affected by other tickets (shared state/types/integration). Skip isolated unit checks already passing in Morty's report. For `llm-conformance`: read impl, quote code, PASS/FAIL + justification.
+4. **Interface contracts**: Resolve type aliases, compare field-by-field against impl signatures.
+5. **Test expectations**: Verify each expected test exists and passes.
+6. **Type check**: Project type checker — no new errors in touched files.
+7. **LLM conformance**: Per requirement, quote impl code, PASS/FAIL + justification. Flag ambiguous requirements as under-specified.
+
+Write `${TICKET_DIR}/spec_conformance.md`:
+```
+# Spec Conformance Report
+Per ticket: | Check | Status | Detail | (Acceptance/Contracts/Tests/Types/LLM)
+## Spec Quality Signals
+[Ambiguous requirements → append to prd_refined.md Verification Strategy as "Lessons Learned"]
+## Overall: CONFORMANT / NON-CONFORMANT
+```
+CONFORMANT → next. NON-CONFORMANT → fix, re-verify.
+
+### Phase 3: Focused Review (Meeseeks-Lite)
+Read `${TICKET_DIR}/review_scope.md` for file list.
+
+**P0 — fix immediately:**
+- Security: injection, path traversal, prototype pollution, unvalidated input, hardcoded secrets, unsafe deserialization
+- Correctness: race conditions, silent failures, type mismatches at boundaries, off-by-one, state machine violations
+
+**P1 — fix if safe:**
+- Architecture: cross-ticket duplication, inconsistent patterns, circular deps, layer violations
+- Test Coverage: integration gaps, error path coverage, mock realism
+
+Per issue: classify, severity (P0/P1/P2), fix P0+P1 immediately, document P2.
+
+Write `${TICKET_DIR}/review_findings.md`:
+```
+# Review Findings
+P0 table (fixed) | P1 table (fixed) | P2 table (documented)
+## Cross-Ticket Coherence | ## Test Status (passing/build/new tests)
+```
+
+### Phase 4: Simplify
+`git diff --name-only` for combined file list. Kill dead code, collapse redundancy, flatten nesting (max 2), purge slop comments, normalize style. Don't touch files outside scope. Don't add functionality. Verify after each file — revert if broken. Run tests after all changes.
+
+Output `<promise>I AM DONE</promise>`. STOP.

@@ -1,0 +1,72 @@
+{
+  "default_max_iterations": 500,
+  "_iteration_budget_per_backend_doc": "Per-backend iteration budget overrides default_max_iterations. Codex iteration semantics are coarser than claude — same wall-clock work fits in fewer codex iterations, so 80 vs 100 keeps the wall-time budget comparable.",
+  "iteration_budget_per_backend": { "claude": 100, "codex": 80 },
+  "throughput_baselines_units": "tickets_per_hour",
+  "_throughput_baselines_doc": "AC-LPB-02: per-backend throughput estimates used by setup.js to warn when --max-time is undersized for the planned ticket count. Tune these per fleet — claude is generally faster on simple tickets, codex slower on complex; deepseek sits between.",
+  "throughput_baselines": { "claude": 5.0, "codex": 3.5, "deepseek": 4.0 },
+  "default_max_time_minutes": 720,
+  "default_worker_timeout_seconds": 1200,
+  "default_manager_max_turns": 50,
+  "default_tmux_max_turns": 200,
+  "default_refinement_cycles": 3,
+  "default_refinement_max_turns": 100,
+  "default_meeseeks_model": "sonnet",
+  "default_meeseeks_min_passes": 10,
+  "default_meeseeks_max_passes": 50,
+  "default_council_min_rounds": 2,
+  "default_council_max_rounds": 5,
+  "default_council_publish": true,
+  "default_circuit_breaker_enabled": true,
+  "default_cb_no_progress_threshold": 5,
+  "default_cb_same_error_threshold": 5,
+  "default_cb_half_open_after": 2,
+  "default_rate_limit_wait_minutes": 5,
+  "default_max_rate_limit_retries": 3,
+  "meeseeks_model_tiers": { "1": "haiku", "3": "sonnet", "5": "opus" },
+  "max_opus_passes": 3,
+  "auto_update_enabled": false,
+  "update_check_interval_hours": 24,
+  "enable_task_notes": true,
+  "enable_failure_classification": true,
+  "enable_complexity_tiers": true,
+  "enable_config_protection": true,
+  "enable_model_tiers": true,
+  "enable_backend_routing_heuristic": false,
+  "bmad_hardening": {
+    "archaeology_refresh_threshold_pct": 10,
+    "debate_max_rounds": 5,
+    "debate_codex_solo_max_rounds": 2,
+    "debate_min_rounds_confirm": 3,
+    "readiness_skip_reasons_max_len": 200,
+    "readiness_max_recycle_cycles": 3,
+    "phase_personas_enabled": false,
+    "phase_personas": {
+      "model_override": {}
+    },
+    "behavioral_test_max_usd_per_test": 0.5,
+    "behavioral_test_max_wall_s": 120,
+    "calibration": {
+      "drift_threshold_pct": 5
+    }
+  },
+  "commit_pending_probe_threshold": 2,
+  "convergence_gate": {
+    "commands": {},
+    "enabled_convergence_files": ["anatomy-park.json"],
+    "timeout_ms": {
+      "typecheck": 120000,
+      "lint": 60000,
+      "tests": 300000
+    },
+    "gate_total_timeout_ms": 600000,
+    "remediator_timeout_s": 600,
+    "szechuan_max_remediation_cycles": 3,
+    "anatomy_park_max_remediation_cycles": 5,
+    "regression_warning_threshold": 5,
+    "baseline_max_age_iterations": 30,
+    "baseline_max_age_seconds": 14400,
+    "prefer_test_unit_alias": false,
+    "known_flake_files": []
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "Random sample 003",
+  "prd": "random-sample-003-prd.md",
+  "baseFiles": {
+    "prd.md": "# Random Sample 003\n\nAC-RS-003 records test-only follow-up behavior.\n",
+    "src/sample.ts": "export const ready = true;\n"
+  },
+  "headFiles": {
+    "prd.md": "# Random Sample 003\n\nAC-RS-003 records test-only follow-up behavior.\n",
+    "src/sample.ts": "export const ready = true;\n",
+    "tests/sample.test.ts": "test('ready', () => {\n  expect(true).toBe(true);\n});\n"
+  },
+  "sessionArtifacts": {},
+  "expected": {
+    "knownIssues": 0
+  }
+}

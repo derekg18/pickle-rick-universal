@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install and compile
+        run: cd extension && npm ci && npx tsc --noEmit && npx eslint src/ --max-warnings=-1 && npx tsc && npm test
+
+      - name: Build tarball
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          tar -czf "pickle-rick-${VERSION}.tar.gz" \
+            extension/bin/ \
+            extension/services/ \
+            extension/types/ \
+            extension/hooks/ \
+            extension/scripts/ \
+            extension/layouts/ \
+            extension/eslint-plugin-pickle/ \
+            extension/package.json \
+            install.sh \
+            .claude/commands/ \
+            pickle_settings.json \
+            persona.md
+          echo "TARBALL=pickle-rick-${VERSION}.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: ${{ env.TARBALL }}

@@ -1,0 +1,12 @@
+{
+  "file": "token-2.json",
+  "transcript": "<promise>TASK_COMPLETED</promise>",
+  "expected_decision": "approve",
+  "expected_output": {
+    "decision": "approve"
+  },
+  "state": {
+    "active": true,
+    "tmux_mode": false
+  }
+}

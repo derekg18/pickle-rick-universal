@@ -1,0 +1,13 @@
+{
+  "file": "token-7.json",
+  "transcript": "<promise>PRD_COMPLETE</promise>",
+  "expected_decision": "block",
+  "expected_output": {
+    "decision": "block",
+    "reason": "🥒 **Pickle Rick Loop Active** - PRD finished, moving to breakdown..."
+  },
+  "state": {
+    "active": true,
+    "tmux_mode": false
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "nodes": [
+    { "id": "start" },
+    { "id": "setup", "context_on_success": "artifact_phase=init" },
+    { "id": "diamond_check", "class": "diamond" },
+    { "id": "route_a" },
+    { "id": "route_b" },
+    { "id": "done" }
+  ],
+  "edges": [
+    { "source": "start", "target": "setup" },
+    { "source": "setup", "target": "diamond_check" },
+    {
+      "source": "diamond_check",
+      "target": "route_a",
+      "condition": "context.artifact_phase=init"
+    },
+    {
+      "source": "diamond_check",
+      "target": "route_b",
+      "condition": "context.outcome=success"
+    },
+    { "source": "route_a", "target": "done" },
+    { "source": "route_b", "target": "done" }
+  ]
+}

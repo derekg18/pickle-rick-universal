@@ -1,0 +1,12 @@
+{
+  "file": "token-4.json",
+  "transcript": "<promise>EXISTENCE_IS_PAIN</promise>",
+  "expected_decision": "approve",
+  "expected_output": {
+    "decision": "approve"
+  },
+  "state": {
+    "active": true,
+    "tmux_mode": false
+  }
+}

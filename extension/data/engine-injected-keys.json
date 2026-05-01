@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "engine_keys": [
+    "outcome",
+    "current_node",
+    "workspace.path",
+    "runId",
+    "graph.goal",
+    "tool.output"
+  ],
+  "engine_key_patterns": [
+    "pool_count_reviewer_*",
+    "__last_failure_*",
+    "__pool_findings__",
+    "__fix_attempt_history",
+    "__ladder_position.*"
+  ],
+  "user_written_patterns": [
+    "artifact_*"
+  ]
+}

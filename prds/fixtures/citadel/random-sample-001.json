@@ -1,0 +1,16 @@
+{
+  "name": "Random sample 001",
+  "prd": "random-sample-001-prd.md",
+  "baseFiles": {
+    "prd.md": "# Random Sample 001\n\nAC-RS-001 records stable behavior.\n",
+    "src/sample.ts": "export const sample = 'before';\n"
+  },
+  "headFiles": {
+    "prd.md": "# Random Sample 001\n\nAC-RS-001 records stable behavior.\n",
+    "src/sample.ts": "export const sample = 'after';\n"
+  },
+  "sessionArtifacts": {},
+  "expected": {
+    "knownIssues": 0
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "file": "token-1.json",
+  "transcript": "<promise>EPIC_COMPLETED</promise>",
+  "expected_decision": "approve",
+  "expected_output": {
+    "decision": "approve"
+  },
+  "state": {
+    "active": true,
+    "tmux_mode": false
+  }
+}

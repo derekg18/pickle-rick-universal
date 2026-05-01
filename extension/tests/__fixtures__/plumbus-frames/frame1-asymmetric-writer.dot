@@ -1,0 +1,13 @@
+digraph "frame1_asymmetric_writer" {
+  graph [acceptance_criteria="context.done=true", goal="frame1 asymmetric writer fixture", label="frame1-asymmetric-writer", rankdir="LR", retry_target="fix_impl"]
+  start [shape="Mdiamond"]
+  gate_api [class="codergen", context_on_success="artifact_api=seeded", label="gate_api", max_visits="3", permission_mode="auto", timeout="15m"]
+  diamond_api [label="diamond_api", shape="diamond"]
+  fix_impl [label="fix_impl", max_visits="5", permission_mode="auto", timeout="20m"]
+  done [label="done", shape="Msquare"]
+  start -> gate_api
+  gate_api -> diamond_api [label="success"]
+  diamond_api -> done [condition="artifact_api=seeded", label="patch branch"]
+  diamond_api -> fix_impl [label="fix branch"]
+  fix_impl -> gate_api
+}

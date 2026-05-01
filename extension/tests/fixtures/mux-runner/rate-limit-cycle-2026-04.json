@@ -1,0 +1,120 @@
+{
+  "source_range": "extension/src/bin/mux-runner.ts:1071-1182",
+  "cases": [
+    {
+      "case": "rate_limit_exhausted",
+      "branch": "rlAction.action === \"bail\"",
+      "state_in": {
+        "active": true,
+        "start_time_epoch": 1714080000,
+        "max_time_minutes": 60,
+        "consecutive_rate_limits": 3,
+        "rate_limit_info": null
+      },
+      "state_out": {
+        "active": false,
+        "exit_reason": "rate_limit_exhausted",
+        "rate_limit_wait_file": null,
+        "counter_reset": false
+      }
+    },
+    {
+      "case": "pre_wait_limit_break",
+      "branch": "remaining <= 0 before wait loop",
+      "state_in": {
+        "active": true,
+        "start_time_epoch": 1714080000,
+        "max_time_minutes": 1,
+        "elapsed_seconds": 61,
+        "computed_wait_ms": 60000,
+        "wait_source": "config"
+      },
+      "state_out": {
+        "active": false,
+        "exit_reason": "limit",
+        "rate_limit_wait_file": {
+          "waiting": true,
+          "wait_source": "config"
+        },
+        "counter_reset": false
+      }
+    },
+    {
+      "case": "cancelled_during_wait",
+      "branch": "ws.active !== true inside wait loop",
+      "state_in": {
+        "active": true,
+        "start_time_epoch": 1714080000,
+        "max_time_minutes": 60,
+        "computed_wait_ms": 60000,
+        "wait_source": "config"
+      },
+      "state_out": {
+        "active": false,
+        "exit_reason": "cancelled",
+        "rate_limit_wait_file": {
+          "waiting": true,
+          "wait_source": "config"
+        },
+        "counter_reset": false
+      }
+    },
+    {
+      "case": "limit_during_wait",
+      "branch": "elapsed >= maxMins * 60 inside wait loop",
+      "state_in": {
+        "active": true,
+        "start_time_epoch": 1714080000,
+        "max_time_minutes": 1,
+        "computed_wait_ms": 60000,
+        "wait_source": "api"
+      },
+      "state_out": {
+        "active": false,
+        "exit_reason": "limit",
+        "rate_limit_wait_file": {
+          "waiting": true,
+          "wait_source": "api"
+        },
+        "counter_reset": false
+      }
+    },
+    {
+      "case": "halt_break_after_wait",
+      "branch": "isHaltExit(exitReason) after wait loop",
+      "state_in": {
+        "active": true,
+        "exit_reason_after_loop": "cancelled",
+        "computed_wait_ms": 10000
+      },
+      "state_out": {
+        "active": false,
+        "exit_reason": "cancelled",
+        "rate_limit_wait_file": {
+          "waiting": true
+        },
+        "counter_reset": false
+      }
+    },
+    {
+      "case": "resume_continue",
+      "branch": "wait completes, wait file deleted, handoff written, continue",
+      "state_in": {
+        "active": true,
+        "start_time_epoch": 1714080000,
+        "max_time_minutes": 60,
+        "consecutive_rate_limits": 1,
+        "computed_wait_ms": 60000,
+        "wait_source": "api",
+        "resets_at_epoch": 1714083600
+      },
+      "state_out": {
+        "active": true,
+        "exit_reason": null,
+        "rate_limit_wait_file": null,
+        "handoff_written": true,
+        "counter_reset": true
+      }
+    }
+  ]
+}

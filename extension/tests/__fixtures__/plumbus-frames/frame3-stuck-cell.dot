@@ -1,0 +1,15 @@
+digraph "frame3_stuck_cell" {
+  graph [goal="frame3 stuck cell — diamond with two keys; unset/fail combo has no exit", label="frame3-stuck-cell", rankdir="LR"]
+  start [shape="Mdiamond"]
+  setup [context_on_success="artifact_phase=init", label="setup"]
+  diamond_check [class="diamond", label="diamond_check"]
+  route_a [label="route_a"]
+  route_b [label="route_b"]
+  done [shape="Msquare"]
+  start -> setup
+  setup -> diamond_check
+  diamond_check -> route_a [condition="context.artifact_phase=init"]
+  diamond_check -> route_b [condition="context.outcome=success"]
+  route_a -> done
+  route_b -> done
+}

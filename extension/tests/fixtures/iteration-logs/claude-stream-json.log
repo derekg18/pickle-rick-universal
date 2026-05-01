@@ -1,0 +1,6 @@
+{"type":"system","system":"<system>You are Morty.</system>"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Complete all pending tickets.\n\nWhen all tickets are done output <promise>EPIC_COMPLETED</promise>."}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"I'll start by reading the current state of the codebase to understand what needs to be implemented for ticket 4ad2a98e."}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_01","content":"File content: export function extractAssistantContent(output: string): string { ... }"}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"I can see the current implementation. The stream-json detection checks any JSON line, which is the bug. I'll implement the fix now."}]}}
+{"type":"result","result":"Session in progress. No completion token emitted."}

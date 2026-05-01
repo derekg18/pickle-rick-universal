@@ -1,0 +1,13 @@
+{
+  "file": "token-3.json",
+  "transcript": "<promise>ANALYSIS_DONE</promise>",
+  "expected_decision": "approve",
+  "expected_output": {
+    "decision": "approve"
+  },
+  "role": "refinement-worker",
+  "state": {
+    "active": true,
+    "tmux_mode": false
+  }
+}

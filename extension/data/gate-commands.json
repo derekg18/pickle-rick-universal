@@ -1,0 +1,28 @@
+{
+  "_schema": "Record<projectType, { typecheck?: string; lint?: string; test?: string; timeout_ms_override?: { typecheck?: number; lint?: number; test?: number } }>",
+  "pnpm": {
+    "typecheck": "pnpm run typecheck",
+    "lint": "pnpm run lint:quiet",
+    "test": "pnpm test"
+  },
+  "npm": {
+    "typecheck": "npm run typecheck",
+    "lint": "npm run lint",
+    "test": "npm test"
+  },
+  "yarn": {
+    "typecheck": "yarn run typecheck",
+    "lint": "yarn run lint",
+    "test": "yarn test"
+  },
+  "cargo": {
+    "typecheck": "cargo check",
+    "lint": "cargo clippy --quiet",
+    "test": "cargo test"
+  },
+  "go": {
+    "typecheck": "go vet ./...",
+    "lint": "golangci-lint run --quiet",
+    "test": "go test ./..."
+  }
+}

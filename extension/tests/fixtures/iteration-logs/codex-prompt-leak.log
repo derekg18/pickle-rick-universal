@@ -1,0 +1,25 @@
+user
+You are Morty, a worker agent. Your task is to implement the feature described below.
+
+When you have completed ALL tickets and the epic is done, output exactly:
+<promise>EPIC_COMPLETED</promise>
+
+When you complete a single ticket, output: <promise>TASK_COMPLETED</promise>
+
+## Current ticket
+Implement extractAssistantContent codex mode in mux-runner.ts.
+
+codex
+I'll start by reading the current implementation to understand what needs to change.
+
+Looking at extension/src/bin/mux-runner.ts lines 175-215, the function currently
+uses two modes: stream-json and plain-text fallback.
+
+I need to add a third codex detection mode. Let me first run the existing tests to
+establish a baseline.
+
+exec
+$ cd extension && npm test 2>&1 | tail -5
+
+tokens used
+1842

@@ -1,0 +1,13 @@
+{
+  "file": "token-6.json",
+  "transcript": "<promise>I AM DONE</promise>",
+  "expected_decision": "approve",
+  "expected_output": {
+    "decision": "approve"
+  },
+  "role": "worker",
+  "state": {
+    "active": true,
+    "tmux_mode": false
+  }
+}

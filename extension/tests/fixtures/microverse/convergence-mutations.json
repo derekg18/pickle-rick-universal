@@ -1,0 +1,134 @@
+{
+  "source": "extension/tests/integration/microverse-convergence.test.js#MV-int-4",
+  "cycle": [
+    {
+      "step": "initialize",
+      "mutation": "createMicroverseState + baseline_score assignment",
+      "before": null,
+      "after": {
+        "status": "gap_analysis",
+        "baseline_score": 50,
+        "convergence": {
+          "stall_limit": 2,
+          "stall_counter": 0,
+          "history": []
+        }
+      }
+    },
+    {
+      "step": "iteration_1",
+      "mutation": "recordIteration score=60 action=accept",
+      "before": {
+        "baseline_score": 50,
+        "convergence": {
+          "stall_counter": 0,
+          "history": []
+        }
+      },
+      "after": {
+        "baseline_score": 50,
+        "convergence": {
+          "stall_counter": 0,
+          "history": [
+            {
+              "score": 60,
+              "iteration": 1,
+              "sha": "abc001",
+              "action": "accept",
+              "classification": "improved"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "step": "iteration_2",
+      "mutation": "recordIteration score=61 (held)",
+      "before": {
+        "convergence": {
+          "stall_counter": 0,
+          "history": [
+            {
+              "score": 60,
+              "iteration": 1,
+              "sha": "abc001",
+              "action": "accept",
+              "classification": "improved"
+            }
+          ]
+        }
+      },
+      "after": {
+        "convergence": {
+          "stall_counter": 1,
+          "history": [
+            {
+              "score": 60,
+              "iteration": 1,
+              "sha": "abc001",
+              "action": "accept",
+              "classification": "improved"
+            },
+            {
+              "score": 61,
+              "iteration": 2,
+              "sha": "abc002",
+              "classification": "held"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "step": "iteration_3",
+      "mutation": "recordIteration score=62 (held → converged)",
+      "before": {
+        "convergence": {
+          "stall_counter": 1,
+          "history": [
+            {
+              "score": 60,
+              "iteration": 1,
+              "sha": "abc001",
+              "action": "accept",
+              "classification": "improved"
+            },
+            {
+              "score": 61,
+              "iteration": 2,
+              "sha": "abc002",
+              "classification": "held"
+            }
+          ]
+        }
+      },
+      "after": {
+        "convergence": {
+          "stall_counter": 2,
+          "history": [
+            {
+              "score": 60,
+              "iteration": 1,
+              "sha": "abc001",
+              "action": "accept",
+              "classification": "improved"
+            },
+            {
+              "score": 61,
+              "iteration": 2,
+              "sha": "abc002",
+              "classification": "held"
+            },
+            {
+              "score": 62,
+              "iteration": 3,
+              "sha": "abc003",
+              "classification": "held"
+            }
+          ]
+        },
+        "converged": true
+      }
+    }
+  ]
+}

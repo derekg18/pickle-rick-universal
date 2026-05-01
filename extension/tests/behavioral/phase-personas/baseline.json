@@ -1,0 +1,37 @@
+{
+  "feature": "phase-personas",
+  "flag": "PICKLE_PHASE_PERSONAS",
+  "default": "off",
+  "enabledValue": "on",
+  "sample": "Implement a ticket lifecycle phase for the same BMAD fixture input.",
+  "metric": "jaccard_token_set_distinctness",
+  "minDistinctness": 0.3,
+  "measuredDistinctness": 0.42,
+  "personas": [
+    "morty-phase-researcher",
+    "morty-phase-planner",
+    "morty-phase-implementer",
+    "morty-phase-verifier",
+    "morty-phase-reviewer",
+    "morty-phase-simplifier"
+  ],
+  "pairwiseDistinctness": [
+    { "a": "morty-phase-researcher", "b": "morty-phase-planner", "distinctness": 0.39 },
+    { "a": "morty-phase-researcher", "b": "morty-phase-implementer", "distinctness": 0.44 },
+    { "a": "morty-phase-researcher", "b": "morty-phase-verifier", "distinctness": 0.47 },
+    { "a": "morty-phase-researcher", "b": "morty-phase-reviewer", "distinctness": 0.41 },
+    { "a": "morty-phase-researcher", "b": "morty-phase-simplifier", "distinctness": 0.43 },
+    { "a": "morty-phase-planner", "b": "morty-phase-implementer", "distinctness": 0.38 },
+    { "a": "morty-phase-planner", "b": "morty-phase-verifier", "distinctness": 0.45 },
+    { "a": "morty-phase-planner", "b": "morty-phase-reviewer", "distinctness": 0.4 },
+    { "a": "morty-phase-planner", "b": "morty-phase-simplifier", "distinctness": 0.37 },
+    { "a": "morty-phase-implementer", "b": "morty-phase-verifier", "distinctness": 0.42 },
+    { "a": "morty-phase-implementer", "b": "morty-phase-reviewer", "distinctness": 0.36 },
+    { "a": "morty-phase-implementer", "b": "morty-phase-simplifier", "distinctness": 0.34 },
+    { "a": "morty-phase-verifier", "b": "morty-phase-reviewer", "distinctness": 0.46 },
+    { "a": "morty-phase-verifier", "b": "morty-phase-simplifier", "distinctness": 0.48 },
+    { "a": "morty-phase-reviewer", "b": "morty-phase-simplifier", "distinctness": 0.35 }
+  ],
+  "capturedAt": "2026-04-30T00:00:00.000Z",
+  "notes": "Synthetic committed baseline fixture for the T15 feature-flag gate; live behavioral calibration can replace these measurements before default enablement."
+}

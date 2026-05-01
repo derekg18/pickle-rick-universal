@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "research": {
+    "subagent_type": "morty-phase-researcher",
+    "complexity_tier_default": "medium",
+    "model": "sonnet"
+  },
+  "plan": {
+    "subagent_type": "morty-phase-planner",
+    "complexity_tier_default": "medium",
+    "model": "sonnet"
+  },
+  "implement": {
+    "subagent_type": "morty-phase-implementer",
+    "complexity_tier_default": "large",
+    "model": "opus"
+  },
+  "verify": {
+    "subagent_type": "morty-phase-verifier",
+    "complexity_tier_default": "large",
+    "model": "opus"
+  },
+  "review": {
+    "subagent_type": "morty-phase-reviewer",
+    "complexity_tier_default": "medium",
+    "model": "sonnet"
+  },
+  "refactor": {
+    "subagent_type": "morty-phase-simplifier",
+    "complexity_tier_default": "medium",
+    "model": "sonnet"
+  }
+}

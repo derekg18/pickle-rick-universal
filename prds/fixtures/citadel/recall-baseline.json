@@ -1,0 +1,39 @@
+{
+  "schema": "1.0",
+  "sampleCount": 5,
+  "baselineRecall": 1,
+  "baselineFalsePositiveRate": 0,
+  "maxRecallDrop": 0.05,
+  "samples": [
+    {
+      "fixture": "random-sample-001.json",
+      "knownIssues": 0,
+      "matchedIssues": 0,
+      "falsePositiveFindings": 1
+    },
+    {
+      "fixture": "random-sample-002.json",
+      "knownIssues": 0,
+      "matchedIssues": 0,
+      "falsePositiveFindings": 1
+    },
+    {
+      "fixture": "random-sample-003.json",
+      "knownIssues": 0,
+      "matchedIssues": 0,
+      "falsePositiveFindings": 1
+    },
+    {
+      "fixture": "random-sample-004.json",
+      "knownIssues": 0,
+      "matchedIssues": 0,
+      "falsePositiveFindings": 1
+    },
+    {
+      "fixture": "random-sample-005.json",
+      "knownIssues": 0,
+      "matchedIssues": 0,
+      "falsePositiveFindings": 1
+    }
+  ]
+}

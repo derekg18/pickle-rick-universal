@@ -1,0 +1,42 @@
+[
+  {
+    "id": "LOA-618-ISSUE-001",
+    "title": "getComparison flag-gate miss",
+    "expectedFindingId": "loa-618-flag-gate-miss"
+  },
+  {
+    "id": "LOA-618-ISSUE-002",
+    "title": "retryChildExtraction pattern replay miss",
+    "expectedFindingId": "loa-618-pattern-replay-miss"
+  },
+  {
+    "id": "LOA-618-ISSUE-003",
+    "title": "rule-set interaction gap",
+    "expectedFindingId": "citadel-rule-set-invariant-src-diff-codes-ts-valid-actions"
+  },
+  {
+    "id": "LOA-618-ISSUE-004",
+    "title": "destructive-role drift",
+    "expectedFindingId": "citadel-destructive-role-drift-src-runcontroller-ts"
+  },
+  {
+    "id": "LOA-618-ISSUE-005",
+    "title": "S3-key invariant non-enforcement",
+    "expectedFindingId": "loa-618-s3-key-invariant"
+  },
+  {
+    "id": "LOA-618-ISSUE-006",
+    "title": "continuation plan orphan",
+    "expectedFindingId": "loa-618-continuation-plan-orphan"
+  },
+  {
+    "id": "LOA-618-ISSUE-007",
+    "title": "frontend comparison data prop drift",
+    "expectedFindingId": "citadel-frontend-prop-drift-src-comparisonpage-tsx-comparisoncard-10"
+  },
+  {
+    "id": "LOA-618-ISSUE-008",
+    "title": "destructive comparison route missing roles",
+    "expectedFindingId": "citadel-destructive-role-missing-src-runcontroller-ts-deletecomparison"
+  }
+]

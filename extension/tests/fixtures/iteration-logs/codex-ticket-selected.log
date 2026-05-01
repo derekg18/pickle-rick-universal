@@ -1,0 +1,18 @@
+user
+You have the following pending tickets:
+- 4ad2a98e: Codex-aware extractAssistantContent + classifier regression tests
+
+Select the next ticket to work on and describe your approach.
+
+codex
+I'll work on ticket 4ad2a98e next. The task requires:
+
+1. Fixing the stream-json detection bug in extractAssistantContent (any JSON line
+   currently triggers stream-json mode; should require type:'assistant')
+2. Adding a codex plain-text block parser that extracts only 'codex' blocks
+3. Adding 6 regression fixture files and a new test file
+
+Starting with research phase to map current code before making changes.
+
+tool_call
+{"name": "select_ticket", "args": {"id": "4ad2a98e"}}

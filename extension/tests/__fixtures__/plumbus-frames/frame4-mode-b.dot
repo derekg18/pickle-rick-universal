@@ -1,0 +1,13 @@
+digraph "frame4_mode_b" {
+  graph [goal="frame4 Mode B — synthesized ATTRACTOR_CTX hints (illustrative, not wired to any production script)", label="frame4-mode-b", rankdir="LR"]
+  start [shape="Mdiamond"]
+  synthesize [class="codergen", label="synthesize", tool_command="bun ./scripts/synthesize.ts ATTRACTOR_CTX:artifact_synth=done"]
+  diamond_synth [class="diamond", label="diamond_synth"]
+  retry_synth [label="retry_synth", max_visits="3"]
+  done [shape="Msquare"]
+  start -> synthesize
+  synthesize -> diamond_synth
+  diamond_synth -> done [condition="context.artifact_synth=done"]
+  diamond_synth -> retry_synth [condition="context.outcome=fail"]
+  retry_synth -> synthesize
+}

@@ -1,0 +1,15 @@
+digraph "frame3_nondeterministic_cell" {
+  graph [goal="frame3 nondeterministic cell — both exits share identical condition, artifact_result=ok matches two edges", label="frame3-nondeterministic-cell", rankdir="LR"]
+  start [shape="Mdiamond"]
+  producer [context_on_success="artifact_result=ok", label="producer"]
+  diamond_nd [class="diamond", label="diamond_nd"]
+  path_x [label="path_x"]
+  path_y [label="path_y"]
+  done [shape="Msquare"]
+  start -> producer
+  producer -> diamond_nd
+  diamond_nd -> path_x [condition="context.artifact_result=ok"]
+  diamond_nd -> path_y [condition="context.artifact_result=ok"]
+  path_x -> done
+  path_y -> done
+}

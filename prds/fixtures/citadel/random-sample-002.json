@@ -1,0 +1,17 @@
+{
+  "name": "Random sample 002",
+  "prd": "random-sample-002-prd.md",
+  "baseFiles": {
+    "prd.md": "# Random Sample 002\n\nAC-RS-002 records additive documentation behavior.\n",
+    "src/sample.ts": "export const value = 1;\n"
+  },
+  "headFiles": {
+    "prd.md": "# Random Sample 002\n\nAC-RS-002 records additive documentation behavior.\n",
+    "src/sample.ts": "export const value = 2;\n",
+    "src/notes.ts": "export const notes = [];\n"
+  },
+  "sessionArtifacts": {},
+  "expected": {
+    "knownIssues": 0
+  }
+}

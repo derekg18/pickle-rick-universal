@@ -1,0 +1,28 @@
+{
+  "nodes": [
+    { "id": "start" },
+    {
+      "id": "synthesize",
+      "class": "codergen",
+      "tool_command": "bun ./scripts/synthesize.ts ATTRACTOR_CTX:artifact_synth=done"
+    },
+    { "id": "diamond_synth", "class": "diamond" },
+    { "id": "retry_synth", "max_visits": "3" },
+    { "id": "done" }
+  ],
+  "edges": [
+    { "source": "start", "target": "synthesize" },
+    { "source": "synthesize", "target": "diamond_synth" },
+    {
+      "source": "diamond_synth",
+      "target": "done",
+      "condition": "context.artifact_synth=done"
+    },
+    {
+      "source": "diamond_synth",
+      "target": "retry_synth",
+      "condition": "context.outcome=fail"
+    },
+    { "source": "retry_synth", "target": "synthesize" }
+  ]
+}

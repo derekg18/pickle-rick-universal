@@ -1,0 +1,11 @@
+digraph "frame5_no_convergence_signal" {
+  graph [goal="frame5 no convergence signal — loop with no iterate/epsilon/until, no ladder, no pool hints", label="frame5-no-convergence-signal", rankdir="LR"]
+  start [shape="Mdiamond"]
+  loop_entry [label="loop_entry"]
+  loop_body [label="loop_body"]
+  done [shape="Msquare"]
+  start -> loop_entry
+  loop_entry -> loop_body
+  loop_body -> loop_entry
+  loop_entry -> done [condition="context.outcome=success"]
+}

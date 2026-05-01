@@ -1,0 +1,11 @@
+digraph "frame2_symmetry_gap" {
+  graph [goal="frame2 symmetry gap — two writers for artifact_data, zero readers", label="frame2-symmetry-gap", rankdir="LR"]
+  start [shape="Mdiamond"]
+  writer_a [context_on_success="artifact_data=ready", label="writer_a"]
+  writer_b [context_on_success="artifact_data=ready", label="writer_b"]
+  done [shape="Msquare"]
+  start -> writer_a
+  start -> writer_b
+  writer_a -> done
+  writer_b -> done
+}

@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "suite": "readiness",
+  "generated_at": "2026-04-30T15:58:34.974Z",
+  "generator": {
+    "command": "npm run calibrate:readiness",
+    "source": "extension/src/services/calibration-corpus.ts"
+  },
+  "recalibration_triggers": [
+    "extension/src/bin/check-readiness.ts heuristic or fixture changes",
+    "ticket acceptance-criteria machinability rules change"
+  ],
+  "threshold_pct": 5,
+  "metrics": {
+    "fixture_count": 3,
+    "criteria_total": 7,
+    "machine_checkable": 4,
+    "non_machine_checkable": 3
+  },
+  "fixture_results": [
+    {
+      "name": "machine-checkable-ac",
+      "metrics": {
+        "criteria_total": 2,
+        "machine_checkable": 2,
+        "non_machine_checkable": 0
+      }
+    },
+    {
+      "name": "prose-only-ac",
+      "metrics": {
+        "criteria_total": 2,
+        "machine_checkable": 0,
+        "non_machine_checkable": 2
+      }
+    },
+    {
+      "name": "mixed-ac",
+      "metrics": {
+        "criteria_total": 3,
+        "machine_checkable": 2,
+        "non_machine_checkable": 1
+      }
+    }
+  ]
+}

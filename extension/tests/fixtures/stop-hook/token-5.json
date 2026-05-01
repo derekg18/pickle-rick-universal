@@ -1,0 +1,12 @@
+{
+  "file": "token-5.json",
+  "transcript": "<promise>THE_CITADEL_APPROVES</promise>",
+  "expected_decision": "approve",
+  "expected_output": {
+    "decision": "approve"
+  },
+  "state": {
+    "active": true,
+    "tmux_mode": false
+  }
+}

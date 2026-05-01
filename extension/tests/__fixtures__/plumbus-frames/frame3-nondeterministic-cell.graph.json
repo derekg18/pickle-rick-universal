@@ -1,0 +1,26 @@
+{
+  "nodes": [
+    { "id": "start" },
+    { "id": "producer", "context_on_success": "artifact_result=ok" },
+    { "id": "diamond_nd", "class": "diamond" },
+    { "id": "path_x" },
+    { "id": "path_y" },
+    { "id": "done" }
+  ],
+  "edges": [
+    { "source": "start", "target": "producer" },
+    { "source": "producer", "target": "diamond_nd" },
+    {
+      "source": "diamond_nd",
+      "target": "path_x",
+      "condition": "context.artifact_result=ok"
+    },
+    {
+      "source": "diamond_nd",
+      "target": "path_y",
+      "condition": "context.artifact_result=ok"
+    },
+    { "source": "path_x", "target": "done" },
+    { "source": "path_y", "target": "done" }
+  ]
+}

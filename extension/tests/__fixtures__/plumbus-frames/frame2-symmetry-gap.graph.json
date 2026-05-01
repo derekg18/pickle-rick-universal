@@ -1,0 +1,14 @@
+{
+  "nodes": [
+    { "id": "start" },
+    { "id": "writer_a", "context_on_success": "artifact_data=ready" },
+    { "id": "writer_b", "context_on_success": "artifact_data=ready" },
+    { "id": "done" }
+  ],
+  "edges": [
+    { "source": "start", "target": "writer_a" },
+    { "source": "start", "target": "writer_b" },
+    { "source": "writer_a", "target": "done" },
+    { "source": "writer_b", "target": "done" }
+  ]
+}

@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "suite": "correct-course",
+  "generated_at": "2026-04-30T15:58:34.977Z",
+  "generator": {
+    "command": "npm run calibrate:correct-course",
+    "source": "extension/src/services/calibration-corpus.ts"
+  },
+  "recalibration_triggers": [
+    "extension/src/bin/correct-course.ts proposal validator changes",
+    "course-correction proposal contract section changes"
+  ],
+  "threshold_pct": 5,
+  "metrics": {
+    "fixture_count": 2,
+    "passed": 1,
+    "expected_match": 2,
+    "referenced_ticket_ids": 2,
+    "failures": 2
+  },
+  "fixture_results": [
+    {
+      "name": "valid-ticket-references",
+      "metrics": {
+        "passed": 1,
+        "expected_match": 1,
+        "referenced_ticket_ids": 2,
+        "failures": 0
+      }
+    },
+    {
+      "name": "missing-impact-map-references",
+      "metrics": {
+        "passed": 0,
+        "expected_match": 1,
+        "referenced_ticket_ids": 0,
+        "failures": 2
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "name": "Random sample 004",
+  "prd": "random-sample-004-prd.md",
+  "baseFiles": {
+    "prd.md": "# Random Sample 004\n\nAC-RS-004 records service rename behavior.\n",
+    "src/service.ts": "export function loadThing() {\n  return 'old';\n}\n"
+  },
+  "headFiles": {
+    "prd.md": "# Random Sample 004\n\nAC-RS-004 records service rename behavior.\n",
+    "src/service.ts": "export function loadThing() {\n  return 'new';\n}\n"
+  },
+  "sessionArtifacts": {},
+  "expected": {
+    "knownIssues": 0
+  }
+}

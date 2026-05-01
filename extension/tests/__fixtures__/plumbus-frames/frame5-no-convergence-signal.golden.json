@@ -1,0 +1,7 @@
+{
+  "context_keys": [],
+  "diamond_routing": [],
+  "cycles": [
+    { "scc_nodes": ["loop_body", "loop_entry"], "convergence_signal": null }
+  ]
+}

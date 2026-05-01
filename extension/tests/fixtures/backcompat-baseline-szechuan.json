@@ -1,0 +1,24 @@
+{
+  "status": "gap_analysis",
+  "key_metric": {
+    "description": "Number of coding principle violations (lower is better)",
+    "validation": "Review the code at the target path for violations of established coding principles (KISS, YAGNI, DRY, SOLID, Small Functions, Guard Clauses, Cognitive Load, Self-Documenting Code, Encapsulation, Fail-Fast, etc). Count only REAL, actionable violations — not style nitpicks. A violation must be fixable and must clearly hurt readability, maintainability, or correctness. Score = number of violations found.",
+    "type": "llm",
+    "timeout_seconds": 300,
+    "tolerance": 0,
+    "direction": "lower",
+    "judge_model": "claude-sonnet-4-6"
+  },
+  "convergence": {
+    "stall_limit": 5,
+    "stall_counter": 0,
+    "history": []
+  },
+  "failed_approaches": [],
+  "baseline_score": 0,
+  "failure_history": [],
+  "approach_exhaustion_fired": false,
+  "iteration_regressions": 0,
+  "gate_regression_threshold_warning_emitted": false,
+  "convergence_target": 0
+}

@@ -1,0 +1,51 @@
+digraph "snap_phases" {
+  graph [acceptance_criteria="context.api_done=true && context.auth_done=true", goal="two-phase snapshot baseline", label="snap-phases: two-phase snapshot baseline", rankdir="LR", retry_target="fix_types"]
+  /* DEFENSE MATRIX
+   * competitive: false
+   * adversarial: false
+   * specDriven: NONE
+   * guardrails: P0c
+   * permissions: none
+   */
+  start [shape="Mdiamond"]
+  setup_deps [label="setup_deps", shape="parallelogram", tool_command="cd ${WORKING_DIR} && npm install 2>&1 || pnpm install 2>&1 || yarn install 2>&1"]
+  capture_baseline [label="capture_baseline", read_only="true", shape="parallelogram", tool_command="cd ${WORKING_DIR} && (npx tsc --noEmit 2>&1 | grep -c 'error TS' > /tmp/baseline_ts_errors.txt || echo 0 > /tmp/baseline_ts_errors.txt) && (npx eslint src/ 2>&1 | grep -c 'error' > /tmp/baseline_lint_errors.txt || echo 0 > /tmp/baseline_lint_errors.txt)"]
+  split_phases [label="split_phases", max_parallel="1", shape="component"]
+  // ========== PHASE 1: auth ==========
+  auth [label="auth", shape="component", thread_id="phase_1"]
+  // ========== PHASE 2: api ==========
+  api [label="api", shape="component", thread_id="phase_2"]
+  merge_phases [label="merge_phases", shape="tripleoctagon"]
+  audit [label="audit", read_only="true", shape="parallelogram", tool_command="cd ${WORKING_DIR} && (npx tsc --noEmit 2>&1 || true) && (npx eslint src/ --max-warnings=-1 2>&1 || true) && (npm test 2>&1 || true)"]
+  verify_typecheck [context_on_success="types_compile=true", label="verify_typecheck", max_visits="5", retry_target="fix_types", shape="parallelogram", timeout="30m", tool_command="cd ${WORKING_DIR} && npx tsc --noEmit"]
+  fix_types [allowed_paths="src/auth/,src/api/,tests/auth/,__tests__/auth/,tests/api/,__tests__/api/", class="codergen", escalate_on="package.json,*.lock,*.config.*", label="Fix ONLY type errors reported by tsc --noEmit", max_visits="5", permission_mode="auto", timeout="30m"]
+  verify_lint [context_on_success="lint_clean=true", label="verify_lint", max_visits="5", retry_target="fix_lint", shape="parallelogram", timeout="30m", tool_command="cd ${WORKING_DIR} && npx eslint src/ --max-warnings=-1"]
+  fix_lint [allowed_paths="src/auth/,src/api/,tests/auth/,__tests__/auth/,tests/api/,__tests__/api/", class="codergen", escalate_on="package.json,*.lock,*.config.*", label="Fix ONLY lint errors reported by eslint", max_visits="5", permission_mode="auto", timeout="30m"]
+  verify_tests [context_on_success="api_done=true,auth_done=true,cli_contract=true,determinism=true,tests_pass=true,validation_rules=true", label="verify_tests", max_visits="5", retry_target="fix_tests", shape="parallelogram", timeout="30m", tool_command="cd ${WORKING_DIR} && npm test"]
+  fix_tests [allowed_paths="src/auth/,src/api/,tests/auth/,__tests__/auth/,tests/api/,__tests__/api/", class="codergen", escalate_on="package.json,*.lock,*.config.*", label="Fix ONLY failing tests reported by npm test", max_visits="5", permission_mode="auto", timeout="30m"]
+  regression_check [label="regression_check", shape="parallelogram", timeout="30m", tool_command="cd ${WORKING_DIR} && npx tsc --noEmit && npx eslint src/ --max-warnings=-1 && npm test"]
+  quality_review [class="review", label="Final quality review: verify all acceptance criteria met, no regressions, code is clean. Output STATUS: SUCCESS | FAIL.", read_only="true", timeout="15m"]
+  exit [label="exit", shape="Msquare"]
+  start -> setup_deps
+  setup_deps -> capture_baseline
+  capture_baseline -> split_phases
+  split_phases -> auth
+  split_phases -> api
+  auth -> merge_phases
+  api -> merge_phases
+  merge_phases -> audit
+  audit -> verify_typecheck
+  verify_typecheck -> fix_types [condition="outcome=fail", label="fail"]
+  fix_types -> verify_typecheck
+  verify_typecheck -> verify_lint [condition="outcome=success", label="pass"]
+  verify_lint -> fix_lint [condition="outcome=fail", label="fail"]
+  fix_lint -> verify_lint
+  verify_lint -> verify_tests [condition="outcome=success", label="pass"]
+  verify_tests -> fix_tests [condition="outcome=fail", label="fail"]
+  fix_tests -> verify_tests
+  verify_tests -> regression_check [condition="outcome=success", label="pass"]
+  regression_check -> fix_types [condition="outcome=fail", label="fail"]
+  regression_check -> quality_review [condition="outcome=success", label="pass"]
+  quality_review -> exit [condition="outcome=success", label="pass"]
+  quality_review -> fix_types [condition="outcome=fail", label="fail"]
+}

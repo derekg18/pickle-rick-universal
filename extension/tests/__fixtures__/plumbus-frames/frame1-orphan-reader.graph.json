@@ -1,0 +1,11 @@
+{
+  "nodes": [
+    { "id": "start" },
+    { "id": "scan_node", "context_keys": "artifact_scan" },
+    { "id": "done" }
+  ],
+  "edges": [
+    { "source": "start", "target": "scan_node" },
+    { "source": "scan_node", "target": "done" }
+  ]
+}

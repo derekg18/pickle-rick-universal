@@ -1,0 +1,8 @@
+digraph "frame1_orphan_reader" {
+  graph [goal="frame1 orphan reader fixture — reads artifact_scan but nothing writes it", label="frame1-orphan-reader", rankdir="LR"]
+  start [shape="Mdiamond"]
+  scan_node [context_keys="artifact_scan", label="scan_node"]
+  done [shape="Msquare"]
+  start -> scan_node
+  scan_node -> done
+}

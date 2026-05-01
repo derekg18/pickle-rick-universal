@@ -1,0 +1,13 @@
+digraph "frame4_mode_a" {
+  graph [goal="frame4 Mode A — verify-controller-routes integration", label="frame4-mode-a", rankdir="LR"]
+  start [shape="Mdiamond"]
+  verify_routes [class="codergen", label="verify_routes", tool_command="bun packages/attractor/scripts/verify-controller-routes.ts"]
+  diamond_verify [class="diamond", label="diamond_verify"]
+  fix_routes [label="fix_routes", max_visits="3"]
+  done [shape="Msquare"]
+  start -> verify_routes
+  verify_routes -> diamond_verify
+  diamond_verify -> done [condition="context.outcome=success"]
+  diamond_verify -> fix_routes [condition="context.outcome=fail"]
+  fix_routes -> verify_routes
+}

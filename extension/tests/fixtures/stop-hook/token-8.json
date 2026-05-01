@@ -1,0 +1,13 @@
+{
+  "file": "token-8.json",
+  "transcript": "<promise>TICKET_SELECTED</promise>",
+  "expected_decision": "block",
+  "expected_output": {
+    "decision": "block",
+    "reason": "🥒 **Pickle Rick Loop Active** - Ticket selected, starting research..."
+  },
+  "state": {
+    "active": true,
+    "tmux_mode": false
+  }
+}

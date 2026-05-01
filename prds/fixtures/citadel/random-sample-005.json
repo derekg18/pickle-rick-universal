@@ -1,0 +1,16 @@
+{
+  "name": "Random sample 005",
+  "prd": "random-sample-005-prd.md",
+  "baseFiles": {
+    "prd.md": "# Random Sample 005\n\nAC-RS-005 records config default behavior.\n",
+    "src/config.ts": "export const config = { enabled: false };\n"
+  },
+  "headFiles": {
+    "prd.md": "# Random Sample 005\n\nAC-RS-005 records config default behavior.\n",
+    "src/config.ts": "export const config = { enabled: true };\n"
+  },
+  "sessionArtifacts": {},
+  "expected": {
+    "knownIssues": 0
+  }
+}

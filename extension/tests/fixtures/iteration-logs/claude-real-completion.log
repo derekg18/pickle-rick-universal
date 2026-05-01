@@ -1,0 +1,6 @@
+{"type":"system","system":"<system>You are Morty.</system>"}
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Complete all pending tickets. Output <promise>EPIC_COMPLETED</promise> when done."}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"Working on the implementation..."}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_02","content":"Tests passed: 142 passing, 0 failing"}]}}
+{"type":"assistant","message":{"content":[{"type":"text","text":"All tickets complete. The codex-aware extractAssistantContent is implemented, fixtures created, tests pass.\n\n<promise>EPIC_COMPLETED</promise>"}]}}
+{"type":"result","result":"Epic completed successfully."}

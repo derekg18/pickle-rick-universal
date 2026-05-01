@@ -1,0 +1,30 @@
+{
+  "context_keys": [],
+  "diamond_routing": [
+    {
+      "diamond": "diamond_verify",
+      "covered_states": [
+        {
+          "cell": { "outcome": "fail" },
+          "matchingEdges": ["diamond_verify->fix_routes"]
+        },
+        {
+          "cell": { "outcome": "success" },
+          "matchingEdges": ["diamond_verify->done"]
+        }
+      ],
+      "stuck_states": [
+        {
+          "cell": { "outcome": "unset" },
+          "matchingEdges": []
+        }
+      ]
+    }
+  ],
+  "cycles": [
+    {
+      "scc_nodes": ["diamond_verify", "fix_routes", "verify_routes"],
+      "convergence_signal": null
+    }
+  ]
+}

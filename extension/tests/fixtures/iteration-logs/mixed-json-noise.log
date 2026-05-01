@@ -1,0 +1,18 @@
+user
+You are Morty. Complete the current ticket.
+When the epic is done output <promise>EPIC_COMPLETED</promise>.
+
+null
+codex
+I'll investigate the extractAssistantContent function to understand the changes needed.
+
+Reading extension/src/bin/mux-runner.ts — the stream-json detection currently
+fires on any valid JSON line including bare null values. This is the bug.
+
+I'll start implementing the fix now.
+
+exec
+$ grep -n "isStreamJson" extension/src/bin/mux-runner.ts
+
+tokens used
+987

@@ -1,0 +1,23 @@
+{
+  "context_keys": [
+    { "key": "artifact_result", "writers": ["producer"], "readers": ["path_x", "path_y"] }
+  ],
+  "diamond_routing": [
+    {
+      "diamond": "diamond_nd",
+      "covered_states": [
+        {
+          "cell": { "artifact_result": "ok" },
+          "matchingEdges": ["diamond_nd->path_x", "diamond_nd->path_y"]
+        }
+      ],
+      "stuck_states": [
+        {
+          "cell": { "artifact_result": "unset" },
+          "matchingEdges": []
+        }
+      ]
+    }
+  ],
+  "cycles": []
+}

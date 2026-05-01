@@ -1,0 +1,25 @@
+{
+  "findings": [
+    {
+      "id": "cross-phase-shared-id",
+      "severity": "Critical",
+      "message": "Anatomy Park found a cross-phase invariant violation.",
+      "subsystem": "pipeline-runner",
+      "evidence": "extension/src/bin/pipeline-runner.ts:1"
+    },
+    {
+      "id": "anatomy-phase-high",
+      "severity": "High",
+      "message": "Anatomy Park found stale phase artifact coupling.",
+      "subsystem": "citadel",
+      "evidence": "extension/src/services/citadel/audit-runner.ts:1"
+    },
+    {
+      "id": "anatomy-phase-low",
+      "severity": "Low",
+      "message": "Anatomy Park found low-risk report metadata drift.",
+      "subsystem": "reporting",
+      "evidence": "extension/tests/fixtures/citadel-cross-phase-fixture/anatomy-park.json:1"
+    }
+  ]
+}

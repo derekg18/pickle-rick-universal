@@ -1,0 +1,7 @@
+{
+  "context_keys": [
+    { "key": "artifact_scan", "writers": [], "readers": ["scan_node"] }
+  ],
+  "diamond_routing": [],
+  "cycles": []
+}

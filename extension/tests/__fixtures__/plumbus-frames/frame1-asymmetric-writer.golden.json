@@ -1,0 +1,19 @@
+{
+  "context_keys": [
+    { "key": "artifact_api", "writers": ["gate_api"], "readers": ["done"] }
+  ],
+  "diamond_routing": [
+    {
+      "diamond": "diamond_api",
+      "covered_states": [
+        { "cell": { "artifact_api": "seeded" }, "matchingEdges": ["diamond_api->done"] }
+      ],
+      "stuck_states": [
+        { "cell": { "artifact_api": "unset" }, "matchingEdges": [] }
+      ]
+    }
+  ],
+  "cycles": [
+    { "scc_nodes": ["diamond_api", "fix_impl", "gate_api"], "convergence_signal": null }
+  ]
+}

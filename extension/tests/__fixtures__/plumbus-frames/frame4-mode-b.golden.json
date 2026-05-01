@@ -1,0 +1,32 @@
+{
+  "context_keys": [
+    { "key": "artifact_synth", "writers": ["synthesize"], "readers": ["done"] }
+  ],
+  "diamond_routing": [
+    {
+      "diamond": "diamond_synth",
+      "covered_states": [
+        {
+          "cell": { "artifact_synth": "unset", "outcome": "fail" },
+          "matchingEdges": ["diamond_synth->retry_synth"]
+        }
+      ],
+      "stuck_states": [
+        {
+          "cell": { "artifact_synth": "unset", "outcome": "success" },
+          "matchingEdges": []
+        },
+        {
+          "cell": { "artifact_synth": "unset", "outcome": "unset" },
+          "matchingEdges": []
+        }
+      ]
+    }
+  ],
+  "cycles": [
+    {
+      "scc_nodes": ["diamond_synth", "retry_synth", "synthesize"],
+      "convergence_signal": null
+    }
+  ]
+}

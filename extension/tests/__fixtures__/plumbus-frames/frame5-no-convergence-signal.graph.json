@@ -1,0 +1,18 @@
+{
+  "nodes": [
+    { "id": "start" },
+    { "id": "loop_entry" },
+    { "id": "loop_body" },
+    { "id": "done" }
+  ],
+  "edges": [
+    { "source": "start", "target": "loop_entry" },
+    { "source": "loop_entry", "target": "loop_body" },
+    { "source": "loop_body", "target": "loop_entry" },
+    {
+      "source": "loop_entry",
+      "target": "done",
+      "condition": "context.outcome=success"
+    }
+  ]
+}

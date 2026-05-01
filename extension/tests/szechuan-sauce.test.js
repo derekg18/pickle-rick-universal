@@ -1,0 +1,511 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+import { execSync } from 'node:child_process';
+import {
+    createMicroverseState,
+    writeMicroverseState,
+    readMicroverseState,
+    isConverged,
+} from '../services/microverse-state.js';
+
+// ---------------------------------------------------------------------------
+// Szechuan Sauce command prompt validation
+// ---------------------------------------------------------------------------
+
+const COMMAND_PATH = path.resolve(import.meta.dirname, '../../.claude/commands/szechuan-sauce.md');
+
+function readCommand() {
+    return fs.readFileSync(COMMAND_PATH, 'utf-8');
+}
+
+test('szechuan-sauce.md exists and is readable', () => {
+    assert.ok(fs.existsSync(COMMAND_PATH), `missing: ${COMMAND_PATH}`);
+    const content = readCommand();
+    assert.ok(content.length > 100, 'command file appears empty');
+});
+
+test('szechuan-sauce.md has no --interactive flag references', () => {
+    const content = readCommand();
+    assert.ok(!content.includes('--interactive'), 'interactive mode should be removed');
+    assert.ok(!content.includes('INTERACTIVE'), 'INTERACTIVE variable should be removed');
+});
+
+test('szechuan-sauce.md has Setup and Worker modes', () => {
+    const content = readCommand();
+    assert.ok(content.includes('## SETUP MODE'), 'missing Setup Mode section');
+    assert.ok(content.includes('## WORKER MODE'), 'missing Worker Mode section');
+});
+
+test('szechuan-sauce.md Worker Mode references microverse protocol', () => {
+    const content = readCommand();
+    // Worker mode should delegate to the shared microverse worker protocol
+    assert.ok(
+        content.includes('Microverse Worker protocol') || content.includes('microverse.md'),
+        'Worker Mode should reference the shared microverse protocol'
+    );
+});
+
+test('szechuan-sauce.md Worker Mode defines szechuan-specific overrides', () => {
+    const content = readCommand();
+    assert.ok(content.includes('szechuan-sauce-principles.md'), 'should reference principles file');
+    assert.ok(content.includes('szechuan-sauce:'), 'should define commit message format');
+});
+
+test('szechuan-sauce.md defines diff-hygiene gate output contract', () => {
+    const content = readCommand();
+    assert.ok(content.includes('### Override 4: Diff Hygiene'), 'missing diff hygiene override');
+    assert.ok(content.includes('ROOT_MARKDOWN_ALLOWLIST'), 'should reference shared markdown allowlist');
+    assert.ok(content.includes('ENV_FILE_ALLOWLIST'), 'should reference env allowlist');
+    assert.ok(content.includes('LARGE_FILE_BYTES'), 'should reference large-file threshold');
+    assert.ok(content.includes("category: 'hygiene'"), 'hygiene findings must be category-tagged');
+    assert.ok(content.includes('root `notes.md` produces a P1 finding'), 'notes.md P1 contract must be explicit');
+});
+
+test('szechuan-sauce.md defines trap-door-as-test enforcement contract', () => {
+    const content = readCommand();
+    assert.ok(content.includes('### Override 5: Trap-Door-as-Test Enforcement'), 'missing trap-door enforcement override');
+    assert.ok(content.includes("git diff -- CLAUDE.md '**/CLAUDE.md'"), 'should read CLAUDE.md bullets from git diff');
+    assert.ok(content.includes('pattern_shape') && content.includes('PATTERN_SHAPE'), 'should require pattern shape metadata');
+    assert.ok(content.includes('negative spec test'), 'should require negative spec coverage');
+    assert.ok(content.includes('trap door documented but not enforced'), 'should define exact P0 finding message');
+    assert.ok(content.includes("category: 'trap-door-enforcement'"), 'should tag trap-door findings');
+    assert.ok(content.includes('claude_md_file') && content.includes('bullet_text'), 'should expose dedupe fields');
+    assert.ok(content.includes('(claude_md_file, bullet_text)'), 'should document Citadel T6 dedupe tuple');
+});
+
+test('szechuan-sauce.md Setup Mode steps are sequentially numbered', () => {
+    const content = readCommand();
+    // Extract setup section
+    const setupStart = content.indexOf('## SETUP MODE');
+    const workerStart = content.indexOf('## WORKER MODE');
+    const setup = content.slice(setupStart, workerStart);
+    // Steps should be numbered 1 through N without gaps
+    const stepNumbers = [...setup.matchAll(/### Step (\d+)/g)].map(m => Number(m[1]));
+    assert.ok(stepNumbers.length >= 5, `expected at least 5 steps, found ${stepNumbers.length}`);
+    for (let i = 0; i < stepNumbers.length; i++) {
+        assert.equal(stepNumbers[i], i + 1, `step ${i + 1} should be numbered ${i + 1}, got ${stepNumbers[i]}`);
+    }
+});
+
+test('szechuan-sauce.md has no step numbering overlap between modes', () => {
+    const content = readCommand();
+    const workerStart = content.indexOf('## WORKER MODE');
+    const workerSection = content.slice(workerStart);
+    // Worker mode should use Override numbering, not Step numbering that could clash
+    const workerSteps = [...workerSection.matchAll(/### Step (\d+)/g)];
+    assert.equal(workerSteps.length, 0, 'Worker Mode should not use "Step N" numbering (uses Override numbering instead)');
+});
+
+// ---------------------------------------------------------------------------
+// Principles file validation
+// ---------------------------------------------------------------------------
+
+const PRINCIPLES_PATH = path.resolve(import.meta.dirname, '../szechuan-sauce-principles.md');
+
+test('szechuan-sauce-principles.md exists', () => {
+    assert.ok(fs.existsSync(PRINCIPLES_PATH), `missing: ${PRINCIPLES_PATH}`);
+});
+
+test('principles file has priority matrix', () => {
+    const content = fs.readFileSync(PRINCIPLES_PATH, 'utf-8');
+    assert.ok(content.includes('## Priority Matrix'), 'missing Priority Matrix section');
+    assert.ok(content.includes('P0'), 'missing P0 priority');
+    assert.ok(content.includes('P4'), 'missing P4 priority');
+});
+
+test('principles file has diagnostic guide', () => {
+    const content = fs.readFileSync(PRINCIPLES_PATH, 'utf-8');
+    assert.ok(content.includes('## Quick Diagnostic Guide'), 'missing Quick Diagnostic Guide');
+});
+
+// ---------------------------------------------------------------------------
+// init-microverse: gap_analysis_path populated
+// ---------------------------------------------------------------------------
+
+test('init-microverse sets gap_analysis_path when run via CLI', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-szechuan-init-'));
+    try {
+        const initScript = path.resolve(import.meta.dirname, '../bin/init-microverse.js');
+        const targetPath = '/tmp/fake-target';
+        execSync(
+            `node ${initScript} ${dir} ${targetPath} --stall-limit 3 --convergence-target 0`,
+            { stdio: 'pipe' }
+        );
+        const state = readMicroverseState(dir);
+        assert.ok(state, 'microverse.json should exist');
+        assert.equal(state.gap_analysis_path, path.join(dir, 'gap_analysis.md'),
+            'gap_analysis_path should be set to session_dir/gap_analysis.md');
+    } finally {
+        fs.rmSync(dir, { recursive: true });
+    }
+});
+
+test('init-microverse sets convergence_target when provided', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-szechuan-conv-'));
+    try {
+        const initScript = path.resolve(import.meta.dirname, '../bin/init-microverse.js');
+        execSync(
+            `node ${initScript} ${dir} /tmp/target --convergence-target 0`,
+            { stdio: 'pipe' }
+        );
+        const state = readMicroverseState(dir);
+        assert.ok(state, 'microverse.json should exist');
+        assert.equal(state.convergence_target, 0, 'convergence_target should be 0');
+    } finally {
+        fs.rmSync(dir, { recursive: true });
+    }
+});
+
+test('init-microverse uses LLM type and lower direction by default', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-szechuan-metric-'));
+    try {
+        const initScript = path.resolve(import.meta.dirname, '../bin/init-microverse.js');
+        execSync(
+            `node ${initScript} ${dir} /tmp/target`,
+            { stdio: 'pipe' }
+        );
+        const state = readMicroverseState(dir);
+        assert.ok(state, 'microverse.json should exist');
+        assert.equal(state.key_metric.type, 'llm', 'default metric type should be llm');
+        assert.equal(state.key_metric.direction, 'lower', 'default direction should be lower');
+    } finally {
+        fs.rmSync(dir, { recursive: true });
+    }
+});
+
+// ---------------------------------------------------------------------------
+// init-microverse: judge_context_path
+// ---------------------------------------------------------------------------
+
+test('init-microverse sets judge_context_path when --judge-context provided', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-szechuan-judge-'));
+    try {
+        const initScript = path.resolve(import.meta.dirname, '../bin/init-microverse.js');
+        execSync(
+            `node ${initScript} ${dir} /tmp/target --judge-context /tmp/principles.md`,
+            { stdio: 'pipe' }
+        );
+        const state = readMicroverseState(dir);
+        assert.ok(state, 'microverse.json should exist');
+        assert.equal(state.judge_context_path, '/tmp/principles.md',
+            'judge_context_path should match --judge-context value');
+    } finally {
+        fs.rmSync(dir, { recursive: true });
+    }
+});
+
+test('init-microverse omits judge_context_path when --judge-context not provided', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-szechuan-nojudge-'));
+    try {
+        const initScript = path.resolve(import.meta.dirname, '../bin/init-microverse.js');
+        execSync(
+            `node ${initScript} ${dir} /tmp/target`,
+            { stdio: 'pipe' }
+        );
+        const state = readMicroverseState(dir);
+        assert.ok(state, 'microverse.json should exist');
+        assert.equal(state.judge_context_path, undefined,
+            'judge_context_path should not be set when flag is absent');
+    } finally {
+        fs.rmSync(dir, { recursive: true });
+    }
+});
+
+// ---------------------------------------------------------------------------
+// szechuan-sauce.md: workers must not call update-state.js (runner owns state)
+// ---------------------------------------------------------------------------
+
+test('szechuan-sauce.md Worker Mode does not instruct workers to call update-state.js', () => {
+    const content = readCommand();
+    const workerStart = content.indexOf('## WORKER MODE');
+    const workerSection = content.slice(workerStart);
+    assert.ok(!workerSection.includes('update-state.js iteration'),
+        'Worker should not call update-state.js — runner manages state');
+});
+
+// ---------------------------------------------------------------------------
+// isConverged: convergence_target == 0 triggers exit
+// ---------------------------------------------------------------------------
+
+test('isConverged returns true when last accepted score equals convergence_target 0', () => {
+    const state = createMicroverseState({ prdPath: '/tmp/target', metric: {
+        description: 'violations',
+        validation: 'count',
+        type: 'llm',
+        timeout_seconds: 60,
+        tolerance: 0,
+        direction: 'lower',
+    }, stallLimit: 5, convergenceTarget: 0 });
+    state.baseline_score = 10;
+    state.convergence.history = [
+        { iteration: 1, metric_value: '0', score: 0, action: 'accept', description: 'fixed all', pre_iteration_sha: 'abc', timestamp: new Date().toISOString() },
+    ];
+    assert.equal(isConverged(state), true, 'should converge when score equals convergence_target');
+});
+
+test('isConverged returns false when last accepted score does not equal convergence_target', () => {
+    const state = createMicroverseState({ prdPath: '/tmp/target', metric: {
+        description: 'violations',
+        validation: 'count',
+        type: 'llm',
+        timeout_seconds: 60,
+        tolerance: 0,
+        direction: 'lower',
+    }, stallLimit: 5, convergenceTarget: 0 });
+    state.baseline_score = 10;
+    state.convergence.history = [
+        { iteration: 1, metric_value: '3', score: 3, action: 'accept', description: 'some fixes', pre_iteration_sha: 'abc', timestamp: new Date().toISOString() },
+    ];
+    assert.equal(isConverged(state), false, 'should not converge when score > convergence_target');
+});
+
+// ---------------------------------------------------------------------------
+// isConverged: direction-aware convergence_target (not just strict equality)
+// ---------------------------------------------------------------------------
+
+test('isConverged returns true when score overshoots convergence_target (lower direction)', () => {
+    // If target is 0 and score is -1 (overshot), should still converge
+    const state = createMicroverseState({ prdPath: '/tmp/target', metric: {
+        description: 'violations',
+        validation: 'count',
+        type: 'llm',
+        timeout_seconds: 60,
+        tolerance: 0,
+        direction: 'lower',
+    }, stallLimit: 5, convergenceTarget: 0 });
+    state.baseline_score = 10;
+    state.convergence.history = [
+        { iteration: 1, metric_value: '-1', score: -1, action: 'accept', description: 'overshot', pre_iteration_sha: 'abc', timestamp: new Date().toISOString() },
+    ];
+    assert.equal(isConverged(state), true, 'should converge when score undershoots target in lower direction');
+});
+
+test('isConverged returns true when score overshoots convergence_target (higher direction)', () => {
+    const state = createMicroverseState({ prdPath: '/tmp/target', metric: {
+        description: 'coverage',
+        validation: 'test coverage',
+        type: 'command',
+        timeout_seconds: 60,
+        tolerance: 0,
+        direction: 'higher',
+    }, stallLimit: 5, convergenceTarget: 90 });
+    state.baseline_score = 50;
+    state.convergence.history = [
+        { iteration: 1, metric_value: '95', score: 95, action: 'accept', description: 'exceeded target', pre_iteration_sha: 'abc', timestamp: new Date().toISOString() },
+    ];
+    assert.equal(isConverged(state), true, 'should converge when score exceeds target in higher direction');
+});
+
+test('isConverged returns false when score has not reached target (higher direction)', () => {
+    const state = createMicroverseState({ prdPath: '/tmp/target', metric: {
+        description: 'coverage',
+        validation: 'test coverage',
+        type: 'command',
+        timeout_seconds: 60,
+        tolerance: 0,
+        direction: 'higher',
+    }, stallLimit: 5, convergenceTarget: 90 });
+    state.baseline_score = 50;
+    state.convergence.history = [
+        { iteration: 1, metric_value: '70', score: 70, action: 'accept', description: 'partial', pre_iteration_sha: 'abc', timestamp: new Date().toISOString() },
+    ];
+    assert.equal(isConverged(state), false, 'should not converge when score < target in higher direction');
+});
+
+// ---------------------------------------------------------------------------
+// Financial domain principles file
+// ---------------------------------------------------------------------------
+
+const FINANCIAL_PRINCIPLES_PATH = path.resolve(import.meta.dirname, '../szechuan-sauce-financial-principles.md');
+
+test('szechuan-sauce-financial-principles.md exists', () => {
+    assert.ok(fs.existsSync(FINANCIAL_PRINCIPLES_PATH), `missing: ${FINANCIAL_PRINCIPLES_PATH}`);
+});
+
+test('financial principles file has priority matrix', () => {
+    const content = fs.readFileSync(FINANCIAL_PRINCIPLES_PATH, 'utf-8');
+    assert.ok(content.includes('## Priority Matrix'), 'missing Priority Matrix section');
+    assert.ok(content.includes('P0'), 'missing P0 priority');
+});
+
+test('financial principles file has diagnostic guide', () => {
+    const content = fs.readFileSync(FINANCIAL_PRINCIPLES_PATH, 'utf-8');
+    assert.ok(content.includes('## Quick Diagnostic Guide'), 'missing Quick Diagnostic Guide');
+});
+
+// ---------------------------------------------------------------------------
+// --focus flag validation
+// ---------------------------------------------------------------------------
+
+test('szechuan-sauce.md has --focus flag in argument parsing', () => {
+    const content = readCommand();
+    assert.ok(content.includes('--focus'), 'missing --focus flag');
+    assert.ok(content.includes('FOCUS'), 'missing FOCUS variable');
+});
+
+test('szechuan-sauce.md --focus injects Focus Directive into judge context', () => {
+    const content = readCommand();
+    assert.ok(content.includes('## Focus Directive'), 'missing Focus Directive section in judge context assembly');
+});
+
+test('szechuan-sauce.md --focus elevates matching violations by one priority level', () => {
+    const content = readCommand();
+    assert.ok(content.includes('elevated by one priority level'), 'missing priority elevation rule for focus');
+});
+
+test('szechuan-sauce.md Worker Mode Override 1 handles focus directive', () => {
+    const content = readCommand();
+    const workerStart = content.indexOf('## WORKER MODE');
+    const workerSection = content.slice(workerStart);
+    assert.ok(workerSection.includes('Focus Directive'), 'Worker Override 1 should reference Focus Directive');
+});
+
+// ---------------------------------------------------------------------------
+// Dependency Health and Test Quality principles (ported from meeseeks)
+// ---------------------------------------------------------------------------
+
+test('principles file has Dependency Health section', () => {
+    const content = fs.readFileSync(PRINCIPLES_PATH, 'utf-8');
+    assert.ok(content.includes('### Dependency Health'), 'missing Dependency Health principle');
+    assert.ok(content.includes('CVE'), 'Dependency Health should mention CVEs');
+    assert.ok(content.includes('phantom'), 'Dependency Health should mention phantom deps');
+    assert.ok(content.includes('lockfile'), 'Dependency Health should mention lockfile integrity');
+});
+
+test('principles file has Test Quality section', () => {
+    const content = fs.readFileSync(PRINCIPLES_PATH, 'utf-8');
+    assert.ok(content.includes('### Test Quality'), 'missing Test Quality principle');
+    assert.ok(content.includes('Tautological'), 'Test Quality should mention tautological assertions');
+    assert.ok(content.includes('flaky') || content.includes('Flaky'), 'Test Quality should mention flaky tests');
+    assert.ok(content.includes('boundary') || content.includes('Boundary'), 'Test Quality should mention boundary conditions');
+});
+
+// ---------------------------------------------------------------------------
+// Migration Hygiene dimension
+// ---------------------------------------------------------------------------
+
+test('principles file has Migration Hygiene section', () => {
+    const content = fs.readFileSync(PRINCIPLES_PATH, 'utf-8');
+    assert.ok(content.includes('### Migration Hygiene'), 'missing Migration Hygiene principle');
+});
+
+test('principles file Migration Hygiene defines four checks', () => {
+    const content = fs.readFileSync(PRINCIPLES_PATH, 'utf-8');
+    assert.ok(content.includes('CHECK Constraint Drift'), 'missing CHECK Constraint Drift check');
+    assert.ok(content.includes('Redundant Constraint Churn'), 'missing Redundant Constraint Churn check');
+    assert.ok(content.includes('Idempotency') && content.includes('IF NOT EXISTS'), 'missing Idempotency check');
+    assert.ok(content.includes('Schema Drift'), 'missing Schema Drift check');
+});
+
+test('principles file Migration Hygiene is conditional on Drizzle journal', () => {
+    const content = fs.readFileSync(PRINCIPLES_PATH, 'utf-8');
+    assert.ok(content.includes('_journal.json'), 'should reference Drizzle migration journal');
+    assert.ok(content.includes('Conditional'), 'should be marked as conditional');
+});
+
+test('principles file Migration Hygiene scores as HIGH or MEDIUM only', () => {
+    const content = fs.readFileSync(PRINCIPLES_PATH, 'utf-8');
+    const hygieneStart = content.indexOf('### Migration Hygiene');
+    const hygieneEnd = content.indexOf('###', hygieneStart + 1);
+    const section = content.slice(hygieneStart, hygieneEnd > -1 ? hygieneEnd : undefined);
+    assert.ok(section.includes('HIGH'), 'should have HIGH severity findings');
+    assert.ok(section.includes('MEDIUM'), 'should have MEDIUM severity findings');
+    // Should not introduce LOW or OPTIONAL for this dimension
+    assert.ok(!section.includes('(LOW)'), 'should not have LOW severity');
+});
+
+test('principles file Migration Hygiene does not duplicate CI lint checks', () => {
+    const content = fs.readFileSync(PRINCIPLES_PATH, 'utf-8');
+    const hygieneStart = content.indexOf('### Migration Hygiene');
+    const hygieneEnd = content.indexOf('###', hygieneStart + 1);
+    const section = content.slice(hygieneStart, hygieneEnd > -1 ? hygieneEnd : undefined);
+    assert.ok(section.includes('validate-migrations.ts'), 'should reference CI lint script exclusion');
+});
+
+test('szechuan-sauce.md Worker Mode has Migration Hygiene override', () => {
+    const content = readCommand();
+    const workerStart = content.indexOf('## WORKER MODE');
+    const workerSection = content.slice(workerStart);
+    assert.ok(workerSection.includes('Migration Hygiene'), 'Worker Mode should have Migration Hygiene override');
+    assert.ok(workerSection.includes('_journal.json'), 'should check for Drizzle journal');
+});
+
+test('szechuan-sauce.md Migration Hygiene override is conditional', () => {
+    const content = readCommand();
+    const workerStart = content.indexOf('## WORKER MODE');
+    const workerSection = content.slice(workerStart);
+    // Must check for journal existence before applying
+    assert.ok(
+        workerSection.includes('If it does NOT exist, skip'),
+        'Migration Hygiene must be skipped when no Drizzle journal found'
+    );
+});
+
+test('szechuan-sauce.md Migration Hygiene override defines all four checks', () => {
+    const content = readCommand();
+    const workerStart = content.indexOf('## WORKER MODE');
+    const workerSection = content.slice(workerStart);
+    assert.ok(workerSection.includes('CHECK Constraint Drift'), 'missing CHECK Constraint Drift');
+    assert.ok(workerSection.includes('Redundant Constraint Churn'), 'missing Redundant Constraint Churn');
+    assert.ok(workerSection.includes('Idempotency'), 'missing Idempotency');
+    assert.ok(workerSection.includes('Schema Drift'), 'missing Schema Drift');
+});
+
+test('szechuan-sauce.md Migration Hygiene excludes CI lint overlap', () => {
+    const content = readCommand();
+    const workerStart = content.indexOf('## WORKER MODE');
+    const workerSection = content.slice(workerStart);
+    assert.ok(workerSection.includes('validate-migrations.ts'), 'should reference CI lint exclusion');
+});
+
+// ---------------------------------------------------------------------------
+// Dry-run format validation
+// ---------------------------------------------------------------------------
+
+test('szechuan-sauce.md dry-run section includes priority buckets', () => {
+    const content = readCommand();
+    assert.ok(content.includes('### P0: Critical'), 'missing P0 bucket in dry-run format');
+    assert.ok(content.includes('### P1: High'), 'missing P1 bucket in dry-run format');
+    assert.ok(content.includes('### P2: Medium'), 'missing P2 bucket in dry-run format');
+    assert.ok(content.includes('### P3: Low'), 'missing P3 bucket in dry-run format');
+    assert.ok(content.includes('### P4: Optional'), 'missing P4 bucket in dry-run format');
+});
+
+test('szechuan-sauce.md has dry-run mode in Setup', () => {
+    const content = readCommand();
+    assert.ok(content.includes('--dry-run'), 'missing --dry-run flag');
+    assert.ok(content.includes('DRY_RUN'), 'missing DRY_RUN variable');
+});
+
+// ---------------------------------------------------------------------------
+// init-microverse: --metric-json accepts custom metric
+// ---------------------------------------------------------------------------
+
+test('init-microverse accepts --metric-json for custom metrics', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-szechuan-custom-'));
+    try {
+        const initScript = path.resolve(import.meta.dirname, '../bin/init-microverse.js');
+        const customMetric = JSON.stringify({
+            description: 'test coverage',
+            validation: 'npm test -- --coverage',
+            type: 'command',
+            timeout_seconds: 120,
+            tolerance: 1,
+            direction: 'higher',
+        });
+        execSync(
+            `node ${initScript} ${dir} /tmp/target --stall-limit 3 --metric-json '${customMetric}'`,
+            { stdio: 'pipe' }
+        );
+        const state = readMicroverseState(dir);
+        assert.ok(state, 'microverse.json should exist');
+        assert.equal(state.key_metric.type, 'command', 'should use custom metric type');
+        assert.equal(state.key_metric.direction, 'higher', 'should use custom direction');
+        assert.equal(state.key_metric.tolerance, 1, 'should use custom tolerance');
+    } finally {
+        fs.rmSync(dir, { recursive: true });
+    }
+});

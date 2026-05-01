@@ -1,0 +1,61 @@
+digraph "snap_isolated" {
+  graph [acceptance_criteria="context.done=true", goal="isolated workspace snapshot baseline", label="snap-isolated: isolated workspace snapshot baseline", rankdir="LR", retry_target="fix_types", workspace="isolated"]
+  /* DEFENSE MATRIX
+   * competitive: false
+   * adversarial: false
+   * specDriven: NONE
+   * guardrails: P0c, P6b, P10, P13, P14, P15, P25
+   * permissions: auto
+   */
+  start [shape="Mdiamond"]
+  setup_deps [label="setup_deps", shape="parallelogram", tool_command="cd ${WORKING_DIR} && npm install 2>&1 || pnpm install 2>&1 || yarn install 2>&1"]
+  capture_baseline [label="capture_baseline", read_only="true", shape="parallelogram", tool_command="cd ${WORKING_DIR} && (npx tsc --noEmit 2>&1 | grep -c 'error TS' > /tmp/baseline_ts_errors.txt || echo 0 > /tmp/baseline_ts_errors.txt) && (npx eslint src/ 2>&1 | grep -c 'error' > /tmp/baseline_lint_errors.txt || echo 0 > /tmp/baseline_lint_errors.txt)"]
+  // ========== PHASE 1: core ==========
+  impl_core [allowed_paths="src/", class="codergen", escalate_on="package.json,*.lock,*.config.*", label="implement core", max_visits="5", permission_mode="auto", thread_id="phase_1", timeout="30m"]
+  scope_check_core [class="review", label="Compare git diff against phase prompt. Flag files modified outside allowed_paths. Output STATUS: SUCCESS | FAIL.", read_only="true", shape="parallelogram", thread_id="phase_1"]
+  check_progress_core [label="check_progress", max_visits="3", read_only="true", shape="parallelogram", thread_id="phase_1", tool_command="cd ${WORKING_DIR} && [ $(git status --porcelain | wc -l) -gt 0 ] && echo 'STATUS: SUCCESS' || echo 'STATUS: FAIL'"]
+  verify_lint_core [label="verify_lint: BASELINE from cat baseline_lint_errors; CURRENT lint error count -le BASELINE", shape="parallelogram", thread_id="phase_1", tool_command="[ $(npx eslint src/ 2>&1 | grep -c error || echo 0) -le $(cat /tmp/baseline_lint_errors.txt 2>/dev/null || echo 0) ]"]
+  verify_types_core [label="verify_types: BASELINE from cat baseline_ts_errors; CURRENT TS error count -le BASELINE", thread_id="phase_1", tool_command="[ $(npx tsc --noEmit 2>&1 | grep -c error || echo 0) -le $(cat /tmp/baseline_ts_errors.txt 2>/dev/null || echo 0) ]"]
+  conformance_core [class="review", context_on_success="done=true", label="Review the implementation against the phase spec and PRD requirements. Check: correct files modified, API contracts match, no regressions. Output STATUS: SUCCESS | FAIL.", read_only="true", thread_id="phase_1", timeout="15m"]
+  test_core [label="test core", max_visits="5", retry_target="impl_core", shape="diamond"]
+  fix_core [allowed_paths="src/", class="codergen", escalate_on="package.json,*.lock,*.config.*", label="fix core", max_visits="5", permission_mode="auto", thread_id="phase_1", timeout="30m"]
+  audit [label="audit", read_only="true", shape="parallelogram", tool_command="cd ${WORKING_DIR} && (npx tsc --noEmit 2>&1 || true) && (npx eslint src/ --max-warnings=-1 2>&1 || true) && (npm test 2>&1 || true)"]
+  verify_typecheck [context_on_success="types_compile=true", label="verify_typecheck", max_visits="5", retry_target="fix_types", shape="parallelogram", timeout="30m", tool_command="cd ${WORKING_DIR} && npx tsc --noEmit"]
+  fix_types [allowed_paths="src/", class="codergen", escalate_on="package.json,*.lock,*.config.*", label="Fix ONLY type errors reported by tsc --noEmit", max_visits="5", permission_mode="auto", timeout="30m"]
+  verify_lint [context_on_success="lint_clean=true", label="verify_lint", max_visits="5", retry_target="fix_lint", shape="parallelogram", timeout="30m", tool_command="cd ${WORKING_DIR} && npx eslint src/ --max-warnings=-1"]
+  fix_lint [allowed_paths="src/", class="codergen", escalate_on="package.json,*.lock,*.config.*", label="Fix ONLY lint errors reported by eslint", max_visits="5", permission_mode="auto", timeout="30m"]
+  verify_tests [context_on_success="cli_contract=true,determinism=true,done=true,tests_pass=true,validation_rules=true", label="verify_tests", max_visits="5", retry_target="fix_tests", shape="parallelogram", timeout="30m", tool_command="cd ${WORKING_DIR} && npm test"]
+  fix_tests [allowed_paths="src/", class="codergen", escalate_on="package.json,*.lock,*.config.*", label="Fix ONLY failing tests reported by npm test", max_visits="5", permission_mode="auto", timeout="30m"]
+  regression_check [label="regression_check", shape="parallelogram", timeout="30m", tool_command="cd ${WORKING_DIR} && npx tsc --noEmit && npx eslint src/ --max-warnings=-1 && npm test"]
+  quality_review [class="review", label="Final quality review: verify all acceptance criteria met, no regressions, code is clean. Output STATUS: SUCCESS | FAIL.", read_only="true", timeout="15m"]
+  commit_and_push [label="commit_and_push", shape="parallelogram", timeout="120s", tool_command="cd ${WORKING_DIR} && BRANCH=\"attractor/snap-isolated-$(echo $ATTRACTOR_RUN_ID | cut -c1-8)\" && git checkout -B \"$BRANCH\" && git add -A && git -c user.name=attractor -c user.email=attractor@local commit -m \"feat: snap-isolated — attractor pipeline output\" --allow-empty && git push origin \"$BRANCH\" --force 2>&1 && echo \"Pushed branch: $BRANCH\""]
+  exit [label="exit", shape="Msquare"]
+  start -> setup_deps
+  setup_deps -> capture_baseline
+  capture_baseline -> impl_core
+  impl_core -> scope_check_core
+  scope_check_core -> check_progress_core
+  check_progress_core -> verify_lint_core
+  verify_lint_core -> verify_types_core
+  verify_types_core -> conformance_core
+  conformance_core -> test_core
+  test_core -> fix_core [condition="outcome=fail", label="fail"]
+  fix_core -> impl_core
+  test_core -> audit [condition="outcome=success", label="pass"]
+  audit -> verify_typecheck
+  verify_typecheck -> fix_types [condition="outcome=fail", label="fail"]
+  fix_types -> verify_typecheck
+  verify_typecheck -> verify_lint [condition="outcome=success", label="pass"]
+  verify_lint -> fix_lint [condition="outcome=fail", label="fail"]
+  fix_lint -> verify_lint
+  verify_lint -> verify_tests [condition="outcome=success", label="pass"]
+  verify_tests -> fix_tests [condition="outcome=fail", label="fail"]
+  fix_tests -> verify_tests
+  verify_tests -> regression_check [condition="outcome=success", label="pass"]
+  regression_check -> fix_types [condition="outcome=fail", label="fail"]
+  regression_check -> quality_review [condition="outcome=success", label="pass"]
+  quality_review -> fix_types [condition="outcome=fail", label="fail"]
+  regression_check -> setup_deps [loop_restart="true"]
+  quality_review -> commit_and_push [condition="outcome=success", label="pass"]
+  commit_and_push -> exit
+}

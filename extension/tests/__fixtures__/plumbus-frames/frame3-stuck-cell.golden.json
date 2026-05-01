@@ -1,0 +1,39 @@
+{
+  "context_keys": [
+    { "key": "artifact_phase", "writers": ["setup"], "readers": ["route_a"] }
+  ],
+  "diamond_routing": [
+    {
+      "diamond": "diamond_check",
+      "covered_states": [
+        {
+          "cell": { "artifact_phase": "init", "outcome": "fail" },
+          "matchingEdges": ["diamond_check->route_a"]
+        },
+        {
+          "cell": { "artifact_phase": "init", "outcome": "success" },
+          "matchingEdges": ["diamond_check->route_a", "diamond_check->route_b"]
+        },
+        {
+          "cell": { "artifact_phase": "init", "outcome": "unset" },
+          "matchingEdges": ["diamond_check->route_a"]
+        },
+        {
+          "cell": { "artifact_phase": "unset", "outcome": "success" },
+          "matchingEdges": ["diamond_check->route_b"]
+        }
+      ],
+      "stuck_states": [
+        {
+          "cell": { "artifact_phase": "unset", "outcome": "fail" },
+          "matchingEdges": []
+        },
+        {
+          "cell": { "artifact_phase": "unset", "outcome": "unset" },
+          "matchingEdges": []
+        }
+      ]
+    }
+  ],
+  "cycles": []
+}

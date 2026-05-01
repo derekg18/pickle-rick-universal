@@ -1,0 +1,55 @@
+{
+  "name": "LOA-618 regression positive",
+  "description": "Replayable detector fixture inspired by commit d51dda2b of gregory/loa-618-updated-appraisal-comparison-epic.",
+  "prd": "loa-618-prd.md",
+  "baseFiles": {
+    "prd.md": "# LOA-618 Fixture\n\n## Acceptance Criteria\n\nAC-FF-01 validates the happy path.\n",
+    "src/index.ts": "export const before = true;\n"
+  },
+  "headFiles": {
+    "prd.md": "# LOA-618 Fixture\n\n## Acceptance Criteria\n\nAC-FF-05 validates comparison endpoints:\n\n- GET /api/runs/{runId}/comparison requires feature flag coverage.\n- POST /api/runs/{runId}/retry-child-extraction requires feature flag coverage.\n- POST /api/runs/{runId}/override-comparison requires feature flag coverage.\n- DELETE /api/runs/{runId}/comparison requires feature flag coverage.\n\nExactly one of retry_child_extraction, create_updated_run, delete_comparison may fire for a single-field change.\n",
+    "src/RunController.ts": "@Controller('api/runs/:runId')\n@UseGuards(AuthGuard)\nexport class RunsController {\n  @Get('comparison')\n  @Roles('viewer')\n  getComparison() {\n    return this.service.getComparison();\n  }\n\n  @Post('retry-child-extraction')\n  @Roles('admin', 'ops')\n  retryChildExtraction() {\n    return this.service.retryChildExtraction();\n  }\n\n  @Post('override-comparison')\n  @Roles('admin')\n  overrideComparison() {\n    return this.service.createUpdatedRun();\n  }\n\n  @Delete('comparison')\n  deleteComparison() {\n    return this.service.deleteComparison();\n  }\n}\n",
+    "src/diff-codes.ts": "export const VALID_ACTIONS = [\n  'retry_child_extraction',\n  'create_updated_run',\n  'delete_comparison'\n] as const;\n",
+    "src/ComparisonPage.tsx": "interface ComparisonCardProps {\n  title: string;\n}\n\nfunction ComparisonCard(props: ComparisonCardProps) {\n  return <section>{props.title}</section>;\n}\n\nexport function ComparisonPage() {\n  return <ComparisonCard title=\"Run\" comparisonData={{ id: 'run-1' }} />;\n}\n"
+  },
+  "sessionArtifacts": {
+    "anatomy-park.json": {
+      "findings": [
+        {
+          "id": "loa-618-flag-gate-miss",
+          "severity": "High",
+          "message": "getComparison is reachable without the expected flag-gate replay coverage.",
+          "phase": "replay"
+        },
+        {
+          "id": "loa-618-pattern-replay-miss",
+          "severity": "Critical",
+          "message": "retryChildExtraction matches a known trap-door replay pattern without negative coverage.",
+          "phase": "replay"
+        },
+        {
+          "id": "loa-618-s3-key-invariant",
+          "severity": "High",
+          "message": "S3 key invariant is not enforced by a receiving-side negative test.",
+          "phase": "discovery"
+        }
+      ]
+    },
+    "szechuan-sauce.json": {
+      "findings": [
+        {
+          "id": "loa-618-continuation-plan-orphan",
+          "severity": "High",
+          "category": "hygiene",
+          "file": "continuation_plan.md",
+          "message": "Root continuation plan artifact escaped the implementation branch."
+        }
+      ]
+    },
+    "prd_refined.md": "AC-FF-05 ticket A\nAC-FF-05 ticket B\nAC-FF-05 ticket C\n"
+  },
+  "expected": {
+    "minimumMatchedIssuesAtHighOrAbove": 6,
+    "strictExitCode": 1
+  }
+}

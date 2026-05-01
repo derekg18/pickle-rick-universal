@@ -1,0 +1,20 @@
+{
+  "name": "Noise floor negative",
+  "description": "Clean merged epic fixture with only test coverage changes and no Citadel detector violations.",
+  "prd": "noise-floor-prd.md",
+  "baseFiles": {
+    "prd.md": "# Noise Floor PRD\n\n## Acceptance Criteria\n\nAC-NOISE-01 verifies the existing smoke workflow remains stable.\n",
+    "src/index.ts": "export function stable() {\n  return true;\n}\n"
+  },
+  "headFiles": {
+    "prd.md": "# Noise Floor PRD\n\n## Acceptance Criteria\n\nAC-NOISE-01 verifies the existing smoke workflow remains stable.\n",
+    "src/index.ts": "export function stable() {\n  return true;\n}\n",
+    "tests/index.test.ts": "test('stable workflow', () => {\n  expect(true).toBe(true);\n});\n"
+  },
+  "sessionArtifacts": {},
+  "expected": {
+    "maxLowFindingsExclusive": 5,
+    "maxHighFindings": 0,
+    "maxCriticalFindings": 0
+  }
+}

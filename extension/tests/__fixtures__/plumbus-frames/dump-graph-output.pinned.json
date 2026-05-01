@@ -1,0 +1,25 @@
+{
+  "nodes": [
+    { "id": "start" },
+    {
+      "id": "gate_api",
+      "class": "codergen",
+      "context_on_success": "artifact_api=seeded",
+      "max_visits": "3"
+    },
+    { "id": "diamond_api", "class": "diamond" },
+    { "id": "fix_impl", "class": "iterate", "max_visits": "5" },
+    { "id": "done" }
+  ],
+  "edges": [
+    { "source": "start", "target": "gate_api" },
+    { "source": "gate_api", "target": "diamond_api" },
+    {
+      "source": "diamond_api",
+      "target": "done",
+      "condition": "context.artifact_api=seeded"
+    },
+    { "source": "diamond_api", "target": "fix_impl" },
+    { "source": "fix_impl", "target": "gate_api" }
+  ]
+}

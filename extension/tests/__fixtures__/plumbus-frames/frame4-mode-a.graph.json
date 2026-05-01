@@ -1,0 +1,28 @@
+{
+  "nodes": [
+    { "id": "start" },
+    {
+      "id": "verify_routes",
+      "class": "codergen",
+      "tool_command": "bun packages/attractor/scripts/verify-controller-routes.ts"
+    },
+    { "id": "diamond_verify", "class": "diamond" },
+    { "id": "fix_routes", "max_visits": "3" },
+    { "id": "done" }
+  ],
+  "edges": [
+    { "source": "start", "target": "verify_routes" },
+    { "source": "verify_routes", "target": "diamond_verify" },
+    {
+      "source": "diamond_verify",
+      "target": "done",
+      "condition": "context.outcome=success"
+    },
+    {
+      "source": "diamond_verify",
+      "target": "fix_routes",
+      "condition": "context.outcome=fail"
+    },
+    { "source": "fix_routes", "target": "verify_routes" }
+  ]
+}

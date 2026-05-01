@@ -1,0 +1,14 @@
+{
+  "state": {
+    "active": true,
+    "tmux_mode": false
+  },
+  "expected_decision": "approve",
+  "expected_output": {
+    "decision": "approve"
+  },
+  "transcripts": [
+    "<promise>EXISTENCE_IS_PAIN</promise>",
+    "<promise>THE_CITADEL_APPROVES</promise>"
+  ]
+}

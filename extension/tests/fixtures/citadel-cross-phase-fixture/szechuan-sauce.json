@@ -1,0 +1,18 @@
+{
+  "findings": [
+    {
+      "id": "cross-phase-shared-id",
+      "severity": "High",
+      "message": "Szechuan Sauce found the same finding ID in a later phase.",
+      "principle": "DRY",
+      "evidence": "extension/src/services/citadel/audit-runner.ts:1"
+    },
+    {
+      "id": "szechuan-phase-medium",
+      "severity": "Medium",
+      "message": "Szechuan Sauce found report merge complexity.",
+      "principle": "KISS",
+      "evidence": "extension/tests/fixtures/citadel-cross-phase-fixture/szechuan-sauce.json:1"
+    }
+  ]
+}
