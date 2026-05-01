@@ -155,6 +155,13 @@ describe('install.sh Forward Fix F2: lock serialization', () => {
     );
   });
 
+  test('install.sh declares shared runtime and manifest paths', () => {
+    const src = readFileSync(INSTALL_SH, 'utf8');
+    assert.match(src, /DATA_ROOT="\$XDG_DATA_HOME\/pickle-rick"/);
+    assert.match(src, /RUNTIME_ROOT="\$DATA_ROOT\/runtime"/);
+    assert.match(src, /MANIFEST_FILE="\$DATA_ROOT\/install_manifest\.json"/);
+  });
+
   test('two simultaneous invocations serialize on the lock', async () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'install-lock-'));
     try {

@@ -1,0 +1,180 @@
+import { test, describe } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(__dirname, '..', '..');
+const INSTALL_SH = path.join(REPO_ROOT, 'install.sh');
+
+function makeFixture() {
+  const dir = mkdtempSync(path.join(tmpdir(), 'pickle-universal-install-'));
+  const home = path.join(dir, 'home');
+  const xdg = path.join(dir, 'xdg');
+  const bin = path.join(dir, 'bin');
+  mkdirSync(home, { recursive: true });
+  mkdirSync(xdg, { recursive: true });
+  mkdirSync(bin, { recursive: true });
+  for (const name of ['claude', 'codex', 'gemini', 'bun']) {
+    const shim = path.join(bin, name);
+    writeFileSync(shim, '#!/bin/sh\necho shim\n', { mode: 0o755 });
+  }
+  return { dir, home, xdg, bin };
+}
+
+function runInstall(fixture) {
+  return spawnSync('bash', [INSTALL_SH], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HOME: fixture.home,
+      XDG_DATA_HOME: fixture.xdg,
+      PICKLE_INSTALL_MODE: 'tarball',
+      PATH: `${fixture.bin}${path.delimiter}${process.env.PATH}`,
+      FORCE_COLOR: '0',
+    },
+  });
+}
+
+function readManifest(fixture) {
+  return JSON.parse(readFileSync(path.join(fixture.xdg, 'pickle-rick', 'install_manifest.json'), 'utf8'));
+}
+
+function writeJson(file, value) {
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, JSON.stringify(value, null, 2));
+}
+
+function settingsPath(fixture, host) {
+  return path.join(fixture.home, `.${host}`, 'settings.json');
+}
+
+describe('universal install.sh host adapters', () => {
+  test('installs shared runtime and all present hosts', () => {
+    const fixture = makeFixture();
+    try {
+      writeJson(settingsPath(fixture, 'claude'), { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'third-party' }] }] } });
+      mkdirSync(path.join(fixture.home, '.codex'), { recursive: true });
+      writeJson(settingsPath(fixture, 'gemini'), {});
+
+      const result = runInstall(fixture);
+
+      assert.equal(result.status, 0, result.stderr);
+      const manifest = readManifest(fixture);
+      assert.equal(manifest.runtime_root, path.join(fixture.xdg, 'pickle-rick', 'runtime'));
+      assert.equal(manifest.hosts.claude.status, 'installed');
+      assert.equal(manifest.hosts.codex.status, 'installed');
+      assert.equal(manifest.hosts.gemini.status, 'installed');
+      assert.equal(manifest.hosts.claude.command_count, 33);
+      assert.equal(manifest.hosts.codex.command_count, 33);
+      assert.equal(manifest.hosts.gemini.command_count, 33);
+
+      assert.equal(existsSync(path.join(fixture.xdg, 'pickle-rick', 'runtime', 'extension', 'bin', 'setup.js')), true);
+      assert.equal(existsSync(path.join(fixture.home, '.claude', 'pickle-rick', 'extension', 'hooks', 'dispatch.js')), true);
+      assert.equal(existsSync(path.join(fixture.home, '.codex', 'prompts', 'pickle-rick', 'pickle.md')), true);
+      assert.equal(existsSync(path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'commands', 'pickle.toml')), true);
+
+      const claudeSettings = JSON.parse(readFileSync(settingsPath(fixture, 'claude'), 'utf8'));
+      const stopCommands = claudeSettings.hooks.Stop.flatMap((group) => group.hooks.map((hook) => hook.command));
+      assert.ok(stopCommands.includes('third-party'));
+      assert.ok(stopCommands.includes('node $HOME/.claude/pickle-rick/extension/hooks/dispatch.js stop-hook'));
+      assert.equal(readdirSync(path.join(fixture.home, '.claude', 'backups')).length, 1);
+    } finally {
+      rmSync(fixture.dir, { recursive: true, force: true });
+    }
+  });
+
+  test('skips one missing host without blocking other hosts', () => {
+    const fixture = makeFixture();
+    try {
+      writeJson(settingsPath(fixture, 'claude'), {});
+      writeJson(settingsPath(fixture, 'gemini'), {});
+
+      const result = runInstall(fixture);
+
+      assert.equal(result.status, 0, result.stderr);
+      const manifest = readManifest(fixture);
+      assert.equal(manifest.hosts.claude.status, 'installed');
+      assert.equal(manifest.hosts.codex.status, 'skipped');
+      assert.equal(manifest.hosts.codex.reason, 'host root not found');
+      assert.equal(manifest.hosts.gemini.status, 'installed');
+    } finally {
+      rmSync(fixture.dir, { recursive: true, force: true });
+    }
+  });
+
+  test('records invalid host settings as a per-host error', () => {
+    const fixture = makeFixture();
+    try {
+      writeJson(settingsPath(fixture, 'claude'), {});
+      mkdirSync(path.join(fixture.home, '.codex'), { recursive: true });
+      mkdirSync(path.join(fixture.home, '.gemini'), { recursive: true });
+      writeFileSync(settingsPath(fixture, 'gemini'), '{not json');
+
+      const result = runInstall(fixture);
+
+      assert.equal(result.status, 0, result.stderr);
+      const manifest = readManifest(fixture);
+      assert.equal(manifest.hosts.claude.status, 'installed');
+      assert.equal(manifest.hosts.codex.status, 'installed');
+      assert.equal(manifest.hosts.gemini.status, 'error');
+      assert.equal(manifest.hosts.gemini.reason, 'settings.json is not valid JSON');
+      assert.equal(existsSync(path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick')), false);
+    } finally {
+      rmSync(fixture.dir, { recursive: true, force: true });
+    }
+  });
+
+  test('repeated installs are idempotent for Claude hooks and still create backups', () => {
+    const fixture = makeFixture();
+    try {
+      writeJson(settingsPath(fixture, 'claude'), {});
+      mkdirSync(path.join(fixture.home, '.codex'), { recursive: true });
+      writeJson(settingsPath(fixture, 'gemini'), {});
+
+      const first = runInstall(fixture);
+      const second = runInstall(fixture);
+
+      assert.equal(first.status, 0, first.stderr);
+      assert.equal(second.status, 0, second.stderr);
+      const claudeSettings = JSON.parse(readFileSync(settingsPath(fixture, 'claude'), 'utf8'));
+      const stopCommands = claudeSettings.hooks.Stop.flatMap((group) => group.hooks.map((hook) => hook.command));
+      const pickleStops = stopCommands.filter((command) => command === 'node $HOME/.claude/pickle-rick/extension/hooks/dispatch.js stop-hook');
+      assert.equal(pickleStops.length, 1);
+      const postCommands = claudeSettings.hooks.PostToolUse.flatMap((group) => group.hooks.map((hook) => hook.command));
+      assert.equal(postCommands.filter((command) => command === 'node $HOME/.claude/pickle-rick/extension/bin/log-commit.js').length, 1);
+      assert.ok(readdirSync(path.join(fixture.home, '.claude', 'backups')).length >= 2);
+      assert.equal(readManifest(fixture).hosts.claude.status, 'installed');
+    } finally {
+      rmSync(fixture.dir, { recursive: true, force: true });
+    }
+  });
+
+  test('backup captures original Claude settings before hook merge', () => {
+    const fixture = makeFixture();
+    try {
+      const original = { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'existing-stop' }] }] } };
+      writeJson(settingsPath(fixture, 'claude'), original);
+      writeJson(path.join(fixture.home, '.claude', 'pickle-rick', 'pickle_settings.json'), { custom_legacy_setting: true });
+
+      const result = runInstall(fixture);
+
+      assert.equal(result.status, 0, result.stderr);
+      const backupDir = path.join(fixture.home, '.claude', 'backups');
+      const backups = readdirSync(backupDir);
+      assert.equal(backups.length, 1);
+      assert.deepEqual(JSON.parse(readFileSync(path.join(backupDir, backups[0]), 'utf8')), original);
+      assert.deepEqual(readManifest(fixture).hosts.claude.backups.map((file) => path.basename(file)), backups);
+      assert.equal(
+        JSON.parse(readFileSync(path.join(fixture.xdg, 'pickle-rick', 'runtime', 'pickle_settings.json'), 'utf8')).custom_legacy_setting,
+        true,
+      );
+    } finally {
+      rmSync(fixture.dir, { recursive: true, force: true });
+    }
+  });
+});

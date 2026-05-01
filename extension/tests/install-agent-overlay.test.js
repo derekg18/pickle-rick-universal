@@ -74,8 +74,8 @@ function writeSourceAndLegacy(scriptDir, homeDir, filename, sourceContent, legac
 
 test('install-agent-overlay: real install targets .pickle-managed managed agents dir', () => {
   const src = readFileSync(INSTALL_SH, 'utf8');
-  assert.match(src, /MANAGED_AGENTS_DIR="\$AGENTS_DIR\/\.pickle-managed"/);
-  assert.match(src, /rsync -a "\$SCRIPT_DIR\/\.claude\/agents\/" "\$MANAGED_AGENTS_DIR\/"/);
+  assert.match(src, /managed_agents_dir="\$agents_dir\/\.pickle-managed"/);
+  assert.match(src, /rsync -a "\$AGENTS_SOURCE_DIR\/" "\$managed_agents_dir\/"/);
   assert.match(src, /Legacy agent conflict preserved/);
 });
 
