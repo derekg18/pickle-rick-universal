@@ -143,7 +143,7 @@ export function classifyFailure(
   if (metricResult === null) return 'tool_failure';
 
   // Check if this iteration improved
-  const history = mvState.convergence.history;
+  const history = mvState.convergence?.history ?? [];
   const lastAccepted = [...history].reverse().find(h => h.action === 'accept');
   const previousScore = lastAccepted ? lastAccepted.score : mvState.baseline_score;
   const classification = compareMetric(
@@ -167,6 +167,7 @@ export function classifyFailure(
   // 4. approach_exhaustion — tried many things, none stick
   if (
     mvState.failed_approaches.length >= 3 &&
+    mvState.convergence &&
     mvState.convergence.stall_counter >= mvState.convergence.stall_limit / 2
   ) {
     return 'approach_exhaustion';
@@ -183,11 +184,12 @@ export function classifyFailure(
 }
 
 export function isConverged(state: MicroverseSessionState): boolean {
-  if (state.convergence.stall_counter >= state.convergence.stall_limit) return true;
+  if (state.convergence && state.convergence.stall_counter >= state.convergence.stall_limit) return true;
   // Early exit: if a convergence_target is set and score has reached (or passed) it, we're done.
   // Direction-aware: for 'lower', score <= target; for 'higher', score >= target.
   if (state.convergence_target != null) {
-    const lastAccepted = [...state.convergence.history].reverse().find(h => h.action === 'accept');
+    const history = state.convergence?.history ?? [];
+    const lastAccepted = [...history].reverse().find(h => h.action === 'accept');
     const currentScore = lastAccepted ? lastAccepted.score : state.baseline_score;
     const direction = state.key_metric.direction ?? 'higher';
     if (direction === 'lower'
@@ -217,6 +219,7 @@ export function readMicroverseState(
     parsed.approach_exhaustion_fired ??= false;
     parsed.iteration_regressions ??= 0;
     parsed.gate_regression_threshold_warning_emitted ??= false;
+    parsed.convergence_mode ??= 'metric';
     return parsed;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
