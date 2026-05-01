@@ -18,6 +18,7 @@ import {
 } from '../services/backend-spawn.js';
 import { readRecoverableJsonObject } from '../services/microverse-state.js';
 import { extractAssistantContent } from '../services/classifier-utils.js';
+import { assertAdaptersFresh } from '../services/adapter-preflight.js';
 export { extractAssistantContent } from '../services/classifier-utils.js';
 
 const sm = new StateManager();
@@ -616,6 +617,7 @@ export async function runIteration(sessionDir: string, iterationNum: number, ext
     ?? maxTurns;
   const logFile = path.join(sessionDir, `tmux_iteration_${iterationNum}.log`);
   const backend = resolveBackend(state);
+  assertAdaptersFresh();
   // Meeseeks review passes run on a cheaper model when the backend accepts
   // Claude-family default model names.
   const iterationModel = templateName === 'meeseeks.md' && meeseeksModel && backendSupportsDefaultClaudeModels(backend)

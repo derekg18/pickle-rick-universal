@@ -27,6 +27,7 @@ import { scrubForbiddenWorkerTokens } from '../services/promise-tokens.js';
 import { StateManager, writeActivityEntry } from '../services/state-manager.js';
 import { readRecoverableJsonObject } from '../services/microverse-state.js';
 import { loadAgentMd, type AgentModel } from '../services/agent-md-loader.js';
+import { assertAdaptersFresh } from '../services/adapter-preflight.js';
 
 const TIER_MODEL_MAP: Record<string, string> = {
   trivial: 'haiku',
@@ -540,6 +541,7 @@ function buildValidationFailureReasons(checks: {
 
 export async function runWorkerProcess(ctx: WorkerProcessContext): Promise<{ exitCode: number; isSuccess: boolean }> {
   const { args, ticketPath, ticketId, sessionRoot, sessionLog, sessionLogPath, sessionWorkingDir } = ctx;
+  assertAdaptersFresh();
   const invocation = buildWorkerInvocation(args.backend, {
     prompt: ctx.prompt,
     addDirs: [getExtensionRoot(), getDataRoot(), sessionWorkingDir, ticketPath],

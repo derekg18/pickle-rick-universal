@@ -1,0 +1,129 @@
+import * as fs from 'fs';
+import * as path from 'path';
+import { BACKENDS } from '../types/index.js';
+export const REQUIRED_PICKLE_COMMANDS = [
+    'pickle',
+    'pickle-tmux',
+    'pickle-prd',
+    'pickle-refine-prd',
+    'anatomy-park',
+    'szechuan-sauce',
+    'pickle-pipeline',
+];
+export const PICKLE_COMMAND_SPECS = [
+    { name: 'add-to-pickle-jar', description: 'Queue a PRD for later batch execution.', hosts: BACKENDS },
+    { name: 'anatomy-park', description: 'Run the Anatomy Park subsystem review loop.', hosts: BACKENDS },
+    { name: 'attract', description: 'Submit a DOT pipeline to the attractor server.', hosts: BACKENDS },
+    { name: 'citadel', description: 'Run post-implementation conformance audit.', hosts: BACKENDS },
+    { name: 'council-of-ricks', description: 'Run the Council of Ricks stack review.', hosts: BACKENDS },
+    { name: 'cronenberg', description: 'Route a task through the meta-command decision matrix.', hosts: BACKENDS },
+    { name: 'disable-pickle', description: 'Disable Pickle Rick hooks.', hosts: BACKENDS },
+    { name: 'eat-pickle', description: 'Cancel the current Pickle Rick loop.', hosts: BACKENDS },
+    { name: 'enable-pickle', description: 'Enable Pickle Rick hooks.', hosts: BACKENDS },
+    { name: 'help-pickle', description: 'Show Pickle Rick command help.', hosts: BACKENDS },
+    { name: 'meeseeks', description: 'Deprecated review command retained for compatibility.', hosts: BACKENDS },
+    { name: 'meeseeks-zellij', description: 'Deprecated Zellij review command retained for compatibility.', hosts: BACKENDS },
+    { name: 'pickle', description: 'Start the interactive Pickle Rick autonomous coding loop.', hosts: BACKENDS },
+    { name: 'pickle-debate', description: 'Run a multi-agent implementation debate.', hosts: BACKENDS },
+    { name: 'pickle-dot', description: 'Convert a PRD to a DOT digraph.', hosts: BACKENDS },
+    { name: 'pickle-dot-patterns', description: 'Inspect DOT builder patterns.', hosts: BACKENDS },
+    { name: 'pickle-jar-open', description: 'Run queued jar tasks.', hosts: BACKENDS },
+    { name: 'pickle-metrics', description: 'Show Pickle Rick metrics.', hosts: BACKENDS },
+    { name: 'pickle-microverse', description: 'Run a Microverse convergence loop.', hosts: BACKENDS },
+    { name: 'pickle-pipeline', description: 'Run build, review, and cleanup pipeline.', hosts: BACKENDS },
+    { name: 'pickle-prd', description: 'Draft a PRD for a requested feature.', hosts: BACKENDS },
+    { name: 'pickle-refine-prd', description: 'Refine a PRD and decompose it into tickets.', hosts: BACKENDS },
+    { name: 'pickle-retry', description: 'Retry a failed ticket.', hosts: BACKENDS },
+    { name: 'pickle-standup', description: 'Summarize recent Pickle Rick activity.', hosts: BACKENDS },
+    { name: 'pickle-status', description: 'Show current Pickle Rick session status.', hosts: BACKENDS },
+    { name: 'pickle-tmux', description: 'Launch the tmux-backed Pickle Rick loop.', hosts: BACKENDS },
+    { name: 'pickle-zellij', description: 'Launch the Zellij-backed Pickle Rick loop.', hosts: BACKENDS },
+    { name: 'plumbus', description: 'Run Plumbus audit helpers.', hosts: BACKENDS },
+    { name: 'portal-gun', description: 'Run migration inventory and execution workflow.', hosts: BACKENDS },
+    { name: 'project-mayhem', description: 'Run chaos engineering workflow.', hosts: BACKENDS },
+    { name: 'send-to-morty', description: 'Internal implementation worker prompt.', hosts: BACKENDS },
+    { name: 'send-to-morty-review', description: 'Internal review worker prompt.', hosts: BACKENDS },
+    { name: 'szechuan-sauce', description: 'Run the Szechuan Sauce code-quality loop.', hosts: BACKENDS },
+];
+const SPEC_BY_NAME = new Map(PICKLE_COMMAND_SPECS.map((spec) => [spec.name, spec]));
+export function canonicalCommandNames() {
+    return PICKLE_COMMAND_SPECS.map((spec) => spec.name);
+}
+export function getCommandSpec(name) {
+    return SPEC_BY_NAME.get(name) ?? null;
+}
+export function commandsForHost(host) {
+    return PICKLE_COMMAND_SPECS.filter((spec) => spec.hosts.includes(host));
+}
+export function renderGeminiToml(commandName, commandMarkdownPath) {
+    const spec = getCommandSpec(commandName);
+    const description = spec?.description ?? `Pickle Rick /${commandName}`;
+    return [
+        `description = ${JSON.stringify(description)}`,
+        'prompt = """',
+        'Read the Pickle Rick command source at:',
+        commandMarkdownPath,
+        '',
+        "Then execute it with the user's arguments:",
+        '{{args}}',
+        '"""',
+        '',
+    ].join('\n');
+}
+export function validateCommandRegistry(commandDir) {
+    const commandFiles = fs.existsSync(commandDir)
+        ? fs.readdirSync(commandDir)
+            .filter((file) => file.endsWith('.md'))
+            .map((file) => path.basename(file, '.md'))
+            .sort()
+        : [];
+    const registryCommands = canonicalCommandNames().sort();
+    const fileSet = new Set(commandFiles);
+    const registrySet = new Set(registryCommands);
+    const seen = new Set();
+    const duplicateRegistryCommands = [];
+    for (const command of canonicalCommandNames()) {
+        if (seen.has(command))
+            duplicateRegistryCommands.push(command);
+        seen.add(command);
+    }
+    return {
+        commandFiles,
+        registryCommands,
+        missingFiles: registryCommands.filter((command) => !fileSet.has(command)),
+        unregisteredFiles: commandFiles.filter((command) => !registrySet.has(command)),
+        duplicateRegistryCommands,
+        missingRequiredCommands: REQUIRED_PICKLE_COMMANDS.filter((command) => !registrySet.has(command)),
+    };
+}
+export function assertCommandRegistryParity(commandDir) {
+    const result = validateCommandRegistry(commandDir);
+    const failures = [
+        result.missingFiles.length ? `missing command files: ${result.missingFiles.join(', ')}` : null,
+        result.unregisteredFiles.length ? `unregistered command files: ${result.unregisteredFiles.join(', ')}` : null,
+        result.duplicateRegistryCommands.length ? `duplicate registry commands: ${result.duplicateRegistryCommands.join(', ')}` : null,
+        result.missingRequiredCommands.length ? `missing required commands: ${result.missingRequiredCommands.join(', ')}` : null,
+    ].filter((msg) => msg !== null);
+    if (failures.length > 0) {
+        throw new Error(`Pickle command registry parity failed: ${failures.join('; ')}`);
+    }
+}
+export function expectedAdapterRelativePaths(host) {
+    const commands = commandsForHost(host).map((spec) => spec.name);
+    if (host === 'claude') {
+        return commands.map((name) => `commands/${name}.md`);
+    }
+    if (host === 'codex') {
+        return [
+            'pickle-rick/persona.md',
+            'pickle-rick/runtime_root',
+            ...commands.map((name) => `prompts/pickle-rick/${name}.md`),
+        ];
+    }
+    return [
+        'extensions/pickle-rick/persona.md',
+        'extensions/pickle-rick/runtime_root',
+        ...commands.map((name) => `extensions/pickle-rick/commands-md/${name}.md`),
+        ...commands.map((name) => `extensions/pickle-rick/commands/${name}.toml`),
+    ];
+}

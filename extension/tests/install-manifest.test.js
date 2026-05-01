@@ -63,15 +63,22 @@ test('install manifest records package, roots, checksums, host status, counts, f
     assert.equal(manifest.hosts.claude.command_count, 33);
     assert.equal(manifest.hosts.claude.agent_count, 14);
     assert.ok(manifest.hosts.claude.files_written.some((file) => file.endsWith('/commands/pickle.md')));
+    assert.match(manifest.hosts.claude.file_checksums[
+      manifest.hosts.claude.files_written.find((file) => file.endsWith('/commands/pickle.md'))
+    ], /^[a-f0-9]{64}$/);
     assert.equal(manifest.hosts.claude.reason, null);
 
     assert.equal(manifest.hosts.codex.status, 'installed');
     assert.equal(manifest.hosts.codex.command_count, 33);
     assert.ok(manifest.hosts.codex.files_written.some((file) => file.endsWith('/prompts/pickle-rick/pickle.md')));
+    assert.match(manifest.hosts.codex.file_checksums[
+      manifest.hosts.codex.files_written.find((file) => file.endsWith('/prompts/pickle-rick/pickle.md'))
+    ], /^[a-f0-9]{64}$/);
 
     assert.equal(manifest.hosts.gemini.status, 'skipped');
     assert.equal(manifest.hosts.gemini.reason, 'host root not found');
     assert.deepEqual(manifest.hosts.gemini.files_written, []);
+    assert.deepEqual(manifest.hosts.gemini.file_checksums, {});
   } finally {
     rmSync(fixture.dir, { recursive: true, force: true });
   }

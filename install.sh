@@ -115,6 +115,43 @@ sha256_file() {
   fi
 }
 
+checksums_json_from_files() {
+  local files_json="$1"
+  node --input-type=module -e '
+    import fs from "fs";
+    import crypto from "crypto";
+    const files = JSON.parse(process.argv[1]);
+    const out = {};
+    for (const file of files) {
+      try {
+        if (!fs.existsSync(file) || !fs.statSync(file).isFile()) continue;
+        out[file] = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+      } catch {
+        // Ignore paths that disappear during manifest collection.
+      }
+    }
+    process.stdout.write(JSON.stringify(out));
+  ' "$files_json"
+}
+
+assert_command_registry_parity() {
+  node --input-type=module -e '
+    import { pathToFileURL } from "url";
+    const mod = await import(pathToFileURL(process.argv[1]).href);
+    mod.assertCommandRegistryParity(process.argv[2]);
+  ' "$SCRIPT_DIR/extension/services/host-command-registry.js" "$COMMANDS_SOURCE_DIR"
+}
+
+render_gemini_toml() {
+  local command_name="$1"
+  local command_target="$2"
+  node --input-type=module -e '
+    import { pathToFileURL } from "url";
+    const mod = await import(pathToFileURL(process.argv[1]).href);
+    process.stdout.write(mod.renderGeminiToml(process.argv[2], process.argv[3]));
+  ' "$SCRIPT_DIR/extension/services/host-command-registry.js" "$command_name" "$command_target"
+}
+
 write_host_json() {
   local file="$1"
   local host="$2"
@@ -125,7 +162,8 @@ write_host_json() {
   local agents="$7"
   local files_json="$8"
   local backups_json="$9"
-  local reason="${10}"
+  local checksums_json="${10}"
+  local reason="${11}"
   jq -n \
     --arg host "$host" \
     --arg status "$status" \
@@ -136,6 +174,7 @@ write_host_json() {
     --argjson agents "$agents" \
     --argjson files "$files_json" \
     --argjson backups "$backups_json" \
+    --argjson checksums "$checksums_json" \
     '{
       host: $host,
       status: $status,
@@ -144,10 +183,13 @@ write_host_json() {
       command_count: $commands,
       agent_count: $agents,
       files_written: $files,
+      file_checksums: $checksums,
       backups: $backups,
       reason: (if $reason == "" then null else $reason end)
     }' > "$file"
 }
+
+assert_command_registry_parity
 
 echo "📦 Installing shared runtime to $RUNTIME_ROOT..."
 mkdir -p "$RUNTIME_ROOT" "$DATA_ROOT/activity" "$RUNTIME_ROOT/activity" "$RUNTIME_ROOT/templates"
@@ -260,17 +302,17 @@ install_claude_adapter() {
   local backup_path=""
 
   if [ ! -d "$claude_root" ]; then
-    write_host_json "$host_json" "claude" "skipped" "$claude_root" "$settings_file" 0 0 "[]" "[]" "host root not found"
+    write_host_json "$host_json" "claude" "skipped" "$claude_root" "$settings_file" 0 0 "[]" "[]" "{}" "host root not found"
     echo "ℹ️  Claude host not found — skipping Claude adapter"
     return 0
   fi
   if [ ! -f "$settings_file" ]; then
-    write_host_json "$host_json" "claude" "skipped" "$claude_root" "$settings_file" 0 0 "[]" "[]" "settings.json not found"
+    write_host_json "$host_json" "claude" "skipped" "$claude_root" "$settings_file" 0 0 "[]" "[]" "{}" "settings.json not found"
     echo "ℹ️  Claude settings not found — skipping Claude adapter"
     return 0
   fi
   if ! jq . "$settings_file" >/dev/null 2>&1; then
-    write_host_json "$host_json" "claude" "error" "$claude_root" "$settings_file" 0 0 "[]" "[]" "settings.json is not valid JSON"
+    write_host_json "$host_json" "claude" "error" "$claude_root" "$settings_file" 0 0 "[]" "[]" "{}" "settings.json is not valid JSON"
     echo "❌ Claude settings.json is not valid JSON — Claude adapter skipped"
     return 0
   fi
@@ -401,7 +443,7 @@ install_claude_adapter() {
 
   # --- VALIDATE result ---
   if ! jq . "$settings_file" >/dev/null 2>&1; then
-    write_host_json "$host_json" "claude" "error" "$claude_root" "$settings_file" "$COMMAND_SOURCE_COUNT" "$AGENT_SOURCE_COUNT" "[]" "$(printf '%s\n' "$backup_path" | jq -R . | jq -s .)" "settings.json corrupted after merge; restore from backup"
+    write_host_json "$host_json" "claude" "error" "$claude_root" "$settings_file" "$COMMAND_SOURCE_COUNT" "$AGENT_SOURCE_COUNT" "[]" "$(printf '%s\n' "$backup_path" | jq -R . | jq -s .)" "{}" "settings.json corrupted after merge; restore from backup"
     echo "❌ Claude settings.json corrupted after merge — restore from backup"
     return 0
   fi
@@ -414,7 +456,9 @@ install_claude_adapter() {
   files_json="$(jq -n --argjson a "$files_json" --argjson b "$agent_files_json" '$a + $b')"
   files_json="$(jq -n --arg legacy "$LEGACY_CLAUDE_RUNTIME_ROOT" --argjson files "$files_json" '$files + [$legacy]')"
   backups_json="$(printf '%s\n' "$backup_path" | jq -R . | jq -s .)"
-  write_host_json "$host_json" "claude" "installed" "$claude_root" "$settings_file" "$COMMAND_SOURCE_COUNT" "$AGENT_SOURCE_COUNT" "$files_json" "$backups_json" ""
+  local checksums_json
+  checksums_json="$(checksums_json_from_files "$files_json")"
+  write_host_json "$host_json" "claude" "installed" "$claude_root" "$settings_file" "$COMMAND_SOURCE_COUNT" "$AGENT_SOURCE_COUNT" "$files_json" "$backups_json" "$checksums_json" ""
 }
 
 install_codex_adapter() {
@@ -424,7 +468,7 @@ install_codex_adapter() {
   local prompts_dir="$codex_root/prompts/pickle-rick"
 
   if [ ! -d "$codex_root" ]; then
-    write_host_json "$host_json" "codex" "skipped" "$codex_root" "" 0 0 "[]" "[]" "host root not found"
+    write_host_json "$host_json" "codex" "skipped" "$codex_root" "" 0 0 "[]" "[]" "{}" "host root not found"
     echo "ℹ️  Codex host not found — skipping Codex adapter"
     return 0
   fi
@@ -440,7 +484,9 @@ install_codex_adapter() {
   files_json="$(json_array_from_find "$prompts_dir")"
   adapter_files_json="$(json_array_from_find "$adapter_root")"
   files_json="$(jq -n --argjson a "$files_json" --argjson b "$adapter_files_json" '$a + $b')"
-  write_host_json "$host_json" "codex" "installed" "$codex_root" "" "$COMMAND_SOURCE_COUNT" 0 "$files_json" "[]" ""
+  local checksums_json
+  checksums_json="$(checksums_json_from_files "$files_json")"
+  write_host_json "$host_json" "codex" "installed" "$codex_root" "" "$COMMAND_SOURCE_COUNT" 0 "$files_json" "[]" "$checksums_json" ""
 }
 
 install_gemini_adapter() {
@@ -452,12 +498,12 @@ install_gemini_adapter() {
   local command_toml_dir="$adapter_root/commands"
 
   if [ ! -d "$gemini_root" ]; then
-    write_host_json "$host_json" "gemini" "skipped" "$gemini_root" "$settings_file" 0 0 "[]" "[]" "host root not found"
+    write_host_json "$host_json" "gemini" "skipped" "$gemini_root" "$settings_file" 0 0 "[]" "[]" "{}" "host root not found"
     echo "ℹ️  Gemini host not found — skipping Gemini adapter"
     return 0
   fi
   if [ -f "$settings_file" ] && ! jq . "$settings_file" >/dev/null 2>&1; then
-    write_host_json "$host_json" "gemini" "error" "$gemini_root" "$settings_file" 0 0 "[]" "[]" "settings.json is not valid JSON"
+    write_host_json "$host_json" "gemini" "error" "$gemini_root" "$settings_file" 0 0 "[]" "[]" "{}" "settings.json is not valid JSON"
     echo "❌ Gemini settings.json is not valid JSON — Gemini adapter skipped"
     return 0
   fi
@@ -471,16 +517,7 @@ install_gemini_adapter() {
     [ -e "$command_md" ] || continue
     command_name="$(basename "$command_md" .md)"
     command_target="$command_md_dir/$(basename "$command_md")"
-    cat > "$command_toml_dir/$command_name.toml" <<EOF
-description = "Pickle Rick /$command_name"
-prompt = """
-Read the Pickle Rick command source at:
-$command_target
-
-Then execute it with the user's arguments:
-{{args}}
-"""
-EOF
+    render_gemini_toml "$command_name" "$command_target" > "$command_toml_dir/$command_name.toml"
   done
   echo "✅ Gemini adapter installed to $adapter_root/"
 
@@ -491,7 +528,9 @@ EOF
   toml_files_json="$(json_array_from_find "$command_toml_dir")"
   adapter_files_json="$(json_array_from_find "$adapter_root")"
   files_json="$(jq -n --argjson a "$files_json" --argjson b "$toml_files_json" --argjson c "$adapter_files_json" '$a + $b + $c | unique')"
-  write_host_json "$host_json" "gemini" "installed" "$gemini_root" "$settings_file" "$COMMAND_SOURCE_COUNT" 0 "$files_json" "[]" ""
+  local checksums_json
+  checksums_json="$(checksums_json_from_files "$files_json")"
+  write_host_json "$host_json" "gemini" "installed" "$gemini_root" "$settings_file" "$COMMAND_SOURCE_COUNT" 0 "$files_json" "[]" "$checksums_json" ""
 }
 
 HOST_TMPDIR="$(mktemp -d)"
