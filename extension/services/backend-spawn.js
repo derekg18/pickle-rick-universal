@@ -62,6 +62,30 @@ export function buildWorkerInvocation(backend, opts) {
 export function buildManagerInvocation(backend, opts) {
     return backendAdapters[backend].buildManagerInvocation(opts);
 }
+export function backendSupportsTeamsMode(backend) {
+    return backendAdapters[backend].supportsTeamsMode();
+}
+export function backendSupportsDefaultClaudeModels(backend) {
+    return backendAdapters[backend].supportsDefaultClaudeModels();
+}
+export function backendSupportsCommitPendingProbe(backend) {
+    return backendAdapters[backend].supportsCommitPendingProbe();
+}
+export function backendSupportsManagerErrorRelaunch(backend) {
+    return backendAdapters[backend].supportsManagerErrorRelaunch();
+}
+export function backendSupportsWorkerRoutingHeuristic(backend) {
+    return backendAdapters[backend].supportsWorkerRoutingHeuristic();
+}
+export function backendWorkerPromptAddendum(backend, doneToken) {
+    return backendAdapters[backend].workerPromptAddendum(doneToken);
+}
+export function backendMissingCliHint(backend) {
+    return backendAdapters[backend].missingCliHint();
+}
+export function backendSetupVersionCheck(backend) {
+    return backendAdapters[backend].setupVersionCheck();
+}
 function buildClaudeWorkerInvocation(opts) {
     const args = ['--dangerously-skip-permissions'];
     for (const dir of opts.addDirs) {
@@ -232,24 +256,56 @@ function existsSilently(p) {
         return false;
     }
 }
+function codexWorkerPromptAddendum(doneToken) {
+    return `
+
+**Codex-specific contract additions:**
+- You MUST run \`git add <files>\` and \`git commit -m "<msg>"\` before emitting \`<promise>${doneToken}</promise>\`. The orchestrator does NOT commit for you.
+- If an acceptance criterion contradicts reality (e.g. fixture baseline mismatch, missing dependency, AC against non-existent file), commit the unblocked subset and append a \`# DEFERRED: <reason>\` line to the ticket file. DO NOT loop indefinitely trying to satisfy a contradicted AC.
+- DO NOT explore harness internals (\`pickle.md\`, \`setup.js\`, \`send-to-morty.md\`, \`mux-runner.js\`). Those are orchestrator-level. Your scope is exclusively the files listed in the ticket's "Files to modify" / "Files to create" sections.`;
+}
 export const backendAdapters = {
     claude: {
         backend: 'claude',
         buildWorkerInvocation: buildClaudeWorkerInvocation,
         buildManagerInvocation: buildClaudeManagerInvocation,
         buildJudgeInvocation: buildClaudeJudgeInvocation,
+        supportsTeamsMode: () => true,
+        supportsDefaultClaudeModels: () => true,
+        supportsCommitPendingProbe: () => false,
+        supportsManagerErrorRelaunch: () => false,
+        supportsWorkerRoutingHeuristic: () => false,
+        workerPromptAddendum: () => null,
+        missingCliHint: () => 'claude CLI not found on PATH — install claude and re-run /pickle-jar-open',
+        setupVersionCheck: () => null,
     },
     codex: {
         backend: 'codex',
         buildWorkerInvocation: (opts) => buildCodexInvocation(opts.prompt, opts.addDirs, opts.model, opts.effort),
         buildManagerInvocation: (opts) => buildCodexInvocation(opts.prompt, opts.addDirs, opts.model),
         buildJudgeInvocation: buildCodexJudgeInvocation,
+        supportsTeamsMode: () => false,
+        supportsDefaultClaudeModels: () => false,
+        supportsCommitPendingProbe: () => true,
+        supportsManagerErrorRelaunch: () => true,
+        supportsWorkerRoutingHeuristic: () => true,
+        workerPromptAddendum: codexWorkerPromptAddendum,
+        missingCliHint: () => 'codex CLI not found on PATH — install codex and re-run /pickle-jar-open, or re-jar these tasks with --backend claude',
+        setupVersionCheck: () => ({ command: 'codex', packageEngine: 'codex' }),
     },
     gemini: {
         backend: 'gemini',
         buildWorkerInvocation: buildGeminiWorkerInvocation,
         buildManagerInvocation: buildGeminiManagerInvocation,
         buildJudgeInvocation: buildGeminiJudgeInvocation,
+        supportsTeamsMode: () => false,
+        supportsDefaultClaudeModels: () => false,
+        supportsCommitPendingProbe: () => false,
+        supportsManagerErrorRelaunch: () => false,
+        supportsWorkerRoutingHeuristic: () => false,
+        workerPromptAddendum: () => null,
+        missingCliHint: () => 'gemini CLI not found on PATH — install gemini and re-run /pickle-jar-open, or re-jar these tasks with --backend claude',
+        setupVersionCheck: () => null,
     },
 };
 export function backendEnvOverrides(backend) {

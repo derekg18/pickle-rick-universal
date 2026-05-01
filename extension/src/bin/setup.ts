@@ -11,6 +11,7 @@ import { State, Defaults, LockError, SessionMapEntry, Backend, BACKENDS, STATE_M
 import { StateManager, assertSchemaVersionDeployParity, SchemaVersionDeployDriftError } from '../services/state-manager.js';
 import { logActivity, pruneActivity } from '../services/activity-logger.js';
 import { readRecoverableJsonObject } from '../services/microverse-state.js';
+import { backendSetupVersionCheck, backendSupportsTeamsMode } from '../services/backend-spawn.js';
 
 const sm = new StateManager();
 
@@ -321,44 +322,45 @@ export function codexVersionSatisfiesRange(versionOutput: string, range: string)
   return compareVersion(actual, minimum) >= 0 && compareVersion(actual, caretUpperBound(minimum)) < 0;
 }
 
-function readCodexEngineRange(extensionRoot: string): string {
+function readBackendEngineRange(versionCheck: { command: string; packageEngine: string }, extensionRoot: string): string {
   const configuredPath = path.join(extensionRoot, 'extension', 'package.json');
   const packageJsonPath = fs.existsSync(configuredPath)
     ? configuredPath
     : path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../package.json');
-  let packageJson: { engines?: { codex?: unknown } };
+  let packageJson: { engines?: Record<string, unknown> };
   try {
-    packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8')) as { engines?: { codex?: unknown } };
+    packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8')) as { engines?: Record<string, unknown> };
   } catch (err) {
-    die(`Could not read extension/package.json for codex backend smoke check: ${safeErrorMessage(err)}`);
+    die(`Could not read extension/package.json for ${versionCheck.command} backend smoke check: ${safeErrorMessage(err)}`);
   }
 
-  const range = packageJson.engines?.codex;
+  const range = packageJson.engines?.[versionCheck.packageEngine];
   if (typeof range !== 'string' || range.trim() === '') {
-    die('extension/package.json is missing engines.codex for codex backend smoke check');
+    die(`extension/package.json is missing engines.${versionCheck.packageEngine} for ${versionCheck.command} backend smoke check`);
   }
   return range.trim();
 }
 
-function readCodexVersion(): string {
+function readBackendCliVersion(versionCheck: { command: string; packageEngine: string }): string {
   try {
-    return execFileSync('codex', ['--version'], {
+    return execFileSync(versionCheck.command, ['--version'], {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 10_000,
     }).trim();
   } catch (err) {
-    die(`codex --version failed during codex backend smoke check: ${safeErrorMessage(err)}`);
+    die(`${versionCheck.command} --version failed during ${versionCheck.command} backend smoke check: ${safeErrorMessage(err)}`);
   }
 }
 
 export function resolveCodexVersionForSetup(backend: Backend | undefined, extensionRoot = getExtensionRoot()): string | null {
-  if ((backend || 'claude') !== 'codex') return null;
+  const versionCheck = backendSetupVersionCheck(backend || 'claude');
+  if (!versionCheck) return null;
 
-  const versionOutput = readCodexVersion();
-  const range = readCodexEngineRange(extensionRoot);
+  const versionOutput = readBackendCliVersion(versionCheck);
+  const range = readBackendEngineRange(versionCheck, extensionRoot);
   if (!codexVersionSatisfiesRange(versionOutput, range)) {
-    die(`codex version mismatch: codex --version returned "${versionOutput}", expected engines.codex "${range}"`);
+    die(`${versionCheck.command} version mismatch: ${versionCheck.command} --version returned "${versionOutput}", expected engines.${versionCheck.packageEngine} "${range}"`);
   }
   return versionOutput;
 }
@@ -456,7 +458,7 @@ const ARG_HANDLERS: Record<string, ArgHandler> = {
   },
   '--backend': (config, args, index) => {
     const value = args[index + 1];
-    if (!value || value.startsWith('--')) die('--backend requires a value (claude|codex)');
+    if (!value || value.startsWith('--')) die(`--backend requires a value (${BACKENDS.join('|')})`);
     if (!(BACKENDS as readonly string[]).includes(value)) {
       die(`--backend must be one of: ${BACKENDS.join(', ')}`);
     }
@@ -555,8 +557,9 @@ function validateCommandLine(config: SetupArgs) {
   if (config.explicitFlags.has('max-parallel') && !config.teamsMode) {
     die('--max-parallel requires --teams');
   }
-  if (config.teamsMode && config.backend === 'codex') {
-    die('--teams is incompatible with --backend codex (claude backend only)');
+  const backend = config.backend || 'claude';
+  if (config.teamsMode && !backendSupportsTeamsMode(backend)) {
+    die(`--teams is incompatible with --backend ${backend} (claude backend only)`);
   }
 }
 
@@ -569,8 +572,9 @@ function validateResumeCompatibility(preState: State, config: SetupArgs) {
 
   const willHaveTeams = config.explicitFlags.has('teams') ? config.teamsMode : preState.teams_mode === true;
   const willHaveBackend = config.explicitFlags.has('backend') ? config.backend : preState.backend;
-  if (willHaveTeams && willHaveBackend === 'codex') {
-    die('--teams is incompatible with --backend codex (claude backend only). Resume would create a conflicting state — refusing to continue.');
+  const backend = willHaveBackend || 'claude';
+  if (willHaveTeams && !backendSupportsTeamsMode(backend)) {
+    die(`--teams is incompatible with --backend ${backend} (claude backend only). Resume would create a conflicting state — refusing to continue.`);
   }
 }
 

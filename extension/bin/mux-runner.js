@@ -8,7 +8,7 @@ import { PromiseTokens, hasToken, VALID_STEPS, Defaults, FALSE_EPIC_THRESHOLD, h
 import { StateManager, safeDeactivate, writeActivityEntry, writeTimeoutStub, assertSchemaVersionDeployParity, SchemaVersionDeployDriftError } from '../services/state-manager.js';
 import { logActivity } from '../services/activity-logger.js';
 import { loadSettings, initCircuitBreaker, canExecute, detectProgress, extractErrorSignature, recordIterationResult, resetCircuitBreaker } from '../services/circuit-breaker.js';
-import { buildManagerInvocation, resolveBackend, backendEnvOverrides } from '../services/backend-spawn.js';
+import { backendSupportsCommitPendingProbe, backendSupportsDefaultClaudeModels, backendSupportsManagerErrorRelaunch, buildManagerInvocation, resolveBackend, backendEnvOverrides, } from '../services/backend-spawn.js';
 import { readRecoverableJsonObject } from '../services/microverse-state.js';
 import { extractAssistantContent } from '../services/classifier-utils.js';
 export { extractAssistantContent } from '../services/classifier-utils.js';
@@ -541,9 +541,9 @@ export async function runIteration(sessionDir, iterationNum, extensionRoot, mees
         ?? maxTurns;
     const logFile = path.join(sessionDir, `tmux_iteration_${iterationNum}.log`);
     const backend = resolveBackend(state);
-    // meeseeks review passes run on a cheaper model (default: sonnet on claude).
-    // Codex exposes a different model vocabulary, so only apply the override for claude.
-    const iterationModel = templateName === 'meeseeks.md' && meeseeksModel && backend === 'claude'
+    // Meeseeks review passes run on a cheaper model when the backend accepts
+    // Claude-family default model names.
+    const iterationModel = templateName === 'meeseeks.md' && meeseeksModel && backendSupportsDefaultClaudeModels(backend)
         ? meeseeksModel
         : undefined;
     const invocation = buildManagerInvocation(backend, {
@@ -752,7 +752,7 @@ After committing, emit \`<promise>${PromiseTokens.WORKER_DONE}</promise>\` as us
  */
 export function commitPendingProbe(input) {
     const { sessionDir, workingDir, backend, iteration, lastProgressIteration, threshold, pid, log } = input;
-    if (backend !== 'codex')
+    if (!backendSupportsCommitPendingProbe(backend))
         return 'skipped:not-codex';
     const stagnation = iteration - lastProgressIteration;
     if (stagnation < threshold)
@@ -1134,7 +1134,7 @@ function readPostIterationState(state, ctx) {
 }
 export function evaluateCodexManagerRelaunch(state, tickets, cbState) {
     const backend = resolveBackend(state);
-    if (backend !== 'codex') {
+    if (!backendSupportsManagerErrorRelaunch(backend)) {
         return { shouldRelaunch: false, pendingCount: 0, nextRelaunchCount: 0, reason: 'not_codex' };
     }
     // AC-LPB-03: Hard wall-clock cap — relaunching after the time budget is

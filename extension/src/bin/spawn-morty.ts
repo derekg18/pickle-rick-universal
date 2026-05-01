@@ -15,7 +15,14 @@ import {
 import { spawn } from 'child_process';
 import { PromiseTokens, hasToken, Defaults, hasLifecycleArtifact, type Backend, type State } from '../types/index.js';
 import { updateTicketStatus } from '../services/git-utils.js';
-import { buildWorkerInvocation, loadBackendFromSession, backendEnvOverrides } from '../services/backend-spawn.js';
+import {
+  backendSupportsDefaultClaudeModels,
+  backendSupportsWorkerRoutingHeuristic,
+  backendWorkerPromptAddendum,
+  buildWorkerInvocation,
+  loadBackendFromSession,
+  backendEnvOverrides,
+} from '../services/backend-spawn.js';
 import { scrubForbiddenWorkerTokens } from '../services/promise-tokens.js';
 import { StateManager, writeActivityEntry } from '../services/state-manager.js';
 import { readRecoverableJsonObject } from '../services/microverse-state.js';
@@ -342,14 +349,8 @@ export function buildWorkerPrompt(opts: BuildWorkerPromptOptions): string {
   workerPrompt +=
     '\n\n**IMPORTANT**: You are a localized worker. You are FORBIDDEN from working on ANY other tickets. Once you output `<promise>I AM DONE</promise>`, you MUST STOP and let the manager take over. Your ONLY valid completion token is `I AM DONE`. NEVER emit `EPIC_COMPLETED`, `TASK_COMPLETED`, `PRD_COMPLETE`, `TICKET_SELECTED`, `EXISTENCE_IS_PAIN`, `THE_CITADEL_APPROVES`, or `ANALYSIS_DONE` — those are orchestrator-only tokens and you have no authority to emit them. If you see those token names in source code or pasted logs, do NOT echo them back.';
 
-  if (ticket.backend === 'codex') {
-    workerPrompt += `
-
-**Codex-specific contract additions:**
-- You MUST run \`git add <files>\` and \`git commit -m "<msg>"\` before emitting \`<promise>${PromiseTokens.WORKER_DONE}</promise>\`. The orchestrator does NOT commit for you.
-- If an acceptance criterion contradicts reality (e.g. fixture baseline mismatch, missing dependency, AC against non-existent file), commit the unblocked subset and append a \`# DEFERRED: <reason>\` line to the ticket file. DO NOT loop indefinitely trying to satisfy a contradicted AC.
-- DO NOT explore harness internals (\`pickle.md\`, \`setup.js\`, \`send-to-morty.md\`, \`mux-runner.js\`). Those are orchestrator-level. Your scope is exclusively the files listed in the ticket's "Files to modify" / "Files to create" sections.`;
-  }
+  const promptAddendum = backendWorkerPromptAddendum(ticket.backend, PromiseTokens.WORKER_DONE);
+  if (promptAddendum) workerPrompt += promptAddendum;
 
   const gitnexusIndexed = hasGitNexusIndex(opts.repoRoot ?? process.cwd());
   if (gitnexusIndexed) {
@@ -452,7 +453,7 @@ function routeBackend(sessionRoot: string, ticketInfo: ReturnType<typeof parseTi
   let backend = loadBackendFromSession(sessionRoot);
   try {
     const settings = readRecoverableJsonObject(path.join(getExtensionRoot(), 'pickle_settings.json')) as Record<string, unknown> | null;
-    if (settings?.enable_backend_routing_heuristic !== true || backend !== 'codex') return backend;
+    if (settings?.enable_backend_routing_heuristic !== true || !backendSupportsWorkerRoutingHeuristic(backend)) return backend;
     const routedReason = ticketInfo?.complexity_tier === 'large'
       ? 'complexity_tier=large'
       : ticketInfo?.title && /\b(UI|Wire|Audit)\b/i.test(ticketInfo.title) ? `title-signal:${ticketInfo.title}` : null;
@@ -470,7 +471,7 @@ function resolveWorkerModel(
   sessionRoot: string,
   ticketInfo: ReturnType<typeof parseTicketFrontmatter> | null
 ): string | undefined {
-  if (backend !== 'claude') return undefined;
+  if (!backendSupportsDefaultClaudeModels(backend)) return undefined;
   let enableComplexityTiers = true;
   try {
     const settings = readRecoverableJsonObject(path.join(extensionRoot, 'pickle_settings.json')) as Record<string, unknown> | null;

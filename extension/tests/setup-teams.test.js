@@ -86,6 +86,21 @@ test('setup --teams --backend codex: rejects with non-zero exit', () => {
     assert.match(r.stderr, /codex|claude/i);
 });
 
+test('setup --teams --backend gemini: rejects with non-zero exit', () => {
+    const r = runSetupExpectFail(['--teams', '--backend', 'gemini', '--task', 'gemini-conflict']);
+    assert.notEqual(r.code, 0, 'expected non-zero exit');
+    assert.match(r.stderr, /gemini|claude/i);
+});
+
+test('setup --backend gemini without --teams: writes gemini backend to state.json', () => {
+    const sessionPath = runSetup(['--backend', 'gemini', '--task', 'gemini-valid']);
+    try {
+        const state = JSON.parse(fs.readFileSync(path.join(sessionPath, 'state.json'), 'utf-8'));
+        assert.equal(state.backend, 'gemini');
+        assert.ok(!state.teams_mode, 'teams_mode should be undefined or false');
+    } finally { cleanup(sessionPath); }
+});
+
 test('setup without --teams: teams_mode is falsy in state.json', () => {
     const sessionPath = runSetup(['--task', 'default-off']);
     try {

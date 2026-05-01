@@ -8,7 +8,7 @@ import { printMinimalPanel, Style, getExtensionRoot, getDataRoot, getJarRoot, ge
 import { StateManager, safeDeactivate } from '../services/state-manager.js';
 import { Defaults } from '../types/index.js';
 import { logActivity } from '../services/activity-logger.js';
-import { buildManagerInvocation, resolveBackend, backendEnvOverrides } from '../services/backend-spawn.js';
+import { backendMissingCliHint, buildManagerInvocation, resolveBackend, backendEnvOverrides } from '../services/backend-spawn.js';
 import { readRecoverableJsonObject } from '../services/microverse-state.js';
 const sm = new StateManager();
 // Tracks the currently-running task's session dir and subprocess so signal
@@ -180,10 +180,7 @@ async function runTask(sessionDir, repoCwd, extensionRoot) {
                 // permanently fail the task: leave its status untouched so a future
                 // jar-open run succeeds once the CLI is installed. Print a clear
                 // install hint routed to the backend that was attempted.
-                const hint = backend === 'claude'
-                    ? `claude CLI not found on PATH — install claude and re-run /pickle-jar-open`
-                    : `${backend} CLI not found on PATH — install ${backend} and re-run /pickle-jar-open, or re-jar these tasks with --backend claude`;
-                console.error(`${Style.RED}${hint}${Style.RESET}`);
+                console.error(`${Style.RED}${backendMissingCliHint(backend)}${Style.RESET}`);
                 resolve({ ok: false, enoent: true, backend });
                 return;
             }

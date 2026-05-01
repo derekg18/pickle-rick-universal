@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { Defaults } from '../types/index.js';
-import { resolveBackend, buildJudgeInvocation, buildWorkerInvocation, backendEnvOverrides, } from '../services/backend-spawn.js';
+import { resolveBackend, buildJudgeInvocation, buildWorkerInvocation, backendEnvOverrides, backendSupportsDefaultClaudeModels, } from '../services/backend-spawn.js';
 import { readMicroverseState, readRecoverableJsonObject, writeMicroverseState, recordIteration as stateRecordIteration, recordStall, recordFailedApproach, isConverged, compareMetric, classifyFailure, } from '../services/microverse-state.js';
 import { getHeadSha, resetToSha, isWorkingTreeDirty } from '../services/git-utils.js';
 import { writeStateFile, getExtensionRoot, isoCompactStamp, sleep, Style, formatTime, formatLocalDateKey, printMinimalPanel, safeErrorMessage, ensureMonitorWindow, collectTickets, } from '../services/pickle-utils.js';
@@ -477,11 +477,9 @@ export function extractScore(output) {
     return null;
 }
 export function measureLlmMetric(goal, timeoutSeconds, cwd, judgeModel, history, prdPath, judgeContextPath, backend = 'claude') {
-    // Codex uses a different model vocabulary than claude. The default
-    // DEFAULT_JUDGE_MODEL ('claude-sonnet-4-6') is meaningless to `codex exec`,
-    // so when routing through codex we omit the -m flag and let codex pick.
-    const usingClaudeDefault = backend === 'claude';
-    const model = judgeModel || (usingClaudeDefault ? DEFAULT_JUDGE_MODEL : undefined);
+    // Only backends that accept Claude-family model names receive the default
+    // judge model; other backends omit -m and use their own default.
+    const model = judgeModel || (backendSupportsDefaultClaudeModels(backend) ? DEFAULT_JUDGE_MODEL : undefined);
     const timeout = Math.max(timeoutSeconds, DEFAULT_JUDGE_TIMEOUT);
     const userPrompt = buildJudgePrompt(goal, cwd, history, prdPath, judgeContextPath);
     // buildJudgeInvocation enforces read-only sandboxing for BOTH backends:

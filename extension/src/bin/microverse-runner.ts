@@ -9,6 +9,7 @@ import {
   buildJudgeInvocation,
   buildWorkerInvocation,
   backendEnvOverrides,
+  backendSupportsDefaultClaudeModels,
 } from '../services/backend-spawn.js';
 import {
   readMicroverseState,
@@ -753,11 +754,9 @@ export function measureLlmMetric(
   judgeContextPath?: string,
   backend: Backend = 'claude',
 ): { raw: string; score: number } | null {
-  // Codex uses a different model vocabulary than claude. The default
-  // DEFAULT_JUDGE_MODEL ('claude-sonnet-4-6') is meaningless to `codex exec`,
-  // so when routing through codex we omit the -m flag and let codex pick.
-  const usingClaudeDefault = backend === 'claude';
-  const model = judgeModel || (usingClaudeDefault ? DEFAULT_JUDGE_MODEL : undefined);
+  // Only backends that accept Claude-family model names receive the default
+  // judge model; other backends omit -m and use their own default.
+  const model = judgeModel || (backendSupportsDefaultClaudeModels(backend) ? DEFAULT_JUDGE_MODEL : undefined);
   const timeout = Math.max(timeoutSeconds, DEFAULT_JUDGE_TIMEOUT);
   const userPrompt = buildJudgePrompt(goal, cwd, history, prdPath, judgeContextPath);
 
