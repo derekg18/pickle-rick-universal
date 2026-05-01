@@ -135,17 +135,44 @@ export function runCmd(cmd, options = {}) {
         return stdout.trim();
     }
 }
+export const LEGACY_CLAUDE_RUNTIME_ROOT = path.join(os.homedir(), '.claude/pickle-rick');
+export function getHostNeutralRuntimeRoot() {
+    const xdgDataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local/share');
+    return path.join(xdgDataHome, 'pickle-rick', 'runtime');
+}
 /**
- * Returns the pickle-rick **package root** — `~/.claude/pickle-rick` — which
- * holds `pickle_settings.json`, `persona.md`, `szechuan-sauce-*-principles.md`,
- * `debug.log`, `templates/`, and the `extension/` code tree as a subdirectory.
+ * Returns the pickle-rick runtime/package root. The root holds
+ * `pickle_settings.json`, `persona.md`, `templates/`, and the `extension/` code
+ * tree as a subdirectory.
+ *
+ * Resolution order:
+ *   1. PICKLE_RICK_ROOT (canonical host-neutral explicit override)
+ *   2. PICKLE_RUNTIME_ROOT / PICKLE_EXTENSION_ROOT / EXTENSION_DIR
+ *   3. XDG-style runtime install: `${XDG_DATA_HOME:-~/.local/share}/pickle-rick/runtime`
+ *      when present on disk
+ *   4. Legacy Claude install shim: `~/.claude/pickle-rick`
  *
  * To reach the compiled JS (hooks/, services/, bin/), callers must join
- * `'extension'` themselves: `path.join(getExtensionRoot(), 'extension', 'bin', 'xxx.js')`.
- * The name is historical — it predates the `extension/` subdirectory layout.
+ * `'extension'` themselves: `path.join(getRuntimeRoot(), 'extension', 'bin', 'xxx.js')`.
+ * `getExtensionRoot()` remains as a compatibility alias for older call sites.
  */
+export function getRuntimeRoot() {
+    if (process.env.PICKLE_RICK_ROOT)
+        return process.env.PICKLE_RICK_ROOT;
+    if (process.env.PICKLE_RUNTIME_ROOT)
+        return process.env.PICKLE_RUNTIME_ROOT;
+    if (process.env.PICKLE_EXTENSION_ROOT)
+        return process.env.PICKLE_EXTENSION_ROOT;
+    if (process.env.EXTENSION_DIR)
+        return process.env.EXTENSION_DIR;
+    const hostNeutralRoot = getHostNeutralRuntimeRoot();
+    if (fs.existsSync(hostNeutralRoot))
+        return hostNeutralRoot;
+    return LEGACY_CLAUDE_RUNTIME_ROOT;
+}
+/** Historical name for `getRuntimeRoot()`. */
 export function getExtensionRoot() {
-    return process.env.EXTENSION_DIR || path.join(os.homedir(), '.claude/pickle-rick');
+    return getRuntimeRoot();
 }
 /**
  * Root directory for pickle data that must NOT live under ~/.claude (Claude Code
@@ -170,11 +197,28 @@ export function getDataRoot() {
         return process.env.PICKLE_DATA_DIR;
     const extDir = process.env.EXTENSION_DIR;
     if (extDir) {
-        const canonicalExtDir = path.join(os.homedir(), '.claude/pickle-rick');
-        if (path.resolve(extDir) !== path.resolve(canonicalExtDir))
+        if (path.resolve(extDir) !== path.resolve(LEGACY_CLAUDE_RUNTIME_ROOT))
             return extDir;
     }
     return path.join(os.homedir(), '.local/share/pickle-rick');
+}
+export function getSessionsRoot() {
+    return path.join(getDataRoot(), 'sessions');
+}
+export function getJarRoot() {
+    return path.join(getDataRoot(), 'jar');
+}
+export function getWorktreesRoot() {
+    return path.join(getDataRoot(), 'worktrees');
+}
+export function getActivityRoot() {
+    return path.join(getDataRoot(), 'activity');
+}
+export function getMetricsCachePath() {
+    return path.join(getDataRoot(), 'metrics-cache.json');
+}
+export function getCurrentSessionsMapPath() {
+    return path.join(getDataRoot(), 'current_sessions.json');
 }
 export function statusSymbol(status) {
     const s = (status || '').toLowerCase().replace(/^["']|["']$/g, '');
@@ -639,8 +683,7 @@ function selectScannedSessionPath(sessionPaths, cwd, requireActive) {
 // eslint-disable-next-line complexity -- resolver preserves map fallback and active-session scan precedence in one place
 export function findSessionPathForCwd(cwd, options = {}) {
     const { requireActive = false } = options;
-    const dataRoot = getDataRoot();
-    const sessionsMapPath = path.join(dataRoot, 'current_sessions.json');
+    const sessionsMapPath = getCurrentSessionsMapPath();
     let mappedFallback = '';
     try {
         const map = readRecoverableJsonObject(sessionsMapPath);
@@ -667,7 +710,7 @@ export function findSessionPathForCwd(cwd, options = {}) {
     catch {
         // Fall back to scanning session state below.
     }
-    const sessionsDir = path.join(dataRoot, 'sessions');
+    const sessionsDir = getSessionsRoot();
     let entries;
     try {
         entries = fs.readdirSync(sessionsDir);

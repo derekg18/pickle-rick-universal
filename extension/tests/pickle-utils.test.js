@@ -14,8 +14,17 @@ import {
     resolveSessionPath,
     pruneOldSessions,
     extractFrontmatter,
+    getRuntimeRoot,
+    getHostNeutralRuntimeRoot,
+    LEGACY_CLAUDE_RUNTIME_ROOT,
     getExtensionRoot,
     getDataRoot,
+    getSessionsRoot,
+    getJarRoot,
+    getWorktreesRoot,
+    getActivityRoot,
+    getMetricsCachePath,
+    getCurrentSessionsMapPath,
     markTicketDone,
     markTicketSkipped,
     safeErrorMessage,
@@ -40,27 +49,92 @@ test('safeErrorMessage: coerces undefined to string', () => {
     assert.equal(safeErrorMessage(undefined), 'undefined');
 });
 
-// --- getExtensionRoot ---
+// --- getRuntimeRoot / getExtensionRoot ---
 
-test('getExtensionRoot: uses EXTENSION_DIR env if set', () => {
-    const saved = process.env.EXTENSION_DIR;
+function withCleanRuntimeEnv(fn) {
+    const savedPickleRoot = process.env.PICKLE_RICK_ROOT;
+    const savedRuntimeRoot = process.env.PICKLE_RUNTIME_ROOT;
+    const savedExtensionRoot = process.env.PICKLE_EXTENSION_ROOT;
+    const savedExt = process.env.EXTENSION_DIR;
+    const savedXdgData = process.env.XDG_DATA_HOME;
     try {
-        process.env.EXTENSION_DIR = '/custom/path';
-        assert.equal(getExtensionRoot(), '/custom/path');
+        delete process.env.PICKLE_RICK_ROOT;
+        delete process.env.PICKLE_RUNTIME_ROOT;
+        delete process.env.PICKLE_EXTENSION_ROOT;
+        delete process.env.EXTENSION_DIR;
+        delete process.env.XDG_DATA_HOME;
+        fn();
     } finally {
-        if (saved === undefined) delete process.env.EXTENSION_DIR;
-        else process.env.EXTENSION_DIR = saved;
+        if (savedPickleRoot === undefined) delete process.env.PICKLE_RICK_ROOT;
+        else process.env.PICKLE_RICK_ROOT = savedPickleRoot;
+        if (savedRuntimeRoot === undefined) delete process.env.PICKLE_RUNTIME_ROOT;
+        else process.env.PICKLE_RUNTIME_ROOT = savedRuntimeRoot;
+        if (savedExtensionRoot === undefined) delete process.env.PICKLE_EXTENSION_ROOT;
+        else process.env.PICKLE_EXTENSION_ROOT = savedExtensionRoot;
+        if (savedExt === undefined) delete process.env.EXTENSION_DIR;
+        else process.env.EXTENSION_DIR = savedExt;
+        if (savedXdgData === undefined) delete process.env.XDG_DATA_HOME;
+        else process.env.XDG_DATA_HOME = savedXdgData;
     }
+}
+
+test('getRuntimeRoot: PICKLE_RICK_ROOT is the canonical override', () => {
+    withCleanRuntimeEnv(() => {
+        process.env.PICKLE_RICK_ROOT = '/runtime/pickle-root';
+        process.env.PICKLE_RUNTIME_ROOT = '/runtime/secondary';
+        process.env.PICKLE_EXTENSION_ROOT = '/runtime/extension-root';
+        process.env.EXTENSION_DIR = '/runtime/extension-dir';
+        assert.equal(getRuntimeRoot(), '/runtime/pickle-root');
+        assert.equal(getExtensionRoot(), '/runtime/pickle-root');
+    });
 });
 
-test('getExtensionRoot: defaults to ~/.claude/pickle-rick', () => {
-    const saved = process.env.EXTENSION_DIR;
-    try {
-        delete process.env.EXTENSION_DIR;
-        assert.equal(getExtensionRoot(), path.join(os.homedir(), '.claude/pickle-rick'));
-    } finally {
-        if (saved !== undefined) process.env.EXTENSION_DIR = saved;
-    }
+test('getRuntimeRoot: explicit runtime/extension env precedence is host-neutral before legacy EXTENSION_DIR', () => {
+    withCleanRuntimeEnv(() => {
+        process.env.PICKLE_RUNTIME_ROOT = '/runtime/root';
+        process.env.PICKLE_EXTENSION_ROOT = '/runtime/extension-root';
+        process.env.EXTENSION_DIR = '/runtime/extension-dir';
+        assert.equal(getRuntimeRoot(), '/runtime/root');
+    });
+
+    withCleanRuntimeEnv(() => {
+        process.env.PICKLE_EXTENSION_ROOT = '/runtime/extension-root';
+        process.env.EXTENSION_DIR = '/runtime/extension-dir';
+        assert.equal(getRuntimeRoot(), '/runtime/extension-root');
+    });
+
+    withCleanRuntimeEnv(() => {
+        process.env.EXTENSION_DIR = '/runtime/extension-dir';
+        assert.equal(getRuntimeRoot(), '/runtime/extension-dir');
+    });
+});
+
+test('getRuntimeRoot: uses existing XDG-style runtime before legacy Claude shim', () => {
+    withCleanRuntimeEnv(() => {
+        const dataHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-xdg-runtime-'));
+        try {
+            process.env.XDG_DATA_HOME = dataHome;
+            const runtimeRoot = path.join(dataHome, 'pickle-rick', 'runtime');
+            fs.mkdirSync(runtimeRoot, { recursive: true });
+            assert.equal(getHostNeutralRuntimeRoot(), runtimeRoot);
+            assert.equal(getRuntimeRoot(), runtimeRoot);
+        } finally {
+            fs.rmSync(dataHome, { recursive: true, force: true });
+        }
+    });
+});
+
+test('getRuntimeRoot: falls back to legacy Claude shim when host-neutral runtime is absent', () => {
+    withCleanRuntimeEnv(() => {
+        const dataHome = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-empty-xdg-'));
+        try {
+            process.env.XDG_DATA_HOME = dataHome;
+            assert.equal(getRuntimeRoot(), LEGACY_CLAUDE_RUNTIME_ROOT);
+            assert.equal(getExtensionRoot(), LEGACY_CLAUDE_RUNTIME_ROOT);
+        } finally {
+            fs.rmSync(dataHome, { recursive: true, force: true });
+        }
+    });
 });
 
 // --- getDataRoot ---
@@ -113,7 +187,7 @@ test('getDataRoot: EXTENSION_DIR=canonical install path is IGNORED (production)'
     // hook subprocess. Before the fix, getDataRoot returned that install path,
     // so hooks read sessions from the install dir instead of ~/.local/share/pickle-rick.
     withCleanDataEnv(() => {
-        process.env.EXTENSION_DIR = path.join(os.homedir(), '.claude/pickle-rick');
+        process.env.EXTENSION_DIR = LEGACY_CLAUDE_RUNTIME_ROOT;
         assert.equal(getDataRoot(), path.join(os.homedir(), '.local/share/pickle-rick'));
     });
 });
@@ -121,6 +195,18 @@ test('getDataRoot: EXTENSION_DIR=canonical install path is IGNORED (production)'
 test('getDataRoot: defaults to ~/.local/share/pickle-rick when nothing set', () => {
     withCleanDataEnv(() => {
         assert.equal(getDataRoot(), path.join(os.homedir(), '.local/share/pickle-rick'));
+    });
+});
+
+test('shared data root helpers: all runtime artifacts resolve below getDataRoot', () => {
+    withCleanDataEnv(() => {
+        process.env.PICKLE_DATA_ROOT = '/shared/pickle-data';
+        assert.equal(getSessionsRoot(), '/shared/pickle-data/sessions');
+        assert.equal(getJarRoot(), '/shared/pickle-data/jar');
+        assert.equal(getWorktreesRoot(), '/shared/pickle-data/worktrees');
+        assert.equal(getActivityRoot(), '/shared/pickle-data/activity');
+        assert.equal(getMetricsCachePath(), '/shared/pickle-data/metrics-cache.json');
+        assert.equal(getCurrentSessionsMapPath(), '/shared/pickle-data/current_sessions.json');
     });
 });
 

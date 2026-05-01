@@ -1,8 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { formatLocalDateKey, getDataRoot, safeErrorMessage } from './pickle-utils.js';
+import { formatLocalDateKey, getActivityRoot, safeErrorMessage } from './pickle-utils.js';
 export function getActivityDir() {
-    return path.join(getDataRoot(), 'activity');
+    return getActivityRoot();
 }
 const MAX_BUFFER = 100;
 const pendingBuffer = [];

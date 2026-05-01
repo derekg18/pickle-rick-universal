@@ -2,7 +2,7 @@
 import * as path from 'path';
 import * as os from 'os';
 import { scanSessionFiles, scanGitRepos, buildReport, formatNumber, shortenSlug, } from '../services/metrics-utils.js';
-import { printMinimalPanel, Style, formatLocalDateKey, getDataRoot, } from '../services/pickle-utils.js';
+import { printMinimalPanel, Style, formatLocalDateKey, getMetricsCachePath, } from '../services/pickle-utils.js';
 function parseExactLocalDate(dateStr) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr))
         return null;
@@ -285,7 +285,7 @@ function main() {
     const { since, until } = computeDateRange(args);
     const projectsDir = process.env.CLAUDE_PROJECTS_DIR || path.join(os.homedir(), '.claude', 'projects');
     const repoRoot = process.env.METRICS_REPO_ROOT || path.join(os.homedir(), 'loanlight');
-    const cachePath = path.join(getDataRoot(), 'metrics-cache.json');
+    const cachePath = getMetricsCachePath();
     const tokens = scanSessionFiles(projectsDir, since, until, cachePath);
     const loc = scanGitRepos(repoRoot, since, until);
     const grouping = args.weekly ? 'weekly' : 'daily';

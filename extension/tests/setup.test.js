@@ -147,6 +147,30 @@ test('setup CLI: fresh tmux PRD session persists prd_path and start_commit in st
     }
 });
 
+test('setup CLI: SESSION_ROOT resolves under shared data root when runtime root is separate', () => {
+    const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-setup-shared-data-'));
+    const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-setup-runtime-'));
+
+    try {
+        const output = runSetupWithEnv(['--task', 'shared data session root'], {
+            PICKLE_RICK_ROOT: runtimeRoot,
+            PICKLE_DATA_ROOT: dataRoot,
+        });
+        const match = output.match(/SESSION_ROOT=(.+)/);
+        assert.ok(match, `SESSION_ROOT not found in output:\n${output}`);
+
+        const sessionRoot = match[1].trim();
+        assert.equal(path.dirname(sessionRoot), path.join(dataRoot, 'sessions'));
+        assert.equal(fs.existsSync(path.join(sessionRoot, 'state.json')), true);
+
+        const sessionMap = JSON.parse(fs.readFileSync(path.join(dataRoot, 'current_sessions.json'), 'utf-8'));
+        assert.equal(sessionMap[process.cwd()].sessionPath, sessionRoot);
+    } finally {
+        fs.rmSync(dataRoot, { recursive: true, force: true });
+        fs.rmSync(runtimeRoot, { recursive: true, force: true });
+    }
+});
+
 test('setup initializeNewSession: session id uses local day, not UTC day', () => {
     const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-setup-local-day-data-'));
     const previousDataRoot = process.env.PICKLE_DATA_ROOT;

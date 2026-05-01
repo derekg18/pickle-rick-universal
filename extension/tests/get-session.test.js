@@ -6,22 +6,21 @@ import * as path from 'node:path';
 import { getSessionPath } from '../bin/get-session.js';
 
 /**
- * All tests use EXTENSION_DIR to isolate from the real ~/.claude/pickle-rick/.
- * A temp dir stands in as the extension root; current_sessions.json is
- * created (or not) inside that temp dir as each test requires.
+ * All tests use PICKLE_DATA_ROOT to isolate current_sessions.json and sessions
+ * from the real host-neutral data root.
  */
 
-function withExtensionDir(fn) {
+function withDataRoot(fn) {
     const tmpDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-gs-')));
-    const saved = process.env.EXTENSION_DIR;
-    process.env.EXTENSION_DIR = tmpDir;
+    const saved = process.env.PICKLE_DATA_ROOT;
+    process.env.PICKLE_DATA_ROOT = tmpDir;
     try {
         return fn(tmpDir);
     } finally {
         if (saved === undefined) {
-            delete process.env.EXTENSION_DIR;
+            delete process.env.PICKLE_DATA_ROOT;
         } else {
-            process.env.EXTENSION_DIR = saved;
+            process.env.PICKLE_DATA_ROOT = saved;
         }
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
@@ -30,7 +29,7 @@ function withExtensionDir(fn) {
 // --- No sessions map ---
 
 test('getSessionPath: returns null when no sessions map exists', () => {
-    withExtensionDir(() => {
+    withDataRoot(() => {
         // No current_sessions.json created — dir is empty
         const result = getSessionPath('/some/cwd');
         assert.equal(result, null);
@@ -40,7 +39,7 @@ test('getSessionPath: returns null when no sessions map exists', () => {
 // --- cwd not in map ---
 
 test('getSessionPath: returns null when cwd is not in map', () => {
-    withExtensionDir((tmpDir) => {
+    withDataRoot((tmpDir) => {
         fs.writeFileSync(
             path.join(tmpDir, 'current_sessions.json'),
             JSON.stringify({ '/other/cwd': '/some/session' })
@@ -53,7 +52,7 @@ test('getSessionPath: returns null when cwd is not in map', () => {
 // --- session path does not exist on disk ---
 
 test('getSessionPath: returns null when mapped session dir does not exist', () => {
-    withExtensionDir((tmpDir) => {
+    withDataRoot((tmpDir) => {
         const fakeCwd = '/tmp/pickle-gs-fake-cwd';
         const missingSession = '/tmp/nonexistent-session-dir-xyz-abc';
         fs.writeFileSync(
@@ -68,7 +67,7 @@ test('getSessionPath: returns null when mapped session dir does not exist', () =
 // --- Happy path ---
 
 test('getSessionPath: returns session path when map entry and dir both exist', () => {
-    withExtensionDir((tmpDir) => {
+    withDataRoot((tmpDir) => {
         const sessionDir = fs.realpathSync(
             fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-gs-session-'))
         );
@@ -95,7 +94,7 @@ test('getSessionPath: returns session path when map entry and dir both exist', (
 });
 
 test('getSessionPath: promotes newer dead current_sessions tmp before map lookup', () => {
-    withExtensionDir((tmpDir) => {
+    withDataRoot((tmpDir) => {
         const sessionDir = fs.realpathSync(
             fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-gs-session-'))
         );
@@ -128,7 +127,7 @@ test('getSessionPath: promotes newer dead current_sessions tmp before map lookup
 });
 
 test('getSessionPath: falls back to active session state when the sessions map is missing', () => {
-    withExtensionDir((tmpDir) => {
+    withDataRoot((tmpDir) => {
         const fakeCwd = path.join(tmpDir, 'repo');
         const sessionDir = path.join(tmpDir, 'sessions', 'fallback-session');
         fs.mkdirSync(fakeCwd, { recursive: true });
@@ -144,7 +143,7 @@ test('getSessionPath: falls back to active session state when the sessions map i
 });
 
 test('getSessionPath: missing map prefers the newest inactive same-cwd fallback session', () => {
-    withExtensionDir((tmpDir) => {
+    withDataRoot((tmpDir) => {
         const fakeCwd = path.join(tmpDir, 'repo');
         const sessionsDir = path.join(tmpDir, 'sessions');
         const oldSessionDir = path.join(sessionsDir, '2026-04-01-old');
@@ -186,7 +185,7 @@ test('getSessionPath: missing map prefers the newest inactive same-cwd fallback 
 });
 
 test('getSessionPath: future-dated started_at does not outrank a newer same-cwd fallback session', () => {
-    withExtensionDir((tmpDir) => {
+    withDataRoot((tmpDir) => {
         const fakeCwd = path.join(tmpDir, 'repo');
         const sessionsDir = path.join(tmpDir, 'sessions');
         const staleSessionDir = path.join(sessionsDir, 'stale-future');
@@ -228,7 +227,7 @@ test('getSessionPath: future-dated started_at does not outrank a newer same-cwd 
 });
 
 test('getSessionPath: stale mapped inactive session does not outrank a live session for the same cwd', () => {
-    withExtensionDir((tmpDir) => {
+    withDataRoot((tmpDir) => {
         const fakeCwd = path.join(tmpDir, 'repo');
         const staleSessionDir = path.join(tmpDir, 'sessions', 'stale-session');
         const liveSessionDir = path.join(tmpDir, 'sessions', 'live-session');
@@ -254,7 +253,7 @@ test('getSessionPath: stale mapped inactive session does not outrank a live sess
 });
 
 test('getSessionPath: mapped session missing active does not outrank a live session for the same cwd', () => {
-    withExtensionDir((tmpDir) => {
+    withDataRoot((tmpDir) => {
         const fakeCwd = path.join(tmpDir, 'repo');
         const staleSessionDir = path.join(tmpDir, 'sessions', 'stale-session');
         const liveSessionDir = path.join(tmpDir, 'sessions', 'live-session');
@@ -280,7 +279,7 @@ test('getSessionPath: mapped session missing active does not outrank a live sess
 });
 
 test('getSessionPath: unreadable mapped state does not outrank a live session for the same cwd', () => {
-    withExtensionDir((tmpDir) => {
+    withDataRoot((tmpDir) => {
         const fakeCwd = path.join(tmpDir, 'repo');
         const staleSessionDir = path.join(tmpDir, 'sessions', 'stale-session');
         const liveSessionDir = path.join(tmpDir, 'sessions', 'live-session');
@@ -303,7 +302,7 @@ test('getSessionPath: unreadable mapped state does not outrank a live session fo
 });
 
 test('getSessionPath: mapped dead-pid active session does not outrank a live same-cwd session', () => {
-    withExtensionDir((tmpDir) => {
+    withDataRoot((tmpDir) => {
         const fakeCwd = path.join(tmpDir, 'repo');
         const staleSessionDir = path.join(tmpDir, 'sessions', 'stale-session');
         const liveSessionDir = path.join(tmpDir, 'sessions', 'live-session');

@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as crypto from 'crypto';
 import { spawn } from 'child_process';
-import { printMinimalPanel, Style, getExtensionRoot, getDataRoot, writeStateFile, safeErrorMessage } from '../services/pickle-utils.js';
+import { printMinimalPanel, Style, getExtensionRoot, getDataRoot, getJarRoot, getSessionsRoot, writeStateFile, safeErrorMessage } from '../services/pickle-utils.js';
 import { StateManager, safeDeactivate } from '../services/state-manager.js';
 import { State, Defaults } from '../types/index.js';
 import { logActivity } from '../services/activity-logger.js';
@@ -446,9 +446,8 @@ async function processJarTask(
 
 async function main() {
   const ROOT_DIR = getExtensionRoot();
-  const DATA_DIR = getDataRoot();
-  const JAR_ROOT = path.join(DATA_DIR, 'jar');
-  const SESSIONS_ROOT = path.join(DATA_DIR, 'sessions');
+  const JAR_ROOT = getJarRoot();
+  const SESSIONS_ROOT = getSessionsRoot();
 
   // eslint-disable-next-line pickle/no-sync-in-async -- intentional blocking call
   if (!fs.existsSync(JAR_ROOT)) {

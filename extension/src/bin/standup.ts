@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { ActivityEvent } from '../types/index.js';
-import { getDataRoot } from '../services/pickle-utils.js';
+import { getActivityRoot, getSessionsRoot } from '../services/pickle-utils.js';
 import { StateManager } from '../services/state-manager.js';
 
 const sm = new StateManager();
@@ -96,7 +96,7 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
 /** Read working_dir from a session's state.json and extract the project name. */
 function getSessionProject(sessionId: string): string | null {
-  const sessionsDir = path.join(getDataRoot(), 'sessions');
+  const sessionsDir = getSessionsRoot();
   const stateFile = path.join(sessionsDir, sessionId, 'state.json');
   try {
     const wd = sm.read(stateFile).working_dir;
@@ -439,7 +439,7 @@ export function formatOutput(
 
 function main(): void {
   const { range } = parseArgs(process.argv.slice(2));
-  const activityDir = path.join(getDataRoot(), 'activity');
+  const activityDir = getActivityRoot();
   const events = readActivityFiles(activityDir, range.since, range.until);
   const gitCommits = getGitCommits(range.since, range.until);
   const currentUserEmail = getCurrentUserEmail();

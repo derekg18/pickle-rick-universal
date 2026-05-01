@@ -5,7 +5,7 @@ import * as os from 'os';
 import * as crypto from 'crypto';
 import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
-import { printMinimalPanel, Style, getExtensionRoot, getDataRoot, withRetryLock, pruneOldSessions, safeErrorMessage, findSessionPathForCwd, formatLocalDateKey } from '../services/pickle-utils.js';
+import { printMinimalPanel, Style, getExtensionRoot, getDataRoot, getSessionsRoot, getJarRoot, getWorktreesRoot, getCurrentSessionsMapPath, withRetryLock, pruneOldSessions, safeErrorMessage, findSessionPathForCwd, formatLocalDateKey } from '../services/pickle-utils.js';
 import { getHeadSha } from '../services/git-utils.js';
 import { State, Defaults, LockError, SessionMapEntry, Backend, BACKENDS, STATE_MANAGER_DEFAULTS } from '../types/index.js';
 import { StateManager, assertSchemaVersionDeployParity, SchemaVersionDeployDriftError } from '../services/state-manager.js';
@@ -92,10 +92,10 @@ function buildSetupPaths(): SetupPaths {
   return {
     rootDir: getExtensionRoot(),
     dataDir,
-    sessionsRoot: path.join(dataDir, 'sessions'),
-    jarRoot: path.join(dataDir, 'jar'),
-    worktreesRoot: path.join(dataDir, 'worktrees'),
-    sessionsMap: path.join(dataDir, 'current_sessions.json'),
+    sessionsRoot: getSessionsRoot(),
+    jarRoot: getJarRoot(),
+    worktreesRoot: getWorktreesRoot(),
+    sessionsMap: getCurrentSessionsMapPath(),
   };
 }
 
