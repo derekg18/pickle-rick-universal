@@ -180,9 +180,9 @@ async function runTask(sessionDir, repoCwd, extensionRoot) {
                 // permanently fail the task: leave its status untouched so a future
                 // jar-open run succeeds once the CLI is installed. Print a clear
                 // install hint routed to the backend that was attempted.
-                const hint = backend === 'codex'
-                    ? `codex CLI not found on PATH — install codex and re-run /pickle-jar-open, or re-jar these tasks with --backend claude`
-                    : `claude CLI not found on PATH — install claude and re-run /pickle-jar-open`;
+                const hint = backend === 'claude'
+                    ? `claude CLI not found on PATH — install claude and re-run /pickle-jar-open`
+                    : `${backend} CLI not found on PATH — install ${backend} and re-run /pickle-jar-open, or re-jar these tasks with --backend claude`;
                 console.error(`${Style.RED}${hint}${Style.RESET}`);
                 resolve({ ok: false, enoent: true, backend });
                 return;
@@ -310,7 +310,7 @@ function countRemainingQueuedBackendTasks(tasks, currentIndex, sessionsRoot, bac
     return count;
 }
 export function handleTaskEnoent(result, tasks, currentTaskId) {
-    if (!result.enoent || result.backend !== 'codex')
+    if (!result.enoent)
         return { skippedTasks: [] };
     const currentIndex = tasks.findIndex(meta => taskIdForMeta(meta) === currentTaskId);
     if (currentIndex < 0)
@@ -363,11 +363,9 @@ async function processJarTask(task, currentIndex, tasks, sessionsRoot, extension
     if (result.enoent) {
         console.log(`\n${Style.YELLOW}⏸️  Task ${task.taskId} skipped (backend ${result.backend} CLI missing) — status left as '${task.meta.status}' for future retry${Style.RESET}`);
         const { skippedTasks } = handleTaskEnoent(result, tasks.map(item => item.meta), task.taskId);
-        const skipped = result.backend === 'codex'
-            ? skippedTasks.length || countRemainingQueuedBackendTasks(tasks, currentIndex, sessionsRoot, result.backend)
-            : 0;
+        const skipped = skippedTasks.length || countRemainingQueuedBackendTasks(tasks, currentIndex, sessionsRoot, result.backend);
         if (skipped > 0) {
-            console.log(`${Style.YELLOW}⏸️  ${skipped} additional codex task(s) remain queued — install codex CLI and re-run /pickle-jar-open${Style.RESET}`);
+            console.log(`${Style.YELLOW}⏸️  ${skipped} additional ${result.backend} task(s) remain queued — install ${result.backend} CLI and re-run /pickle-jar-open${Style.RESET}`);
             return { succeededDelta: 0, failedDelta: 0, stop: true };
         }
         return { succeededDelta: 0, failedDelta: 0, stop: false };

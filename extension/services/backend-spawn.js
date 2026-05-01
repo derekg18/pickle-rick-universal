@@ -57,14 +57,10 @@ export function resolveBackendFromStateFile(statePath) {
     }
 }
 export function buildWorkerInvocation(backend, opts) {
-    if (backend === 'codex')
-        return buildCodexInvocation(opts.prompt, opts.addDirs, opts.model, opts.effort);
-    return buildClaudeWorkerInvocation(opts);
+    return backendAdapters[backend].buildWorkerInvocation(opts);
 }
 export function buildManagerInvocation(backend, opts) {
-    if (backend === 'codex')
-        return buildCodexInvocation(opts.prompt, opts.addDirs, opts.model);
-    return buildClaudeManagerInvocation(opts);
+    return backendAdapters[backend].buildManagerInvocation(opts);
 }
 function buildClaudeWorkerInvocation(opts) {
     const args = ['--dangerously-skip-permissions'];
@@ -134,7 +130,7 @@ function buildCodexInvocation(prompt, addDirs, model, effort) {
  * Build a read-only judge invocation.
  *
  * The LLM judge scores candidate diffs — it MUST NOT write files, commit, or
- * shell out. Both backend paths are explicitly locked down:
+ * shell out. Backend-specific judge paths are explicitly locked down:
  *
  * - claude: `--allowedTools Read,Glob,Grep` + `--no-session-persistence`,
  *   threads `--system-prompt` and `-p <prompt>`. No Bash/Edit/Write tools.
@@ -150,9 +146,7 @@ function buildCodexInvocation(prompt, addDirs, model, effort) {
  * user prompt; the read-only sandbox replaces the tool allowlist.
  */
 export function buildJudgeInvocation(backend, opts) {
-    if (backend === 'codex')
-        return buildCodexJudgeInvocation(opts);
-    return buildClaudeJudgeInvocation(opts);
+    return backendAdapters[backend].buildJudgeInvocation(opts);
 }
 function buildClaudeJudgeInvocation(opts) {
     const args = ['--dangerously-skip-permissions'];
@@ -199,6 +193,37 @@ function buildCodexJudgeInvocation(opts) {
     args.push('--', composedPrompt);
     return { cmd: 'codex', args, backend: 'codex' };
 }
+function buildGeminiWriteInvocation(prompt, addDirs, model) {
+    const args = ['--yolo'];
+    for (const dir of addDirs) {
+        if (dir && existsSilently(dir))
+            args.push('--include-directories', dir);
+    }
+    if (model)
+        args.push('-m', model);
+    args.push('-p', prompt);
+    return { cmd: 'gemini', args, backend: 'gemini' };
+}
+function buildGeminiWorkerInvocation(opts) {
+    return buildGeminiWriteInvocation(opts.prompt, opts.addDirs, opts.model);
+}
+function buildGeminiManagerInvocation(opts) {
+    return buildGeminiWriteInvocation(opts.prompt, opts.addDirs, opts.model);
+}
+function buildGeminiJudgeInvocation(opts) {
+    const composedPrompt = opts.systemPrompt
+        ? `${opts.systemPrompt}\n\n${opts.prompt}`
+        : opts.prompt;
+    const args = ['--approval-mode', 'plan'];
+    for (const dir of opts.addDirs) {
+        if (dir && existsSilently(dir))
+            args.push('--include-directories', dir);
+    }
+    if (opts.model)
+        args.push('-m', opts.model);
+    args.push('-p', composedPrompt);
+    return { cmd: 'gemini', args, backend: 'gemini' };
+}
 function existsSilently(p) {
     try {
         return fs.existsSync(p);
@@ -207,6 +232,26 @@ function existsSilently(p) {
         return false;
     }
 }
+export const backendAdapters = {
+    claude: {
+        backend: 'claude',
+        buildWorkerInvocation: buildClaudeWorkerInvocation,
+        buildManagerInvocation: buildClaudeManagerInvocation,
+        buildJudgeInvocation: buildClaudeJudgeInvocation,
+    },
+    codex: {
+        backend: 'codex',
+        buildWorkerInvocation: (opts) => buildCodexInvocation(opts.prompt, opts.addDirs, opts.model, opts.effort),
+        buildManagerInvocation: (opts) => buildCodexInvocation(opts.prompt, opts.addDirs, opts.model),
+        buildJudgeInvocation: buildCodexJudgeInvocation,
+    },
+    gemini: {
+        backend: 'gemini',
+        buildWorkerInvocation: buildGeminiWorkerInvocation,
+        buildManagerInvocation: buildGeminiManagerInvocation,
+        buildJudgeInvocation: buildGeminiJudgeInvocation,
+    },
+};
 export function backendEnvOverrides(backend) {
     const env = { PICKLE_BACKEND: backend };
     return env;

@@ -35,6 +35,13 @@ export interface SpawnInvocation {
   backend: Backend;
 }
 
+export interface BackendAdapter {
+  backend: Backend;
+  buildWorkerInvocation(opts: WorkerInvocationOptions): SpawnInvocation;
+  buildManagerInvocation(opts: ManagerInvocationOptions): SpawnInvocation;
+  buildJudgeInvocation(opts: JudgeInvocationOptions): SpawnInvocation;
+}
+
 export function isBackend(value: unknown): value is Backend {
   return typeof value === 'string' && (BACKENDS as readonly string[]).includes(value);
 }
@@ -90,13 +97,11 @@ export function resolveBackendFromStateFile(statePath: string): Backend {
 }
 
 export function buildWorkerInvocation(backend: Backend, opts: WorkerInvocationOptions): SpawnInvocation {
-  if (backend === 'codex') return buildCodexInvocation(opts.prompt, opts.addDirs, opts.model, opts.effort);
-  return buildClaudeWorkerInvocation(opts);
+  return backendAdapters[backend].buildWorkerInvocation(opts);
 }
 
 export function buildManagerInvocation(backend: Backend, opts: ManagerInvocationOptions): SpawnInvocation {
-  if (backend === 'codex') return buildCodexInvocation(opts.prompt, opts.addDirs, opts.model);
-  return buildClaudeManagerInvocation(opts);
+  return backendAdapters[backend].buildManagerInvocation(opts);
 }
 
 function buildClaudeWorkerInvocation(opts: WorkerInvocationOptions): SpawnInvocation {
@@ -161,7 +166,7 @@ function buildCodexInvocation(prompt: string, addDirs: string[], model?: string,
  * Build a read-only judge invocation.
  *
  * The LLM judge scores candidate diffs — it MUST NOT write files, commit, or
- * shell out. Both backend paths are explicitly locked down:
+ * shell out. Backend-specific judge paths are explicitly locked down:
  *
  * - claude: `--allowedTools Read,Glob,Grep` + `--no-session-persistence`,
  *   threads `--system-prompt` and `-p <prompt>`. No Bash/Edit/Write tools.
@@ -177,8 +182,7 @@ function buildCodexInvocation(prompt: string, addDirs: string[], model?: string,
  * user prompt; the read-only sandbox replaces the tool allowlist.
  */
 export function buildJudgeInvocation(backend: Backend, opts: JudgeInvocationOptions): SpawnInvocation {
-  if (backend === 'codex') return buildCodexJudgeInvocation(opts);
-  return buildClaudeJudgeInvocation(opts);
+  return backendAdapters[backend].buildJudgeInvocation(opts);
 }
 
 function buildClaudeJudgeInvocation(opts: JudgeInvocationOptions): SpawnInvocation {
@@ -224,9 +228,61 @@ function buildCodexJudgeInvocation(opts: JudgeInvocationOptions): SpawnInvocatio
   return { cmd: 'codex', args, backend: 'codex' };
 }
 
+function buildGeminiWriteInvocation(prompt: string, addDirs: string[], model?: string): SpawnInvocation {
+  const args: string[] = ['--yolo'];
+  for (const dir of addDirs) {
+    if (dir && existsSilently(dir)) args.push('--include-directories', dir);
+  }
+  if (model) args.push('-m', model);
+  args.push('-p', prompt);
+  return { cmd: 'gemini', args, backend: 'gemini' };
+}
+
+function buildGeminiWorkerInvocation(opts: WorkerInvocationOptions): SpawnInvocation {
+  return buildGeminiWriteInvocation(opts.prompt, opts.addDirs, opts.model);
+}
+
+function buildGeminiManagerInvocation(opts: ManagerInvocationOptions): SpawnInvocation {
+  return buildGeminiWriteInvocation(opts.prompt, opts.addDirs, opts.model);
+}
+
+function buildGeminiJudgeInvocation(opts: JudgeInvocationOptions): SpawnInvocation {
+  const composedPrompt = opts.systemPrompt
+    ? `${opts.systemPrompt}\n\n${opts.prompt}`
+    : opts.prompt;
+  const args: string[] = ['--approval-mode', 'plan'];
+  for (const dir of opts.addDirs) {
+    if (dir && existsSilently(dir)) args.push('--include-directories', dir);
+  }
+  if (opts.model) args.push('-m', opts.model);
+  args.push('-p', composedPrompt);
+  return { cmd: 'gemini', args, backend: 'gemini' };
+}
+
 function existsSilently(p: string): boolean {
   try { return fs.existsSync(p); } catch { return false; }
 }
+
+export const backendAdapters: Readonly<Record<Backend, BackendAdapter>> = {
+  claude: {
+    backend: 'claude',
+    buildWorkerInvocation: buildClaudeWorkerInvocation,
+    buildManagerInvocation: buildClaudeManagerInvocation,
+    buildJudgeInvocation: buildClaudeJudgeInvocation,
+  },
+  codex: {
+    backend: 'codex',
+    buildWorkerInvocation: (opts) => buildCodexInvocation(opts.prompt, opts.addDirs, opts.model, opts.effort),
+    buildManagerInvocation: (opts) => buildCodexInvocation(opts.prompt, opts.addDirs, opts.model),
+    buildJudgeInvocation: buildCodexJudgeInvocation,
+  },
+  gemini: {
+    backend: 'gemini',
+    buildWorkerInvocation: buildGeminiWorkerInvocation,
+    buildManagerInvocation: buildGeminiManagerInvocation,
+    buildJudgeInvocation: buildGeminiJudgeInvocation,
+  },
+};
 
 export function backendEnvOverrides(backend: Backend): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { PICKLE_BACKEND: backend };

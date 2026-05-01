@@ -74,9 +74,9 @@ export interface State {
  */
 export const FALSE_EPIC_THRESHOLD = 3;
 
-export type Backend = 'claude' | 'codex';
+export type Backend = 'claude' | 'codex' | 'gemini';
 
-export const BACKENDS: readonly Backend[] = ['claude', 'codex'] as const;
+export const BACKENDS: readonly Backend[] = ['claude', 'codex', 'gemini'] as const;
 
 export interface ProjectContext {
   project_context_path: string;

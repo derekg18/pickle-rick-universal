@@ -8,7 +8,7 @@ import { buildJudgeInvocation } from '../services/backend-spawn.js';
 // The LLM judge is a READ-ONLY scorer. Any regression that grants it write,
 // edit, bash, or full-FS access is a CRITICAL security bug — the judge runs
 // on every microverse iteration and has no business mutating the tree.
-// These tests lock the read-only invariant against regression for both backends.
+// These tests lock the read-only invariant against regression for every backend.
 
 function mkTmpDir(prefix) {
     return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -188,4 +188,36 @@ test('buildJudgeInvocation(codex): starts with `exec` subcommand', () => {
         addDirs: [],
     });
     assert.equal(inv.args[0], 'exec');
+});
+
+// --- gemini path ---
+
+test('buildJudgeInvocation(gemini): uses plan approval mode and never yolo', () => {
+    const inv = buildJudgeInvocation('gemini', {
+        prompt: 'score this',
+        addDirs: [],
+    });
+    assert.equal(inv.cmd, 'gemini');
+    assert.equal(inv.backend, 'gemini');
+    const approvalIdx = inv.args.indexOf('--approval-mode');
+    assert.ok(approvalIdx >= 0, 'gemini judge must pass --approval-mode <mode>');
+    assert.equal(inv.args[approvalIdx + 1], 'plan',
+        'gemini judge approval mode MUST be read-only plan mode');
+    assert.equal(inv.args.includes('--yolo'), false,
+        'gemini judge must never inherit write-capable worker approval');
+});
+
+test('buildJudgeInvocation(gemini): inlines system prompt as prefix to user prompt', () => {
+    const inv = buildJudgeInvocation('gemini', {
+        prompt: 'SCORE THE DIFF',
+        addDirs: [],
+        systemPrompt: 'YOU ARE A JUDGE',
+    });
+    const promptIdx = inv.args.indexOf('-p');
+    assert.ok(promptIdx >= 0);
+    const composedPrompt = inv.args[promptIdx + 1];
+    assert.ok(composedPrompt.startsWith('YOU ARE A JUDGE'),
+        'system prompt must prefix the user prompt for gemini');
+    assert.ok(composedPrompt.includes('SCORE THE DIFF'),
+        'user prompt must still be present in composed prompt');
 });

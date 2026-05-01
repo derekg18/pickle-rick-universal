@@ -43,19 +43,20 @@ test('resolveBackend: returns claude when backend is absent', () => {
 
 test('resolveBackend: reads backend from state', () => {
     assert.equal(resolveBackend({ backend: 'codex' }), 'codex');
+    assert.equal(resolveBackend({ backend: 'gemini' }), 'gemini');
 });
 
 test('resolveBackend: rejects invalid backend', () => {
     withUnsetBackendEnv(() => {
-        assert.equal(resolveBackend({ backend: 'gemini' }), 'claude');
+        assert.equal(resolveBackend({ backend: 'gpt' }), 'claude');
     });
 });
 
 test('resolveBackend: falls through to PICKLE_BACKEND env', () => {
     const prev = process.env.PICKLE_BACKEND;
-    process.env.PICKLE_BACKEND = 'codex';
+    process.env.PICKLE_BACKEND = 'gemini';
     try {
-        assert.equal(resolveBackend({}), 'codex');
+        assert.equal(resolveBackend({}), 'gemini');
     } finally {
         if (prev === undefined) delete process.env.PICKLE_BACKEND;
         else process.env.PICKLE_BACKEND = prev;
@@ -65,6 +66,7 @@ test('resolveBackend: falls through to PICKLE_BACKEND env', () => {
 test('isBackend: validates values', () => {
     assert.equal(isBackend('claude'), true);
     assert.equal(isBackend('codex'), true);
+    assert.equal(isBackend('gemini'), true);
     assert.equal(isBackend('gpt'), false);
     assert.equal(isBackend(42), false);
 });
@@ -295,6 +297,7 @@ test('buildManagerInvocation(codex): omits -m when no model given', () => {
 test('backendEnvOverrides: emits PICKLE_BACKEND', () => {
     assert.deepEqual(backendEnvOverrides('codex'), { PICKLE_BACKEND: 'codex' });
     assert.deepEqual(backendEnvOverrides('claude'), { PICKLE_BACKEND: 'claude' });
+    assert.deepEqual(backendEnvOverrides('gemini'), { PICKLE_BACKEND: 'gemini' });
 });
 
 // --- buildWorkerInvocation: --effort threading ---

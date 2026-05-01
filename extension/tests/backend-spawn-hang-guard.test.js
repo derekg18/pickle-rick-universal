@@ -45,16 +45,18 @@ test('resolveBackend: warns on bad state.backend value, dedupes by value', () =>
         // Valid values don't warn.
         resolveBackend({ backend: 'codex' });
         resolveBackend({ backend: 'claude' });
+        resolveBackend({ backend: 'gemini' });
         assert.equal(captured.length, 0, 'valid backends must not warn');
 
         // Invalid non-empty string warns once.
-        resolveBackend({ backend: 'gemini' });
+        resolveBackend({ backend: 'gpt4' });
         assert.equal(captured.length, 1, 'first bad value warns');
-        assert.match(captured[0], /unrecognized backend "gemini".*state.*falling back to 'claude'/);
+        assert.match(captured[0], /unrecognized backend "gpt4".*state.*falling back to 'claude'/);
+        assert.match(captured[0], /valid: claude, codex, gemini/);
 
         // Same bad value deduped within the process.
-        resolveBackend({ backend: 'gemini' });
-        resolveBackend({ backend: 'gemini' });
+        resolveBackend({ backend: 'gpt4' });
+        resolveBackend({ backend: 'gpt4' });
         assert.equal(captured.length, 1, 'same bad value must not re-warn');
 
         // A different bad value warns again (independent dedupe key).

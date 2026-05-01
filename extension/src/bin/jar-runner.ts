@@ -6,7 +6,7 @@ import * as crypto from 'crypto';
 import { spawn } from 'child_process';
 import { printMinimalPanel, Style, getExtensionRoot, getDataRoot, getJarRoot, getSessionsRoot, writeStateFile, safeErrorMessage } from '../services/pickle-utils.js';
 import { StateManager, safeDeactivate } from '../services/state-manager.js';
-import { State, Defaults } from '../types/index.js';
+import { State, Defaults, type Backend } from '../types/index.js';
 import { logActivity } from '../services/activity-logger.js';
 import { buildManagerInvocation, resolveBackend, backendEnvOverrides } from '../services/backend-spawn.js';
 import { readRecoverableJsonObject } from '../services/microverse-state.js';
@@ -54,13 +54,13 @@ function readTaskState(sessionDir: string): State | null {
 export interface RunTaskResult {
   ok: boolean;
   /**
-   * True iff the manager CLI (`claude` or `codex`) was not found on PATH. The
+   * True iff the selected backend manager CLI was not found on PATH. The
    * task's status should remain untouched so a future jar-open run succeeds
    * once the CLI is installed.
    */
   enoent?: boolean;
-  /** Backend that was attempted — used by the caller to short-circuit further codex tasks after an ENOENT. */
-  backend: 'claude' | 'codex';
+  /** Backend that was attempted — used by the caller to short-circuit matching queued tasks after an ENOENT. */
+  backend: Backend;
 }
 
 export type SpawnResult = RunTaskResult;
@@ -218,9 +218,9 @@ async function runTask(sessionDir: string, repoCwd: string, extensionRoot: strin
         // permanently fail the task: leave its status untouched so a future
         // jar-open run succeeds once the CLI is installed. Print a clear
         // install hint routed to the backend that was attempted.
-        const hint = backend === 'codex'
-          ? `codex CLI not found on PATH — install codex and re-run /pickle-jar-open, or re-jar these tasks with --backend claude`
-          : `claude CLI not found on PATH — install claude and re-run /pickle-jar-open`;
+        const hint = backend === 'claude'
+          ? `claude CLI not found on PATH — install claude and re-run /pickle-jar-open`
+          : `${backend} CLI not found on PATH — install ${backend} and re-run /pickle-jar-open, or re-jar these tasks with --backend claude`;
         console.error(`${Style.RED}${hint}${Style.RESET}`);
         resolve({ ok: false, enoent: true, backend });
         return;
@@ -349,7 +349,7 @@ function countRemainingQueuedBackendTasks(
   tasks: JarTask[],
   currentIndex: number,
   sessionsRoot: string,
-  backend: 'claude' | 'codex',
+  backend: Backend,
 ): number {
   let count = 0;
   for (const task of tasks.slice(currentIndex + 1)) {
@@ -361,7 +361,7 @@ function countRemainingQueuedBackendTasks(
 }
 
 export function handleTaskEnoent(result: SpawnResult, tasks: TaskMeta[], currentTaskId: string): { skippedTasks: string[] } {
-  if (!result.enoent || result.backend !== 'codex') return { skippedTasks: [] };
+  if (!result.enoent) return { skippedTasks: [] };
 
   const currentIndex = tasks.findIndex(meta => taskIdForMeta(meta) === currentTaskId);
   if (currentIndex < 0) return { skippedTasks: [] };
@@ -423,11 +423,9 @@ async function processJarTask(
   if (result.enoent) {
     console.log(`\n${Style.YELLOW}⏸️  Task ${task.taskId} skipped (backend ${result.backend} CLI missing) — status left as '${task.meta.status}' for future retry${Style.RESET}`);
     const { skippedTasks } = handleTaskEnoent(result, tasks.map(item => item.meta), task.taskId);
-    const skipped = result.backend === 'codex'
-      ? skippedTasks.length || countRemainingQueuedBackendTasks(tasks, currentIndex, sessionsRoot, result.backend)
-      : 0;
+    const skipped = skippedTasks.length || countRemainingQueuedBackendTasks(tasks, currentIndex, sessionsRoot, result.backend);
     if (skipped > 0) {
-      console.log(`${Style.YELLOW}⏸️  ${skipped} additional codex task(s) remain queued — install codex CLI and re-run /pickle-jar-open${Style.RESET}`);
+      console.log(`${Style.YELLOW}⏸️  ${skipped} additional ${result.backend} task(s) remain queued — install ${result.backend} CLI and re-run /pickle-jar-open${Style.RESET}`);
       return { succeededDelta: 0, failedDelta: 0, stop: true };
     }
     return { succeededDelta: 0, failedDelta: 0, stop: false };
