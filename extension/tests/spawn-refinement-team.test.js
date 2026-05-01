@@ -71,23 +71,25 @@ function makeGitRepo(prefix = 'pickle-anchor-repo-') {
 
 // --- Anchor re-grounding ---
 
-test('spawn-refinement-team: extracts file:line anchors from PRD text', () => {
+test('spawn-refinement-team: extracts file:line anchors from PRD text (including ranges)', () => {
     const citations = extractAnchorCitations([
         'Use extension/src/bin/spawn-refinement-team.ts:697 before fan-out.',
-        'Also check `./extension/tests/spawn-refinement-team.test.js:13`.',
+        'Also check `./extension/tests/spawn-refinement-team.test.js:13-25`.',
         'Ignore URLs like https://example.test/file.ts:10 and non-source names note.txt:4.',
         'Deduplicate extension/src/bin/spawn-refinement-team.ts:697.',
-    ].join('\n'));
+    ].join('\n'), 'test.md');
 
     assert.deepEqual(
         citations.map((citation) => ({
+            sourceFile: citation.sourceFile,
             sourceLine: citation.sourceLine,
             filePath: citation.filePath,
             lineNumber: citation.lineNumber,
+            endLineNumber: citation.endLineNumber,
         })),
         [
-            { sourceLine: 1, filePath: 'extension/src/bin/spawn-refinement-team.ts', lineNumber: 697 },
-            { sourceLine: 2, filePath: 'extension/tests/spawn-refinement-team.test.js', lineNumber: 13 },
+            { sourceFile: 'test.md', sourceLine: 1, filePath: 'extension/src/bin/spawn-refinement-team.ts', lineNumber: 697, endLineNumber: undefined },
+            { sourceFile: 'test.md', sourceLine: 2, filePath: 'extension/tests/spawn-refinement-team.test.js', lineNumber: 13, endLineNumber: 25 },
         ]
     );
 });
@@ -105,9 +107,10 @@ test('spawn-refinement-team: resolves PRD anchors against HEAD and reports stale
             'Fresh src/ok.ts:2',
             'Out of range src/short.ts:5',
             'Missing src/missing.ts:1',
+            'Range out of range src/ok.ts:2-10',
         ].join('\n');
 
-        const warnings = findStaleAnchorWarnings(prd, repo);
+        const warnings = findStaleAnchorWarnings(prd, repo, 'prd.md');
         assert.deepEqual(
             warnings.map((warning) => ({
                 raw: warning.citation.raw,
@@ -116,6 +119,7 @@ test('spawn-refinement-team: resolves PRD anchors against HEAD and reports stale
             [
                 { raw: 'src/short.ts:5', reason: 'line-out-of-range' },
                 { raw: 'src/missing.ts:1', reason: 'missing-file' },
+                { raw: 'src/ok.ts:2-10', reason: 'line-out-of-range' },
             ]
         );
     } finally {
@@ -601,8 +605,8 @@ test('spawn-refinement-team: emits stale-anchor warnings before refinement worke
 
         assert.equal(result.status, 0, `expected success, got: ${(result.stdout || '') + (result.stderr || '')}`);
         assert.match(result.stderr, /stale-anchor warning: 2 PRD citation\(s\) no longer resolve against HEAD/);
-        assert.match(result.stderr, /stale-anchor tracked\.ts:9 \(PRD line 3\): line 9 exceeds HEAD line count/);
-        assert.match(result.stderr, /stale-anchor missing\.ts:1 \(PRD line 3\): not found at HEAD:missing\.ts/);
+        assert.match(result.stderr, /stale-anchor tracked\.ts:9 \(.*session\/prd\.md:3\): line 9 exceeds HEAD line count/);
+        assert.match(result.stderr, /stale-anchor missing\.ts:1 \(.*session\/prd\.md:3\): not found at HEAD:missing\.ts/);
         assert.ok(fs.existsSync(logPath), 'refinement workers should still run after stale-anchor warnings');
     } finally {
         fs.rmSync(tmp, { recursive: true, force: true });
@@ -1001,4 +1005,56 @@ test('buildWorkerPrompt omits portal context for non-codebase roles', () => {
 test('buildWorkerPrompt omits portal context when not provided', () => {
     const prompt = buildWorkerPrompt('codebase', '# PRD', '/out.md', '/target', 1);
     assert.ok(!prompt.includes('Portal Artifacts'), 'Should not include Portal Artifacts when no portalContext');
+});
+
+test('spawn-refinement-team: recursively checks citations in referenced source PRDs', () => {
+    const tmp = makeTmpDir();
+    const repo = makeGitRepo();
+    const fakeBin = makeTmpDir('fake-bin-');
+    try {
+        const sessionDir = path.join(tmp, 'session');
+        fs.mkdirSync(sessionDir, { recursive: true });
+
+        fs.writeFileSync(path.join(repo, 'tracked.ts'), 'one\n');
+        git(repo, ['add', '.']);
+        git(repo, ['commit', '-m', 'tracked source']);
+
+        const mainPrd = path.join(sessionDir, 'prd.md');
+        const subPrd = path.join(sessionDir, 'sub_prd.md');
+        
+        fs.writeFileSync(mainPrd, '# Main PRD\n\nSee sub_prd.md for details.\nMain citation: tracked.ts:10 (Stale)\n');
+        fs.writeFileSync(subPrd, '# Sub PRD\n\nSub citation: tracked.ts:1 (Valid)\nSub stale: missing.ts:1\n');
+        
+        fs.writeFileSync(path.join(sessionDir, 'state.json'), JSON.stringify({
+            active: true,
+            working_dir: repo,
+            worker_timeout_seconds: 30,
+            iteration: 1,
+            schema_version: 1,
+        }));
+
+        const logPath = path.join(tmp, 'refinement-worker.json');
+        writeRefinementLogger(fakeBin, logPath);
+
+        const result = spawnSync(
+            process.execPath,
+            [BIN, '--prd', mainPrd, '--session-dir', sessionDir, '--cycles', '1', '--timeout', '5'],
+            {
+                cwd: tmp,
+                env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` },
+                encoding: 'utf-8',
+                timeout: 45000,
+            }
+        );
+
+        assert.equal(result.status, 0);
+        // Should find 1 stale from main and 1 from sub
+        assert.match(result.stderr, /stale-anchor warning: 2 PRD citation\(s\) no longer resolve against HEAD/);
+        assert.match(result.stderr, /stale-anchor tracked\.ts:10 \(.*session\/prd\.md:4\)/);
+        assert.match(result.stderr, /stale-anchor missing\.ts:1 \(.*session\/sub_prd\.md:4\)/);
+    } finally {
+        fs.rmSync(tmp, { recursive: true, force: true });
+        fs.rmSync(fakeBin, { recursive: true, force: true });
+        fs.rmSync(repo, { recursive: true, force: true });
+    }
 });

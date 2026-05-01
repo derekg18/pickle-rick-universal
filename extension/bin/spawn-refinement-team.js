@@ -147,8 +147,8 @@ export function runReadinessGate(sessionDir, workingDir, manifestPath) {
         process.stderr.write(result.stderr);
     return result.status ?? 1;
 }
-const CITATION_RE = /(?<![\w./-])((?:\.{1,2}\/)?(?:[\w.-]+\/)*[\w.-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|yml|yaml|sh|py|css|scss|html)):(\d+)\b/g;
-export function extractAnchorCitations(prdContent) {
+const CITATION_RE = /(?<![\w./-])((?:\.{1,2}\/)?(?:[\w.-]+\/)*[\w.-]+\.(?:ts|tsx|js|jsx|mjs|cjs|json|md|yml|yaml|sh|py|go|rs|rb|php|java|cpp|h|hpp|c|cc|cs|kt|sql|toml|html|css|scss)):(\d+)(?:-(\d+))?\b/g;
+export function extractAnchorCitations(prdContent, sourceFile) {
     const citations = [];
     const seen = new Set();
     const lines = prdContent.split(/\r?\n/);
@@ -161,14 +161,20 @@ export function extractAnchorCitations(prdContent) {
             const lineNumber = Number.isFinite(rawLineNumber) ? rawLineNumber : 0;
             if (!Number.isSafeInteger(lineNumber) || lineNumber <= 0)
                 continue;
-            const key = `${filePath}:${lineNumber}`;
+            const rawEndLineNumber = match[3] ? Number(match[3]) : undefined;
+            const endLineNumber = rawEndLineNumber && Number.isSafeInteger(rawEndLineNumber) && rawEndLineNumber >= lineNumber
+                ? rawEndLineNumber
+                : undefined;
+            const key = `${filePath}:${lineNumber}${endLineNumber ? `-${endLineNumber}` : ''}`;
             if (seen.has(key))
                 continue;
             seen.add(key);
             citations.push({
+                sourceFile,
                 sourceLine: index + 1,
                 filePath,
                 lineNumber,
+                endLineNumber,
                 raw: match[0],
             });
         }
@@ -191,8 +197,33 @@ function readHeadFile(workingDir, filePath) {
         return undefined;
     }
 }
-export function findStaleAnchorWarnings(prdContent, workingDir) {
-    return extractAnchorCitations(prdContent).flatMap((citation) => {
+export function extractSourcePrdPaths(prdContent, workingDir, sessionDir) {
+    const paths = new Set();
+    // Match anything that looks like a relative or absolute path to a .md file
+    const MD_PATH_RE = /(?<![\w./-])((?:\.{1,2}\/)?(?:[\w.-]+\/)*[\w.-]+\.md)\b/g;
+    let match;
+    while ((match = MD_PATH_RE.exec(prdContent)) !== null) {
+        const rawPath = match[1];
+        const candidates = [
+            path.resolve(workingDir, rawPath),
+        ];
+        if (sessionDir) {
+            candidates.push(path.resolve(sessionDir, rawPath));
+        }
+        for (const cand of candidates) {
+            try {
+                if (fs.existsSync(cand) && fs.statSync(cand).isFile()) {
+                    paths.add(cand);
+                    break;
+                }
+            }
+            catch { /* ignore */ }
+        }
+    }
+    return [...paths];
+}
+export function findStaleAnchorWarnings(prdContent, workingDir, sourceFile) {
+    return extractAnchorCitations(prdContent, sourceFile).flatMap((citation) => {
         const headContent = readHeadFile(workingDir, citation.filePath);
         if (headContent === undefined) {
             return [{
@@ -202,11 +233,12 @@ export function findStaleAnchorWarnings(prdContent, workingDir) {
                 }];
         }
         const lineCount = headContent === '' ? 0 : headContent.split(/\r?\n/).length;
-        if (citation.lineNumber > lineCount) {
+        const checkLine = citation.endLineNumber ?? citation.lineNumber;
+        if (checkLine > lineCount) {
             return [{
                     citation,
                     reason: 'line-out-of-range',
-                    detail: `line ${citation.lineNumber} exceeds HEAD line count ${lineCount}`,
+                    detail: `line ${checkLine} exceeds HEAD line count ${lineCount}`,
                 }];
         }
         return [];
@@ -218,7 +250,7 @@ export function emitStaleAnchorWarnings(warnings) {
     process.stderr.write(`[pickle-rick] stale-anchor warning: ${warnings.length} PRD citation(s) no longer resolve against HEAD.\n`);
     for (const warning of warnings) {
         const { citation } = warning;
-        process.stderr.write(`[pickle-rick] stale-anchor ${citation.raw} (PRD line ${citation.sourceLine}): ${warning.detail}\n`);
+        process.stderr.write(`[pickle-rick] stale-anchor ${citation.raw} (${citation.sourceFile}:${citation.sourceLine}): ${warning.detail}\n`);
     }
 }
 export function buildWorkerPrompt(roleId, prdContent, outputFile, workingDir, cycle, previousAnalyses, portalContext) {
@@ -717,7 +749,31 @@ export async function orchestrateCycles(args, settings, prd) {
     if (preRefinementGate.status !== 'pass') {
         throw new Error('pre-refinement AC phase gate failed');
     }
-    emitStaleAnchorWarnings(findStaleAnchorWarnings(prd, runtime.workingDir));
+    // NEW-T3: Anchor re-grounding. Recursively check all citations in the main PRD
+    // and any referenced source PRDs before fan-out.
+    const allWarnings = [];
+    const checkedPrds = new Set();
+    const toCheck = [{ path: args.prdPath, content: prd }];
+    while (toCheck.length > 0) {
+        const { path: prdPath, content: prdContent } = toCheck.shift();
+        const normalizedPath = path.resolve(prdPath);
+        if (checkedPrds.has(normalizedPath))
+            continue;
+        checkedPrds.add(normalizedPath);
+        const relativeSourceFile = path.relative(runtime.workingDir, prdPath);
+        allWarnings.push(...findStaleAnchorWarnings(prdContent, runtime.workingDir, relativeSourceFile));
+        const sourcePrds = extractSourcePrdPaths(prdContent, runtime.workingDir, args.sessionDir);
+        for (const sourcePath of sourcePrds) {
+            if (checkedPrds.has(path.resolve(sourcePath)))
+                continue;
+            try {
+                const content = fs.readFileSync(sourcePath, 'utf-8');
+                toCheck.push({ path: sourcePath, content });
+            }
+            catch { /* skip unreadable */ }
+        }
+    }
+    emitStaleAnchorWarnings(allWarnings);
     const allCycleResults = [];
     const portalContext = detectPortalContext(args.sessionDir);
     for (let cycle = 1; cycle <= runtime.cycles; cycle++) {
