@@ -16,9 +16,12 @@ import {
     commitPendingProbe,
     COMMIT_PENDING_HANDOFF_TEXT,
     processCompletionBranch,
+    classifyIterationExit,
+} from '../bin/mux-runner.js';
+import {
     evaluateCodexManagerRelaunch,
     recordCodexManagerRelaunch,
-} from '../bin/mux-runner.js';
+} from '../services/codex-manager-relaunch.js';
 import { Defaults } from '../types/index.js';
 
 function makeInactiveSession() {
@@ -668,4 +671,13 @@ test('evaluateCodexManagerRelaunch ignores time_limit when max_time_minutes is m
     );
     assert.equal(noEpoch.reason, 'eligible',
         'no start_time_epoch → time gate inert, eligible falls through');
+});
+
+test('classifyIterationExit: prioritizes timeout over error', () => {
+    const result = classifyIterationExit('error', '/dev/null', {
+        didTimeout: true,
+        exitCode: null,
+        wallSeconds: 14400
+    });
+    assert.equal(result.type, 'timeout', 'should be classified as timeout even if completion is error');
 });

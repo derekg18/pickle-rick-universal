@@ -45,9 +45,11 @@ import {
   classifyIterationExit,
   computeRateLimitAction,
   killCurrentChild,
+} from './mux-runner.js';
+import {
   evaluateCodexManagerRelaunch,
   recordCodexManagerRelaunch,
-} from './mux-runner.js';
+} from '../services/codex-manager-relaunch.js';
 import { logActivity } from '../services/activity-logger.js';
 import { assertBaselineFresh, BaselineMissingError, BaselineStaleError, runGate } from '../services/convergence-gate.js';
 import { spawnGateRemediatorMain } from './spawn-gate-remediator.js';

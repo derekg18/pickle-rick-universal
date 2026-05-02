@@ -418,7 +418,7 @@ test('writeMicroverseState and readMicroverseState round-trip', () => {
         const state = createMicroverseState({ prdPath: '/tmp/prd.md', metric: TEST_METRIC, stallLimit: 3 });
         writeMicroverseState(dir, state);
         const loaded = readMicroverseState(dir);
-        assert.deepEqual(loaded, state);
+        assert.deepEqual(loaded, { ...state, convergence_mode: 'metric' });
     } finally {
         fs.rmSync(dir, { recursive: true });
     }

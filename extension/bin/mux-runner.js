@@ -8,8 +8,9 @@ import { PromiseTokens, hasToken, VALID_STEPS, Defaults, FALSE_EPIC_THRESHOLD, h
 import { StateManager, safeDeactivate, writeActivityEntry, writeTimeoutStub, assertSchemaVersionDeployParity, SchemaVersionDeployDriftError } from '../services/state-manager.js';
 import { logActivity } from '../services/activity-logger.js';
 import { loadSettings, initCircuitBreaker, canExecute, detectProgress, extractErrorSignature, recordIterationResult, resetCircuitBreaker } from '../services/circuit-breaker.js';
-import { backendSupportsCommitPendingProbe, backendSupportsDefaultClaudeModels, backendSupportsManagerErrorRelaunch, buildManagerInvocation, resolveBackend, backendEnvOverrides, } from '../services/backend-spawn.js';
+import { backendSupportsCommitPendingProbe, backendSupportsDefaultClaudeModels, buildManagerInvocation, resolveBackend, backendEnvOverrides, } from '../services/backend-spawn.js';
 import { readRecoverableJsonObject } from '../services/microverse-state.js';
+import { evaluateCodexManagerRelaunch, recordCodexManagerRelaunch, } from '../services/codex-manager-relaunch.js';
 import { extractAssistantContent } from '../services/classifier-utils.js';
 import { assertAdaptersFresh } from '../services/adapter-preflight.js';
 export { extractAssistantContent } from '../services/classifier-utils.js';
@@ -408,6 +409,9 @@ export function detectRateLimitInText(logFile) {
 export function classifyIterationExit(completionResult, logFile, timing) {
     if (completionResult === 'inactive')
         return { type: 'inactive' };
+    if (timing?.didTimeout) {
+        return { type: 'timeout', exitCode: timing.exitCode, wallSeconds: timing.wallSeconds };
+    }
     if (completionResult === 'error')
         return { type: 'error' };
     if (completionResult === 'task_completed' || completionResult === 'review_clean')
@@ -420,9 +424,6 @@ export function classifyIterationExit(completionResult, logFile, timing) {
     // that — don't let fuzzy text matching override structured signals.
     if (!rlInfo.sawEvents && detectRateLimitInText(logFile))
         return { type: 'api_limit' };
-    if (timing?.didTimeout) {
-        return { type: 'timeout', exitCode: timing.exitCode, wallSeconds: timing.wallSeconds };
-    }
     return { type: 'success' };
 }
 /**
@@ -1133,69 +1134,6 @@ function readPostIterationState(state, ctx) {
     catch {
         return state;
     }
-}
-export function evaluateCodexManagerRelaunch(state, tickets, cbState) {
-    const backend = resolveBackend(state);
-    if (!backendSupportsManagerErrorRelaunch(backend)) {
-        return { shouldRelaunch: false, pendingCount: 0, nextRelaunchCount: 0, reason: 'not_codex' };
-    }
-    // AC-LPB-03: Hard wall-clock cap — relaunching after the time budget is
-    // exhausted only burns API turns the user already opted out of. Mirror the
-    // cap-gate in shouldExitForLimits() so codex relaunches honor the same
-    // budget as the main loop. Runs BEFORE every other decision branch so the
-    // budget cannot be papered over by pending tickets or a closed CB.
-    const startEpoch = Number.isFinite(Number(state.start_time_epoch)) ? Number(state.start_time_epoch) : 0;
-    const maxTimeMins = Number.isFinite(Number(state.max_time_minutes)) ? Number(state.max_time_minutes) : 0;
-    if (maxTimeMins > 0 && startEpoch > 0) {
-        const elapsedSec = Math.max(0, Math.floor(Date.now() / 1000) - startEpoch);
-        if (elapsedSec > maxTimeMins * 60) {
-            return { shouldRelaunch: false, pendingCount: 0, nextRelaunchCount: 0, reason: 'time_limit' };
-        }
-    }
-    // Tripped circuit breaker → real backend failure, do not paper over it.
-    if (cbState && cbState.state === 'OPEN') {
-        return { shouldRelaunch: false, pendingCount: 0, nextRelaunchCount: 0, reason: 'circuit_open' };
-    }
-    const norm = (s) => (s || '').toLowerCase().replace(/["']/g, '').trim();
-    const pending = tickets.filter(t => {
-        if (!t.id)
-            return false;
-        const s = norm(t.status);
-        return s !== 'done' && s !== 'skipped';
-    });
-    if (pending.length === 0) {
-        return { shouldRelaunch: false, pendingCount: 0, nextRelaunchCount: 0, reason: 'no_pending' };
-    }
-    const prior = Number(state.codex_manager_relaunch_count) || 0;
-    const cap = Defaults.CODEX_MANAGER_RELAUNCH_CAP;
-    if (prior >= cap) {
-        return { shouldRelaunch: false, pendingCount: pending.length, nextRelaunchCount: prior, reason: 'cap_exceeded' };
-    }
-    return { shouldRelaunch: true, pendingCount: pending.length, nextRelaunchCount: prior + 1, reason: 'eligible' };
-}
-/**
- * Persists the codex-manager relaunch decision: bumps
- * `state.codex_manager_relaunch_count` via the StateManager so concurrent
- * readers see the update, and emits a `codex_manager_relaunch` activity
- * event so standup/metrics surface it. Best-effort — caller already
- * decided to relaunch; a state-write failure logs a warning but still
- * lets the next iteration spawn a fresh manager.
- */
-export function recordCodexManagerRelaunch(statePath, sessionDir, decision, iteration, log) {
-    try {
-        sm.update(statePath, s => {
-            s.codex_manager_relaunch_count = decision.nextRelaunchCount;
-        });
-    }
-    catch (err) {
-        log(`WARN: failed to persist codex_manager_relaunch_count: ${safeErrorMessage(err)}`);
-    }
-    logActivity({
-        event: 'codex_manager_relaunch',
-        source: 'pickle',
-        session: path.basename(sessionDir),
-        iteration,
-    });
 }
 export async function processCompletionBranch(state, result, ctx) {
     if (result === 'task_completed')

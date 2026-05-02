@@ -2279,9 +2279,11 @@ test('writeHandoffAtomic: both rename and fallback fail, error logged, does not 
 // ---------------------------------------------------------------------------
 import {
     processCompletionBranch as processCompletionBranchForRelaunch,
+} from '../bin/mux-runner.js';
+import {
     evaluateCodexManagerRelaunch as evaluateCodexManagerRelaunchUnit,
     recordCodexManagerRelaunch as recordCodexManagerRelaunchUnit,
-} from '../bin/mux-runner.js';
+} from '../services/codex-manager-relaunch.js';
 import { Defaults as DefaultsForRelaunch } from '../types/index.js';
 
 function writeRelaunchTicket(sessionDir, id, status, order = 1) {
