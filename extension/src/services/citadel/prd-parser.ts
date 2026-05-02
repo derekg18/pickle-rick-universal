@@ -12,6 +12,13 @@ export interface AcceptanceCriterion {
   text: string;
 }
 
+export interface Section {
+  id: string;
+  line: number;
+  text: string;
+  level: number;
+}
+
 export interface Endpoint {
   method: string;
   path: string;
@@ -47,10 +54,16 @@ export interface TransitionAuditRow {
 export interface ParsedPrd {
   decisions: Decision[];
   acceptanceCriteria: AcceptanceCriterion[];
+  sections: Section[];
   endpoints: Endpoint[];
   allowlistEntries: AllowlistEntry[];
   statusCodeRows: StatusCodeRow[];
   transitionAuditRows: TransitionAuditRow[];
+}
+
+export interface PrdIdentities {
+  acIds: string[];
+  sectionIds: string[];
 }
 
 type Seen = Set<string>;
@@ -78,10 +91,19 @@ export function parsePrdFile(filePath: string): ParsedPrd {
   return parsePrdMarkdown(readFileSync(filePath, 'utf-8'));
 }
 
+export function parsePrdIdentities(markdown: string): PrdIdentities {
+  const parsed = parsePrdMarkdown(markdown);
+  return {
+    acIds: parsed.acceptanceCriteria.map((ac) => ac.id),
+    sectionIds: parsed.sections.map((s) => s.id),
+  };
+}
+
 export function parsePrdMarkdown(markdown: string): ParsedPrd {
   const result: ParsedPrd = {
     decisions: [],
     acceptanceCriteria: [],
+    sections: [],
     endpoints: [],
     allowlistEntries: [],
     statusCodeRows: [],
@@ -90,6 +112,7 @@ export function parsePrdMarkdown(markdown: string): ParsedPrd {
   const seen = {
     decisions: new Set<string>(),
     acceptanceCriteria: new Set<string>(),
+    sections: new Set<string>(),
     endpoints: new Set<string>(),
     allowlistEntries: new Set<string>(),
     statusCodeRows: new Set<string>(),
@@ -113,6 +136,7 @@ function scanLine(
   state: ScanState,
 ): void {
   updateContext(line, state);
+  scanSections(line, lineNumber, result.sections, seen.sections);
   scanDecisions(line, lineNumber, result.decisions, seen.decisions);
   scanAcceptanceCriteria(line, lineNumber, result.acceptanceCriteria, seen.acceptanceCriteria);
   scanEndpoint(line, lineNumber, result, seen.endpoints, state);
@@ -143,6 +167,17 @@ function contextFromText(text: string): TableContext {
   if (text.includes('status') && (text.includes('code') || text.includes('error'))) return 'status_codes';
   if (text.includes('enum')) return 'enum_values';
   return undefined;
+}
+
+function scanSections(line: string, lineNumber: number, sections: Section[], seen: Seen): void {
+  const match = line.match(/^(\s{0,3})(#{1,6})\s+(.+)$/);
+  if (!match) return;
+  const level = match[2].length;
+  const title = match[3].trim();
+  const id = title; // For now, use the title as the ID
+  if (seen.has(id)) return;
+  seen.add(id);
+  sections.push({ id, level, line: lineNumber, text: line.trim() });
 }
 
 function scanDecisions(line: string, lineNumber: number, decisions: Decision[], seen: Seen): void {

@@ -82,6 +82,27 @@ describe('walkDiff', () => {
     }
   });
 
+  test('identifies renames and classifies the new path', () => {
+    const repo = createRepo();
+    try {
+      writeFile(repo, 'old/name.ts', 'content\n');
+      const base = commit(repo, 'base name', 'Alice Base');
+
+      fs.mkdirSync(path.join(repo, 'new'), { recursive: true });
+      git(repo, ['mv', 'old/name.ts', 'new/name.test.ts']);
+      commit(repo, 'rename to test', 'Bob Rename');
+
+      const summary = walkDiff(`${base}..HEAD`, { repoRoot: repo });
+
+      assert.deepEqual(
+        summary.changedFiles.map((file) => [file.path, file.status, file.kind]),
+        [['new/name.test.ts', 'R', 'test']],
+      );
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
+  });
+
   test('accepts a single base ref and defaults head to HEAD', () => {
     const repo = createRepo();
     try {

@@ -7,10 +7,18 @@ const ERROR_MESSAGE_PATTERN = /(?:error message|message|error)\s*[:=]\s*["'`]?([
 export function parsePrdFile(filePath) {
     return parsePrdMarkdown(readFileSync(filePath, 'utf-8'));
 }
+export function parsePrdIdentities(markdown) {
+    const parsed = parsePrdMarkdown(markdown);
+    return {
+        acIds: parsed.acceptanceCriteria.map((ac) => ac.id),
+        sectionIds: parsed.sections.map((s) => s.id),
+    };
+}
 export function parsePrdMarkdown(markdown) {
     const result = {
         decisions: [],
         acceptanceCriteria: [],
+        sections: [],
         endpoints: [],
         allowlistEntries: [],
         statusCodeRows: [],
@@ -19,6 +27,7 @@ export function parsePrdMarkdown(markdown) {
     const seen = {
         decisions: new Set(),
         acceptanceCriteria: new Set(),
+        sections: new Set(),
         endpoints: new Set(),
         allowlistEntries: new Set(),
         statusCodeRows: new Set(),
@@ -33,6 +42,7 @@ export function parsePrdMarkdown(markdown) {
 }
 function scanLine(line, lineNumber, result, seen, state) {
     updateContext(line, state);
+    scanSections(line, lineNumber, result.sections, seen.sections);
     scanDecisions(line, lineNumber, result.decisions, seen.decisions);
     scanAcceptanceCriteria(line, lineNumber, result.acceptanceCriteria, seen.acceptanceCriteria);
     scanEndpoint(line, lineNumber, result, seen.endpoints, state);
@@ -65,6 +75,18 @@ function contextFromText(text) {
     if (text.includes('enum'))
         return 'enum_values';
     return undefined;
+}
+function scanSections(line, lineNumber, sections, seen) {
+    const match = line.match(/^(\s{0,3})(#{1,6})\s+(.+)$/);
+    if (!match)
+        return;
+    const level = match[2].length;
+    const title = match[3].trim();
+    const id = title; // For now, use the title as the ID
+    if (seen.has(id))
+        return;
+    seen.add(id);
+    sections.push({ id, level, line: lineNumber, text: line.trim() });
 }
 function scanDecisions(line, lineNumber, decisions, seen) {
     for (const match of line.matchAll(DECISION_PATTERN)) {
