@@ -61,6 +61,7 @@ export function buildAcCoverageScorecard(acceptanceCriteria, diff, options = {})
         },
     };
 }
+export const scoreAcCoverage = buildAcCoverageScorecard;
 export function renderAcCoverageMarkdownTable(rows) {
     return [
         '| ID | Implemented | Tested | File:line evidence |',

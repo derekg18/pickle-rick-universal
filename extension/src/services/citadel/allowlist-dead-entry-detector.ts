@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import * as path from 'node:path';
-import { AllowlistEntry } from './prd-parser.js';
+import { AllowlistEntry, parsePrdMarkdown } from './prd-parser.js';
 import { ChangedFileSummary, DiffSummary } from './diff-walker.js';
 
 export type AllowlistDeadEntrySeverity = 'High';
@@ -58,13 +58,14 @@ interface ProductionFile {
 const DEFAULT_MAX_CALLERS = 3;
 const CODE_FILE_PATTERN = /\.[cm]?[jt]sx?$/i;
 const TEST_FILE_PATTERN = /(?:^|\/)(?:__tests__|tests?|specs?)(?:\/|$)|(?:\.|-)test\.[cm]?[jt]sx?$|(?:\.|-)spec\.[cm]?[jt]sx?$/i;
+const CLAUDE_FILE_PATTERN = /CLAUDE\.md$/i;
 const SKIPPED_DIRS = new Set(['.git', 'node_modules']);
 const STRING_LITERAL_PATTERN = /["'`]([A-Za-z0-9_.:-]+)["'`]/g;
 const QUOTED_KEY_PATTERN = /(?:^|[,{\s])\s*["'`]([A-Za-z0-9_.:-]+)["'`]\s*:/g;
 const IDENTIFIER_KEY_PATTERN = /(?:^|[,{\s])\s*([A-Za-z_$][\w$]*)\s*:/g;
 const ENUM_VALUE_PATTERN = /^\s*([A-Za-z_$][\w$]*)\s*(?:=\s*["'`]([^"'`]+)["'`])?\s*,?/;
 
-export function detectAllowlistDeadEntries(
+export function auditAllowlistDeadEntries(
   diff: DiffSummary,
   options: DetectAllowlistDeadEntriesOptions = {},
 ): AllowlistDeadEntryResult {
@@ -90,8 +91,13 @@ export function detectAllowlistDeadEntries(
   };
 }
 
+/** @deprecated Use auditAllowlistDeadEntries instead */
+export const detectAllowlistDeadEntries = auditAllowlistDeadEntries;
+
 function extractAllowlistDeclarations(diff: DiffSummary, repoRoot: string): AllowlistDeclaration[] {
   const declarations = new Map<string, AllowlistDeclaration>();
+  
+  // Scan production code files
   for (const file of loadChangedProductionFiles(diff.changedFiles, repoRoot)) {
     const state: FileScanState = { validActionsDepth: 0, featureFlagsDepth: 0, enumDepth: 0 };
     file.lines.forEach((line, index) => {
@@ -106,6 +112,24 @@ function extractAllowlistDeclarations(diff: DiffSummary, repoRoot: string): Allo
       exitContexts(line, state);
     });
   }
+
+  // Scan changed CLAUDE.md files
+  for (const file of loadChangedClaudeFiles(diff.changedFiles, repoRoot)) {
+    const content = readFileSync(path.join(repoRoot, file.summary.path), 'utf-8');
+    const parsed = parsePrdMarkdown(content);
+    const changedLines = changedLineNumbers(file.summary);
+    
+    for (const entry of parsed.allowlistEntries) {
+      if (changedLines.has(entry.line)) {
+        const declaration: AllowlistDeclaration = {
+          ...entry,
+          file: file.summary.path,
+        };
+        declarations.set(declarationKey(declaration), declaration);
+      }
+    }
+  }
+
   return [...declarations.values()].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line || a.value.localeCompare(b.value));
 }
 
@@ -126,6 +150,14 @@ function loadChangedProductionFiles(changedFiles: ChangedFileSummary[], repoRoot
     }
   });
 }
+
+function loadChangedClaudeFiles(changedFiles: ChangedFileSummary[], repoRoot: string): { summary: ChangedFileSummary }[] {
+  return changedFiles.flatMap((summary) => {
+    if (summary.status === 'D' || !CLAUDE_FILE_PATTERN.test(summary.path)) return [];
+    return [{ summary }];
+  });
+}
+
 
 function changedLineNumbers(summary: ChangedFileSummary): Set<number> {
   const lines = new Set<number>();
@@ -282,14 +314,24 @@ function collectProductionFilesFromDirectory(directory: string, repoRoot: string
   for (const entry of entries) {
     const fullPath = path.join(directory, entry.name);
     const relativePath = toPosixPath(path.relative(repoRoot, fullPath));
+    
     if (entry.isDirectory()) {
-      if (!SKIPPED_DIRS.has(entry.name)) collectProductionFilesFromDirectory(fullPath, repoRoot, files);
+      if (!SKIPPED_DIRS.has(entry.name)) {
+        collectProductionFilesFromDirectory(fullPath, repoRoot, files);
+      }
       continue;
     }
-    if (!entry.isFile() || !CODE_FILE_PATTERN.test(relativePath) || isTestFile(relativePath)) continue;
+    
+    if (!entry.isFile()) continue;
+    if (!CODE_FILE_PATTERN.test(relativePath)) continue;
+    if (isTestFile(relativePath)) continue;
+    
     try {
       if (!statSync(fullPath).isFile()) continue;
-      files.push({ path: relativePath, lines: readFileSync(fullPath, 'utf-8').split(/\r?\n/) });
+      files.push({
+        path: relativePath,
+        lines: readFileSync(fullPath, 'utf-8').split(/\r?\n/),
+      });
     } catch {
       // Ignore unreadable files; callers are evidence, not required inputs.
     }
@@ -302,16 +344,26 @@ function findCallers(
   maxCallers: number,
 ): AllowlistCallerEvidence[] {
   const callers: AllowlistCallerEvidence[] = [];
+  
   for (const file of files) {
+    if (callers.length >= maxCallers) break;
+    
     file.lines.forEach((line, index) => {
+      if (callers.length >= maxCallers) return;
+      
       const lineNumber = index + 1;
       if (file.path === entry.file && lineNumber === entry.line) return;
       if (!line.includes(entry.value)) return;
-      callers.push({ file: file.path, line: lineNumber, text: line.trim() });
+      
+      callers.push({
+        file: file.path,
+        line: lineNumber,
+        text: line.trim(),
+      });
     });
-    if (callers.length >= maxCallers) break;
   }
-  return callers.slice(0, maxCallers);
+  
+  return callers;
 }
 
 function toFinding(entry: AllowlistDeclaration): AllowlistDeadEntryFinding {

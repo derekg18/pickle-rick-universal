@@ -125,4 +125,69 @@ describe('detectAllowlistDeadEntries', () => {
       fs.rmSync(repoRoot, { recursive: true, force: true });
     }
   });
+
+  test('scans CLAUDE.md files for allowlist entries', () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'citadel-allowlist-claude-'));
+    try {
+      writeFile(
+        repoRoot,
+        'CLAUDE.md',
+        [
+          '# Allowlist Entries',
+          '## VALID_ACTIONS',
+          '| Name | Value |',
+          '|------|-------|',
+          "| VALID_ACTIONS | 'action.claude.live' |",
+          "| VALID_ACTIONS | 'action.claude.dead' |",
+          '',
+          '## lender_feature_flags',
+          '| Flag | Status |',
+          "| 'claude_live_flag' | Enabled |",
+          "| 'claude_dead_flag' | Disabled |",
+        ].join('\n'),
+      );
+      writeFile(
+        repoRoot,
+        'src/callers.ts',
+        [
+          "const a = 'action.claude.live';",
+          "const b = 'claude_live_flag';",
+        ].join('\n'),
+      );
+
+      const result = detectAllowlistDeadEntries(
+        diffSummary(repoRoot, [
+          {
+            path: 'CLAUDE.md',
+            status: 'M',
+            kind: 'claude',
+            changedLines: [
+              { start: 5, end: 6 },
+              { start: 10, end: 11 },
+            ],
+            blame: [],
+          },
+        ]),
+      );
+
+      assert.deepEqual(
+        result.entries.map((entry) => [entry.kind, entry.value]),
+        [
+          ['valid_action', 'action.claude.live'],
+          ['valid_action', 'action.claude.dead'],
+          ['lender_feature_flag', 'claude_live_flag'],
+          ['lender_feature_flag', 'claude_dead_flag'],
+        ],
+      );
+      assert.deepEqual(
+        result.findings.map((finding) => [finding.severity, finding.entry.value]),
+        [
+          ['High', 'action.claude.dead'],
+          ['High', 'claude_dead_flag'],
+        ],
+      );
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
 });

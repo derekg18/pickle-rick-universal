@@ -267,10 +267,22 @@ function scanContextualTableEntries(
   if (cells.length < 2 || isSeparatorRow(cells)) return;
   const [nameCell, valueCell] = cells;
   if (looksLikeHeader(nameCell, valueCell)) return;
+  
   const kind = tableContext === 'lender_feature_flags' ? 'lender_feature_flag' : tableContext === 'valid_actions' ? 'valid_action' : 'enum_value';
+  
+  let name = cleanCell(nameCell);
+  let value = cleanCell(valueCell);
+  
+  // HEURISTIC: In lender_feature_flags tables, the first column is often the key (the flag name)
+  // and the second is the value (true/false/enabled). We want the key as the allowlist value for searching.
+  if (kind === 'lender_feature_flag' && (value.match(/^(enabled|disabled|true|false|on|off|enforced|ignored)$/i) || !name.match(/^(enabled|disabled|true|false|on|off|enforced|ignored)$/i))) {
+    value = name;
+    name = 'lender_feature_flags';
+  }
+
   pushAllowlistEntry(entries, seen, {
-    name: cleanCell(nameCell),
-    value: cleanCell(valueCell),
+    name,
+    value,
     line: lineNumber,
     kind,
     text: line.trim(),

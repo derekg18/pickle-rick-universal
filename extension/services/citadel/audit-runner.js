@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { withLock } from '../state-manager.js';
 import { auditAcShape } from './ac-shape-audit.js';
+import { scoreAcCoverage } from './ac-coverage-scorecard.js';
+import { parsePrdMarkdown } from './prd-parser.js';
 import { auditSiblingAuthPreconditions } from './sibling-auth-audit.js';
 import { auditFrontendPropDrift } from './frontend-prop-drift-audit.js';
 import { walkDiff } from './diff-walker.js';
@@ -25,7 +27,9 @@ export function buildCitadelAuditReport(options) {
     const repoRoot = path.resolve(options.repoRoot ?? process.cwd());
     const prdPath = path.resolve(repoRoot, options.prdPath);
     const prdMarkdown = readFileSync(prdPath, 'utf-8');
+    const parsedPrd = parsePrdMarkdown(prdMarkdown);
     const diff = walkDiff(options.diffRange, { repoRoot });
+    const acCoverage = scoreAcCoverage(parsedPrd.acceptanceCriteria, diff, { repoRoot });
     const siblingAuth = auditSiblingAuthPreconditions(diff);
     const frontendPropDrift = auditFrontendPropDrift(diff);
     const acShape = auditAcShape({
@@ -45,6 +49,7 @@ export function buildCitadelAuditReport(options) {
         ...divergenceReconciliation.decisionsRequired,
     ];
     const findings = uniqueFindings([
+        ...acCoverage.findings.map((finding) => withFindingSource(finding, 'ac_coverage')),
         ...siblingAuth.findings.map((finding) => withFindingSource(finding, 'sibling_auth_preconditions')),
         ...frontendPropDrift.findings.map((finding) => withFindingSource(finding, 'frontend_prop_drift')),
         ...acShape.findings.map((finding) => withFindingSource(finding, 'ac_shape')),
@@ -53,6 +58,7 @@ export function buildCitadelAuditReport(options) {
         ...crossPhaseReport.findings,
     ]);
     const sections = {
+        ac_coverage: acCoverage,
         sibling_auth_preconditions: siblingAuth,
         frontend_prop_drift: frontendPropDrift,
         ac_shape: acShape,
