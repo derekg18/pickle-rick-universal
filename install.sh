@@ -101,7 +101,7 @@ fi
 json_array_from_find() {
   local root="$1"
   if [ -d "$root" ]; then
-    find "$root" \( -type f -o -type l \) -print | sort | jq -R . | jq -s .
+    find "$root" \( -type f -o -type l \) ! -name "*.log" -print | sort | jq -R . | jq -s .
   else
     printf '[]\n'
   fi

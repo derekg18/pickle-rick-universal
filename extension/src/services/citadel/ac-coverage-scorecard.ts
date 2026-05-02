@@ -138,6 +138,8 @@ export function buildAcCoverageScorecard(
   };
 }
 
+export const scoreAcCoverage = buildAcCoverageScorecard;
+
 export function renderAcCoverageMarkdownTable(rows: AcCoverageRow[]): string {
   return [
     '| ID | Implemented | Tested | File:line evidence |',
