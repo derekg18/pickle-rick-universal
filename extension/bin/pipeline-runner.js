@@ -20,7 +20,7 @@ import { execFileSync, spawn } from 'child_process';
 import { BACKENDS } from '../types/index.js';
 import { StateManager, safeDeactivate, assertSchemaVersionDeployParity, SchemaVersionDeployDriftError } from '../services/state-manager.js';
 import { backendEnvOverrides, isBackend } from '../services/backend-spawn.js';
-import { getExtensionRoot, Style, formatTime, printMinimalPanel, safeErrorMessage, ensureMonitorWindow, displayMacNotification, writeStateFile, } from '../services/pickle-utils.js';
+import { getExtensionRoot, Style, formatTime, printMinimalPanel, safeErrorMessage, ensureMonitorWindow, displayMacNotification, writeStateFile, collectTickets, } from '../services/pickle-utils.js';
 import { isWorkingTreeDirty } from '../services/git-utils.js';
 import { logActivity } from '../services/activity-logger.js';
 import { emitBundleLinearComments } from '../services/linear-integration.js';
@@ -124,17 +124,46 @@ export function readBundlePrdBackend(content) {
     if (bundleBackend)
         return bundleBackend;
     const yamlBlock = extractLeadingYamlFrontmatter(content);
-    return yamlBlock ? readYamlLikeField(yamlBlock, 'backend') : undefined;
+    const yamlBackend = yamlBlock ? readYamlLikeField(yamlBlock, 'backend') : undefined;
+    if (yamlBackend)
+        return yamlBackend;
+    // AC-BUNDLE-18: Also support `codex-required: true` as a signal
+    const codexReq = bundleBlock
+        ? readYamlLikeField(bundleBlock, 'codex-required')
+        : yamlBlock
+            ? readYamlLikeField(yamlBlock, 'codex-required')
+            : undefined;
+    if (codexReq === 'true' || codexReq === '"true"')
+        return CODEX_REQUIRED_BACKEND;
+    return undefined;
 }
-export function assertCodexRequiredBackend(sessionDir, backend, source) {
-    const prdPath = path.join(sessionDir, 'prd.md');
-    if (!fs.existsSync(prdPath))
+/**
+ * Ensures the resolved backend meets any hard requirements in the bundle PRD
+ * or individual tickets. If a requirement is found and the backend is not
+ * 'codex', throws an actionable Error.
+ */
+export function assertCodexRequiredBackend(sessionDir, backend, source, state) {
+    if (backend === 'codex')
         return;
-    const requiredBackend = readBundlePrdBackend(fs.readFileSync(prdPath, 'utf-8'));
-    if (requiredBackend !== CODEX_REQUIRED_BACKEND || backend === 'codex')
-        return;
-    throw new Error(`Bundle PRD declares backend: ${CODEX_REQUIRED_BACKEND}, but pipeline-runner resolved backend ` +
-        `${backend} from ${source}. Restart with /pickle-pipeline --backend codex.`);
+    // 1. Check Bundle PRD (priority: session root, fallback to state.prd_path)
+    let prdPath = path.join(sessionDir, 'prd.md');
+    if (!fs.existsSync(prdPath) && state?.prd_path) {
+        prdPath = state.prd_path;
+    }
+    if (fs.existsSync(prdPath)) {
+        const requiredBackend = readBundlePrdBackend(fs.readFileSync(prdPath, 'utf-8'));
+        if (requiredBackend === CODEX_REQUIRED_BACKEND) {
+            throw new Error(`Bundle PRD declares backend: ${CODEX_REQUIRED_BACKEND}, but pipeline-runner resolved backend ` +
+                `${backend} from ${source}. Restart with /pickle-pipeline --backend codex.`);
+        }
+    }
+    // 2. Check individual tickets (NEW-T5)
+    const tickets = collectTickets(sessionDir);
+    const reqTicket = tickets.find((t) => t.codex_required);
+    if (reqTicket) {
+        throw new Error(`Ticket ${reqTicket.id} requires codex (codex-required: true), but pipeline-runner resolved backend ` +
+            `${backend} from ${source}. Restart with /pickle-pipeline --backend codex.`);
+    }
 }
 // ---------------------------------------------------------------------------
 // Subsystem Discovery (mirrors anatomy-park.md Step 3)
@@ -1024,7 +1053,7 @@ function loadPipelineRuntime(sessionDir, opts, log) {
     // Backend resolution — see resolveBackendWithSource. Capture source BEFORE
     // any state write so the log reflects the actual resolution path.
     const { backend, source } = resolveBackendWithSource(state, config.backend, process.env.PICKLE_BACKEND);
-    assertCodexRequiredBackend(sessionDir, backend, source);
+    assertCodexRequiredBackend(sessionDir, backend, source, state);
     // Only write when the value actually changes — avoids a lock round-trip on
     // every phase when state already matches (fresh-run and steady-state case).
     if (state.backend !== backend) {

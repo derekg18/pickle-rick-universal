@@ -330,6 +330,7 @@ export function parseTicketFrontmatter(filePath) {
             skipped_at: get('skipped_at'),
             complexity_tier,
             depends_on,
+            codex_required: get('codex-required') === 'true' || get('codex-required') === '"true"',
         };
     }
     catch {

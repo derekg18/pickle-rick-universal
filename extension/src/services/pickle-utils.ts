@@ -303,6 +303,8 @@ export interface TicketInfo {
   complexity_tier?: 'trivial' | 'small' | 'medium' | 'large';
   /** IDs of tickets this ticket depends on (must run before this one). */
   depends_on: string[];
+  /** When true, this ticket requires the codex backend to execute correctly. */
+  codex_required?: boolean;
 }
 
 /**
@@ -374,6 +376,7 @@ export function parseTicketFrontmatter(filePath: string): TicketInfo | null {
       skipped_at: get('skipped_at'),
       complexity_tier,
       depends_on,
+      codex_required: get('codex-required') === 'true' || get('codex-required') === '"true"',
     };
   } catch {
     return null;

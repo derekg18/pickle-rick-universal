@@ -963,6 +963,17 @@ describe('bundle PRD backend contract', () => {
     assert.equal(readBundlePrdBackend(prd), 'codex-required');
   });
 
+  test('reads codex-required: true from frontmatter as codex-required backend', () => {
+    const prd = [
+      '---',
+      'codex-required: true',
+      '---',
+      '',
+      '# PRD',
+    ].join('\n');
+    assert.equal(readBundlePrdBackend(prd), 'codex-required');
+  });
+
   test('returns undefined when PRD has no backend contract', () => {
     assert.equal(readBundlePrdBackend('# PRD\n\nNo frontmatter.'), undefined);
   });
@@ -999,6 +1010,46 @@ describe('bundle PRD backend contract', () => {
     ].join('\n'));
     try {
       assert.doesNotThrow(() => assertCodexRequiredBackend(dir, 'codex', 'state.json'));
+    } finally {
+      fs.rmSync(dir, { recursive: true });
+    }
+  });
+
+  test('falls back to state.prd_path if prd.md is missing from sessionDir', () => {
+    const dir = tmpDir();
+    const externalPrd = path.join(dir, 'external_prd.md');
+    fs.writeFileSync(externalPrd, [
+      '---',
+      'backend: codex-required',
+      '---',
+    ].join('\n'));
+    const state = { prd_path: externalPrd };
+    try {
+      assert.throws(
+        () => assertCodexRequiredBackend(dir, 'claude', 'default', state),
+        /Bundle PRD declares backend: codex-required/,
+      );
+    } finally {
+      fs.rmSync(dir, { recursive: true });
+    }
+  });
+
+  test('rejects non-codex backend when a ticket requires codex', () => {
+    const dir = tmpDir();
+    const ticketDir = path.join(dir, 'T-1');
+    fs.mkdirSync(ticketDir, { recursive: true });
+    fs.writeFileSync(path.join(ticketDir, 'linear_ticket_T-1.md'), [
+      '---',
+      'id: T-1',
+      'codex-required: true',
+      '---',
+      '# Ticket',
+    ].join('\n'));
+    try {
+      assert.throws(
+        () => assertCodexRequiredBackend(dir, 'claude', 'default'),
+        /Ticket T-1 requires codex/,
+      );
     } finally {
       fs.rmSync(dir, { recursive: true });
     }
