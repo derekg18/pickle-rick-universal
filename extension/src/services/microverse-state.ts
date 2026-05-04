@@ -93,9 +93,9 @@ export function recordIteration(
   if (state.convergence_mode === 'worker' || !state.convergence) {
     return state;
   }
-  const history = [...state.convergence.history, entry];
+  const history = [...(state.convergence?.history ?? []), entry];
   if (!classification) {
-    const lastAccepted = [...state.convergence.history].reverse().find(h => h.action === 'accept');
+    const lastAccepted = [...(state.convergence?.history ?? [])].reverse().find(h => h.action === 'accept');
     const previousScore = lastAccepted ? lastAccepted.score : state.baseline_score;
     classification = compareMetric(entry.score, previousScore, state.key_metric.tolerance, state.key_metric.direction);
   }

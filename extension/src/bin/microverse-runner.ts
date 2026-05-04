@@ -360,7 +360,8 @@ export async function ensurePerIterationGateBaseline(opts: {
     baselineMaxAgeSeconds,
     _deps,
   } = opts;
-  if (!enabledFiles.includes(currentMv.convergence_file ?? '')) return;
+  const convergenceFile = currentMv.convergence_mode === 'worker' ? currentMv.convergence_file : undefined;
+  if (!convergenceFile || !enabledFiles.includes(convergenceFile)) return;
 
   const baselinePath = path.join(sessionDir, 'gate', 'baseline.json');
   if (await pathExists(baselinePath)) {
@@ -422,7 +423,8 @@ export async function runPerIterationGateHook(opts: {
   let currentMv = opts.currentMv;
   const deps = resolvePerIterationGateDeps({ workingDir, backend, remediatorTimeoutS, _deps });
 
-  const isEnabled = enabledFiles.includes(currentMv.convergence_file ?? '');
+  const convergenceFile = currentMv.convergence_mode === 'worker' ? currentMv.convergence_file : undefined;
+  const isEnabled = convergenceFile != null && enabledFiles.includes(convergenceFile);
   const headSha = deps.getHeadShaFn(workingDir);
   const commitsHappened = preIterSha !== headSha;
   const baselinePath = path.join(sessionDir, 'gate', 'baseline.json');
@@ -482,7 +484,11 @@ export async function handleWorkerManagedIteration(opts: {
   let reason = 'no reason';
   const priorIterationRegressions = Number(currentMv.iteration_regressions ?? 0);
 
-  const cfPath = path.join(sessionDir, currentMv.convergence_file!);
+  if (currentMv.convergence_mode !== 'worker') {
+    return { currentMv, converged, reason };
+  }
+
+  const cfPath = path.join(sessionDir, currentMv.convergence_file);
   try {
     const raw = readRecoverableJsonObject(cfPath) as Record<string, unknown> | null;
     if (!raw) throw new Error('convergence file empty or invalid');
@@ -887,9 +893,9 @@ export function buildMicroverseHandoff(
 }
 
 export function getBestScore(mvState: MicroverseSessionState): number | null {
-  if (!mvState.convergence) return null;
+  const history = mvState.convergence?.history ?? [];
   const bestFn = (mvState.key_metric.direction ?? 'higher') === 'lower' ? Math.min : Math.max;
-  const accepted = mvState.convergence.history.filter(h => h.action === 'accept').map(h => h.score);
+  const accepted = history.filter(h => h.action === 'accept').map(h => h.score);
   if (accepted.length === 0) return mvState.baseline_score;
   return bestFn(...accepted, mvState.baseline_score);
 }
@@ -938,7 +944,7 @@ export function writeFinalReport(
   elapsedSeconds: number,
 ): void {
   const history = mvState.convergence?.history ?? [];
-  const isWorkerMode = !mvState.convergence || mvState.key_metric?.type === 'none' || mvState.convergence_mode === 'worker';
+  const isWorkerMode = mvState.convergence_mode === 'worker' || mvState.key_metric?.type === 'none' || !mvState.convergence;
   const accepted = history.filter(h => h.action === 'accept').length;
   const reverted = history.filter(h => h.action === 'revert').length;
   const bestScore = isWorkerMode ? null : getBestScore(mvState);
@@ -949,12 +955,12 @@ export function writeFinalReport(
     `- **Exit Reason**: ${exitReason}`,
     `- **Iterations**: ${iterations}`,
     `- **Elapsed**: ${formatTime(elapsedSeconds)}`,
-    `- **Convergence Mode**: ${isWorkerMode ? 'worker' : 'metric'}`,
+    `- **Convergence Mode**: ${mvState.convergence_mode}`,
     `- **Metric**: ${mvState.key_metric?.description ?? 'n/a'}`,
   ];
 
-  if (isWorkerMode) {
-    report.push(`- **Worker Convergence Signal**: see ${mvState.convergence_file ?? 'phase config file'}`);
+  if (mvState.convergence_mode === 'worker') {
+    report.push(`- **Worker Convergence Signal**: see ${mvState.convergence_file}`);
   } else {
     report.push(`- **Baseline Score**: ${mvState.baseline_score}`);
     report.push(`- **Best Score**: ${bestScore}`);
@@ -1054,7 +1060,7 @@ export function loadFailureClassificationFlag(extensionRoot: string): boolean {
 
 function resetStoppedMicroverseState(state: MicroverseState, sessionDir: string, log: (msg: string) => void): void {
   if (state.status !== 'stopped') return;
-  const hasHistory = state.convergence?.history?.length > 0;
+  const hasHistory = (state.convergence?.history?.length ?? 0) > 0;
   const hasBaseline = state.baseline_score !== 0;
   const newStatus = (hasHistory || hasBaseline) ? 'iterating' : 'gap_analysis';
   log(`Resuming from failed state — resetting status to ${newStatus}`);
