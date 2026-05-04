@@ -185,7 +185,25 @@ export function sparkline(values: number[]): string {
 export function renderMicroverseTrend(mv: MicroverseSessionState, width: number): string[] {
   const out: string[] = [];
   const sep = matrixSeparator(width);
-  const history = mv.convergence.history;
+
+  if (mv.convergence_mode === 'worker') {
+    out.push(`\n${sep}\n${MX.BRIGHT}Worker Mode${MX.R} ${MX.DIM}(${mv.convergence_file})${MX.R}\n`);
+    if (mv.status === 'converged') {
+      out.push(`  ${MX.BRIGHT}${MX.GREEN}◆ CONVERGED${MX.R}\n`);
+    } else if (mv.status === 'stopped') {
+      out.push(`  ${MX.WARN}◇ STOPPED${mv.exit_reason ? ` (${mv.exit_reason})` : ''}${MX.R}\n`);
+    } else {
+      out.push(`  ${MX.DIM}Waiting for worker signal...${MX.R}\n`);
+    }
+    if (mv.finalizer_error) {
+      out.push(`  ${MX.ERR}⚠ Finalizer Crash detected!${MX.R}\n`);
+    }
+    return out;
+  }
+
+  if (!mv.convergence) return [];
+
+  const history = mv.convergence?.history ?? [];
   const direction = mv.key_metric.direction ?? 'higher';
   const targetLabel = mv.convergence_target != null ? String(mv.convergence_target) : '—';
 
