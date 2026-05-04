@@ -766,6 +766,78 @@ const noHardcodedTimeout = {
   },
 };
 
+// ─── Rule: no-bare-convergence-history ──────────────────────────────────────
+
+const noBareConvergenceHistory = {
+  meta: {
+    type: 'problem',
+    docs: {
+      description: 'Disallow bare .convergence.history access — use ?.history or gate with convergence_mode === "metric"',
+    },
+    messages: {
+      requireGuard:
+        'Unsafe access to .history on "convergence" object. Worker mode may leave convergence undefined. Use optional chaining `?.history` or gate with `convergence_mode === "metric"`.',
+    },
+    schema: [],
+  },
+  create(context) {
+    function isMetricModeCheck(node) {
+      if (!node) return false;
+      // convergence_mode === 'metric'
+      if (
+        node.type === 'BinaryExpression' &&
+        (node.operator === '===' || node.operator === '==') &&
+        node.left.type === 'MemberExpression' &&
+        node.left.property.type === 'Identifier' &&
+        node.left.property.name === 'convergence_mode' &&
+        node.right.type === 'Literal' &&
+        node.right.value === 'metric'
+      ) {
+        return true;
+      }
+      // Compound checks
+      if (node.type === 'LogicalExpression') {
+        return isMetricModeCheck(node.left) || isMetricModeCheck(node.right);
+      }
+      return false;
+    }
+
+    function hasMetricModeGuard(node) {
+      let current = node.parent;
+      while (current) {
+        if (current.type === 'IfStatement' || current.type === 'ConditionalExpression') {
+          if (isMetricModeCheck(current.test)) return true;
+        }
+        if (current.type === 'LogicalExpression' && current.operator === '&&') {
+          if (isMetricModeCheck(current.left)) return true;
+        }
+        current = current.parent;
+      }
+      return false;
+    }
+
+    return {
+      MemberExpression(node) {
+        if (node.computed) return;
+        if (node.property.type !== 'Identifier' || node.property.name !== 'history') return;
+
+        // Check if the object being accessed is '.convergence'
+        const obj = node.object;
+        if (obj.type !== 'MemberExpression') return;
+        if (obj.property.type !== 'Identifier' || obj.property.name !== 'convergence') return;
+
+        // If it's optional chaining, it's safe (enough)
+        if (node.optional) return;
+
+        // Check for common guard patterns in parent scopes
+        if (!hasMetricModeGuard(node)) {
+          context.report({ node, messageId: 'requireGuard' });
+        }
+      },
+    };
+  },
+};
+
 // ─── Plugin Export ───────────────────────────────────────────────────────────
 
 const plugin = {
@@ -786,6 +858,7 @@ const plugin = {
     'no-sync-in-async': noSyncInAsync,
     'spawn-error-handler': spawnErrorHandler,
     'no-hardcoded-timeout': noHardcodedTimeout,
+    'no-bare-convergence-history': noBareConvergenceHistory,
   },
 };
 

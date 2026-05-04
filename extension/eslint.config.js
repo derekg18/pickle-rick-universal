@@ -33,6 +33,7 @@ export default tseslint.config(
       'pickle/no-sync-in-async': 'warn',
       'pickle/spawn-error-handler': 'error',
       'pickle/no-hardcoded-timeout': 'error',
+      'pickle/no-bare-convergence-history': 'error',
     },
   },
   {
