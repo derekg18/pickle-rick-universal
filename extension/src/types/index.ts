@@ -505,22 +505,15 @@ export interface MicroverseHistoryEntry {
   failure_class?: FailureClass;
 }
 
-export interface MicroverseSessionState {
+export interface MicroverseBaseState {
   status: 'gap_analysis' | 'iterating' | 'converged' | 'stopped';
   prd_path: string;
   key_metric: MicroverseMetric;
-  convergence: {
-    stall_limit: number;
-    stall_counter: number;
-    history: MicroverseHistoryEntry[];
-  };
   gap_analysis_path: string;
   judge_context_path?: string;
   failed_approaches: string[];
   baseline_score: number;
   convergence_target?: number;
-  convergence_mode?: 'metric' | 'worker';
-  convergence_file?: string;
   allowed_paths?: string[];
   exit_reason?: string;
   stash_ref?: string;
@@ -528,7 +521,30 @@ export interface MicroverseSessionState {
   approach_exhaustion_fired: boolean;
   iteration_regressions?: number;
   gate_regression_threshold_warning_emitted?: boolean;
+  /** Error record written by markMicroverseFatalError if a crash happens AFTER convergence. */
+  finalizer_error?: {
+    message: string;
+    stack?: string;
+    timestamp: string;
+  };
 }
+
+export interface MetricModeState extends MicroverseBaseState {
+  convergence_mode: 'metric';
+  convergence: {
+    stall_limit: number;
+    stall_counter: number;
+    history: MicroverseHistoryEntry[];
+  };
+}
+
+export interface WorkerModeState extends MicroverseBaseState {
+  convergence_mode: 'worker';
+  convergence_file: string;
+  convergence?: undefined;
+}
+
+export type MicroverseSessionState = MetricModeState | WorkerModeState;
 
 // ---------------------------------------------------------------------------
 // Gate Types
