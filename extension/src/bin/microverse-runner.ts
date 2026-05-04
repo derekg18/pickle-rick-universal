@@ -1657,6 +1657,11 @@ async function runMicroversePhases(currentMv: MicroverseState, ctx: RunContext, 
   return outcome;
 }
 
+function isSuccessfulOutcome(reason: ExitReason): boolean {
+  const successfulReasons: ExitReason[] = ['converged', 'stopped', 'limit_reached', 'approach_exhaustion', 'no_progress'];
+  return successfulReasons.includes(reason);
+}
+
 function finalizeMicroverseRun(sessionDir: string, ctx: RunContext, outcome: ExitOutcome, log: (msg: string) => void): void {
   outcome.state.status = outcome.exitReason === 'converged' ? 'converged' : 'stopped';
   outcome.state.exit_reason = outcome.exitReason;
@@ -1669,31 +1674,35 @@ function finalizeMicroverseRun(sessionDir: string, ctx: RunContext, outcome: Exi
     deactivateRunnerState(ctx.statePath);
   }
 
-  writeFinalReport(sessionDir, outcome.state, outcome.exitReason, outcome.iterations, outcome.elapsedSeconds);
+  // Guarded finalization steps: reporting and UI should not crash the process or revert state
+  try {
+    writeFinalReport(sessionDir, outcome.state, outcome.exitReason, outcome.iterations, outcome.elapsedSeconds);
 
-  logActivity({
-    event: 'session_end', source: 'pickle',
-    session: path.basename(sessionDir),
-    duration_min: Math.round(outcome.elapsedSeconds / 60),
-    mode: 'tmux',
-    ...(outcome.exitReason === 'error' || outcome.exitReason === 'rate_limit_exhausted' ? { error: outcome.exitReason } : {}),
-  });
+    logActivity({
+      event: 'session_end', source: 'pickle',
+      session: path.basename(sessionDir),
+      duration_min: Math.round(outcome.elapsedSeconds / 60),
+      mode: 'tmux',
+      ...(outcome.exitReason === 'error' || outcome.exitReason === 'rate_limit_exhausted' ? { error: outcome.exitReason } : {}),
+    });
 
-  const panelBestScore = getBestScore(outcome.state);
+    const panelBestScore = getBestScore(outcome.state);
 
-  printMinimalPanel('microverse-runner Complete', {
-    Iterations: outcome.iterations,
-    Elapsed: formatTime(outcome.elapsedSeconds),
-    ExitReason: outcome.exitReason,
-    BestScore: panelBestScore ?? 'n/a',
-  }, 'GREEN', '🔬');
+    printMinimalPanel('microverse-runner Complete', {
+      Iterations: outcome.iterations,
+      Elapsed: formatTime(outcome.elapsedSeconds),
+      ExitReason: outcome.exitReason,
+      BestScore: panelBestScore ?? 'n/a',
+    }, 'GREEN', '🔬');
+  } catch (finalizerErr) {
+    log(`[finalizer] non-fatal reporting error: ${safeErrorMessage(finalizerErr)}`);
+  }
 
   log(`microverse-runner finished. ${outcome.iterations} iterations, ${formatTime(outcome.elapsedSeconds)}, exit: ${outcome.exitReason}`);
 }
 
 function microverseExitCode(exitReason: ExitReason): number {
-  const successfulReasons: ExitReason[] = ['converged', 'stopped', 'limit_reached', 'approach_exhaustion', 'no_progress'];
-  return successfulReasons.includes(exitReason) ? 0 : 1;
+  return isSuccessfulOutcome(exitReason) ? 0 : 1;
 }
 
 export async function main(sessionDir: string): Promise<void> {
@@ -1717,26 +1726,41 @@ export function markMicroverseFatalError(sessionDir: string, error: unknown): vo
   if (!fs.existsSync(mvPath)) return;
   const recovered = readRecoverableJsonObject(mvPath);
   if (!recovered) return;
-  const mv = recovered as Record<string, unknown>;
+  const mv = recovered as MicroverseSessionState;
 
-  const successfulReasons = ['converged', 'stopped', 'limit_reached', 'approach_exhaustion', 'no_progress'];
-  if (successfulReasons.includes(String(mv.exit_reason))) {
+  const errorRecord = {
+    message: safeErrorMessage(error),
+    stack: error instanceof Error ? error.stack : undefined,
+    timestamp: new Date().toISOString(),
+  };
+
+  if (isSuccessfulOutcome(mv.exit_reason as ExitReason)) {
     // SUCCESS PRESERVATION (F5): The run already finished successfully; don't
     // overwrite the success marker with 'error' just because the finalizer crashed.
+    // Instead, append the error to the state so it can be rendered by the monitor.
+    mv.finalizer_error = errorRecord;
+    writeMicroverseState(sessionDir, mv);
+
+    // Also write a sibling for visibility in file explorers
     const crashReportPath = path.join(sessionDir, 'microverse-finalizer-error.json');
     sm.forceWrite(crashReportPath, {
       status: 'crashed',
       exit_reason: 'finalizer_error',
       original_exit_reason: mv.exit_reason,
-      error: safeErrorMessage(error),
-      timestamp: new Date().toISOString(),
+      error: errorRecord,
     });
     return;
   }
 
-  mv.status = 'stopped';
-  mv.exit_reason = 'error';
-  sm.forceWrite(mvPath, mv);
+  // Destruction path: the run failed OR crashed before finishing.
+  // Overwrite with stopped/error status.
+  const fatalState: Partial<MicroverseSessionState> = {
+    ...mv,
+    status: 'stopped',
+    exit_reason: 'error',
+    finalizer_error: errorRecord,
+  };
+  writeMicroverseState(sessionDir, fatalState as MicroverseSessionState);
 }
 
 if (process.argv[1] && path.basename(process.argv[1]) === 'microverse-runner.js') {
