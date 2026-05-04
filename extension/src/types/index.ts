@@ -155,11 +155,11 @@ export const STATE_MANAGER_DEFAULTS: StateManagerOptions = {
   baseLockDelayMs: 100,
   lockJitter: true,
   staleLockTimeoutMs: 30_000,
-  schemaVersion: 3,
+  schemaVersion: 4,
 };
 
 /** Latest schema_version that this code knows how to write/read. Must match the latest migration target in state-manager.ts. */
-export const LATEST_SCHEMA_VERSION = 3;
+export const LATEST_SCHEMA_VERSION = 4;
 
 export type StateErrorCode = 'MISSING' | 'CORRUPT' | 'SCHEMA_MISMATCH' | 'SCHEMA_DEPLOY_DRIFT' | 'LOCK_FAILED' | 'WRITE_FAILED';
 

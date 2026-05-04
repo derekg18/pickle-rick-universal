@@ -235,7 +235,16 @@ export function readMicroverseState(
     parsed.approach_exhaustion_fired ??= false;
     parsed.iteration_regressions ??= 0;
     parsed.gate_regression_threshold_warning_emitted ??= false;
-    parsed.convergence_mode ??= 'metric';
+
+    // Legacy inference logic
+    if (parsed.convergence_mode === undefined) {
+      if (parsed.convergence_file != null || parsed.key_metric?.type === 'none') {
+        parsed.convergence_mode = 'worker';
+      } else {
+        parsed.convergence_mode = 'metric';
+      }
+    }
+
     return parsed as MicroverseSessionState;
   } catch (err) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return null;
