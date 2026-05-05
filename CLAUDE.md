@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **pickle-rick-claude-main** (13364 symbols, 20007 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **pickle-rick-claude-main** (13379 symbols, 20021 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -41,3 +41,7 @@ This project is indexed by GitNexus as **pickle-rick-claude-main** (13364 symbol
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+## Trap Doors
+
+- `extension/src/services/citadel/audit-runner.ts` — INVARIANT: Anatomy artifacts may store findings in `findings` or `findings_history` and emit uppercase severities. BREAKS: final gate misses replayed CRITICAL/HIGH findings. ENFORCE: citadel-cross-phase fixture history test. PATTERN_SHAPE: `Array\.isArray\(.*\.findings\)|severity === 'Critical'`.

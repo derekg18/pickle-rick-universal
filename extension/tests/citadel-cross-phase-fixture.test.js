@@ -189,4 +189,49 @@ describe('citadel cross-phase fixture', () => {
       fs.rmSync(sessionDir, { recursive: true, force: true });
     }
   });
+
+  test('reads anatomy worker findings_history and normalizes anatomy severities', async () => {
+    const { repoRoot, base } = makeRepo();
+    const sessionDir = fs.mkdtempSync(path.join(os.tmpdir(), 'citadel-cross-phase-history-'));
+    try {
+      writeArtifact(sessionDir, 'anatomy-park.json', {
+        findings_history: {
+          extension: [
+            {
+              id: 'ap-replay-critical',
+              severity: 'CRITICAL',
+              message: 'replayed pattern finding from anatomy worker state',
+            },
+            {
+              id: 'ap-high',
+              severity: 'HIGH',
+              message: 'high confidence anatomy finding',
+            },
+          ],
+        },
+      });
+
+      const report = await runCitadelAudit({
+        prdPath: 'prd.md',
+        diffRange: `${base}..HEAD`,
+        repoRoot,
+        sessionDir,
+      });
+
+      assert.deepEqual(
+        report.sections.cross_phase.findings.map((finding) => [finding.id, finding.severity]),
+        [
+          ['ap-replay-critical', 'Critical'],
+          ['ap-high', 'High'],
+        ],
+      );
+      assert.equal(report.sections.cross_phase.summary.anatomy_park, 2);
+      assert.equal(report.sections.cross_phase.summary.anatomy_park_missing, false);
+      assert.ok(report.findings.some((finding) => finding.id === 'ap-replay-critical'));
+      assert.ok(report.findings.some((finding) => finding.id === 'ap-high'));
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+      fs.rmSync(sessionDir, { recursive: true, force: true });
+    }
+  });
 });

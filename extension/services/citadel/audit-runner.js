@@ -116,21 +116,32 @@ function readPhaseFindings(sessionDir, source, sourceFile) {
     catch {
         return { findings: [], missing: false };
     }
-    if (!isRecord(parsed) || !Array.isArray(parsed.findings))
+    if (!isRecord(parsed))
         return { findings: [], missing: false };
-    const findings = parsed.findings.flatMap((finding) => {
-        if (!isRecord(finding) || typeof finding.id !== 'string' || !isSeverity(finding.severity))
+    const rawFindings = collectPhaseFindings(parsed);
+    const findings = rawFindings.flatMap((finding) => {
+        if (!isRecord(finding) || typeof finding.id !== 'string')
+            return [];
+        const severity = normalizeSeverity(finding.severity);
+        if (!severity)
             return [];
         return [{
                 ...finding,
                 id: finding.id,
                 original_id: finding.id,
-                severity: finding.severity,
+                severity,
                 source,
                 source_file: sourceFile,
             }];
     });
     return { findings, missing: false };
+}
+function collectPhaseFindings(parsed) {
+    const directFindings = Array.isArray(parsed.findings) ? parsed.findings : [];
+    const historyFindings = isRecord(parsed.findings_history)
+        ? Object.values(parsed.findings_history).flatMap((value) => Array.isArray(value) ? value : [])
+        : [];
+    return [...directFindings, ...historyFindings].filter(isRecord);
 }
 function missingAnatomyParkFinding() {
     return {
@@ -192,4 +203,13 @@ function isRecord(value) {
 }
 function isSeverity(value) {
     return value === 'Critical' || value === 'High' || value === 'Medium' || value === 'Low';
+}
+function normalizeSeverity(value) {
+    if (isSeverity(value))
+        return value;
+    if (value === 'CRITICAL')
+        return 'Critical';
+    if (value === 'HIGH')
+        return 'High';
+    return null;
 }

@@ -171,19 +171,30 @@ function readPhaseFindings(
     return { findings: [], missing: false };
   }
 
-  if (!isRecord(parsed) || !Array.isArray(parsed.findings)) return { findings: [], missing: false };
-  const findings = parsed.findings.flatMap((finding): CrossPhaseFinding[] => {
-    if (!isRecord(finding) || typeof finding.id !== 'string' || !isSeverity(finding.severity)) return [];
+  if (!isRecord(parsed)) return { findings: [], missing: false };
+  const rawFindings = collectPhaseFindings(parsed);
+  const findings = rawFindings.flatMap((finding): CrossPhaseFinding[] => {
+    if (!isRecord(finding) || typeof finding.id !== 'string') return [];
+    const severity = normalizeSeverity(finding.severity);
+    if (!severity) return [];
     return [{
       ...finding,
       id: finding.id,
       original_id: finding.id,
-      severity: finding.severity,
+      severity,
       source,
       source_file: sourceFile,
     }];
   });
   return { findings, missing: false };
+}
+
+function collectPhaseFindings(parsed: Record<string, unknown>): Record<string, unknown>[] {
+  const directFindings = Array.isArray(parsed.findings) ? parsed.findings : [];
+  const historyFindings = isRecord(parsed.findings_history)
+    ? Object.values(parsed.findings_history).flatMap((value) => Array.isArray(value) ? value : [])
+    : [];
+  return [...directFindings, ...historyFindings].filter(isRecord);
 }
 
 function missingAnatomyParkFinding(): CrossPhaseFinding {
@@ -253,4 +264,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isSeverity(value: unknown): value is CitadelSeverity {
   return value === 'Critical' || value === 'High' || value === 'Medium' || value === 'Low';
+}
+
+function normalizeSeverity(value: unknown): CitadelSeverity | null {
+  if (isSeverity(value)) return value;
+  if (value === 'CRITICAL') return 'Critical';
+  if (value === 'HIGH') return 'High';
+  return null;
 }
