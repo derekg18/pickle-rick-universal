@@ -127,7 +127,6 @@ export function renderElapsedField(elapsedSec: number, maxTimeMin: number): stri
  * Extracts a short readable summary from a stream-json log line.
  * Returns the original line (sans ANSI) if it's not valid JSON.
  */
-// eslint-disable-next-line complexity -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
 export function summarizeLine(raw: string): string {
   const clean = raw.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '').trim();
   if (!clean) return '';
@@ -279,7 +278,6 @@ export function formatCurrentField(
  * available (including any indicator lines). Caller accounts for the
  * "Tickets:" section header separately.
  */
-// eslint-disable-next-line complexity -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
 export function buildTicketLines(
   tickets: TicketInfo[],
   currentTicketId: string | null | undefined,
@@ -419,7 +417,6 @@ function countRows(segments: string[]): number {
   return n;
 }
 
-// eslint-disable-next-line complexity, max-lines-per-function -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
 async function render(sessionDir: string, sink: MonitorWriteSink = process.stdout): Promise<boolean> {
   // If the session directory itself is gone, signal exit (not just "waiting")
   if (!fs.existsSync(sessionDir)) return false;

@@ -14,7 +14,6 @@ function findActiveSession() {
         return null;
     }
 }
-// eslint-disable-next-line complexity -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
 function main() {
     const MAX_STDIN = 1024 * 1024; // 1 MB guard — truncate oversized input
     let raw = '';

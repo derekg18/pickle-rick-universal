@@ -84,7 +84,6 @@ function defaultReadStateForWorkingDir(sessionRoot) {
         return null;
     }
 }
-// eslint-disable-next-line complexity, max-lines-per-function -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
 export async function finalizeGateMain(opts) {
     const env = opts.env ?? process.env;
     const out = opts.stdout ?? ((msg) => process.stdout.write(msg + '\n'));

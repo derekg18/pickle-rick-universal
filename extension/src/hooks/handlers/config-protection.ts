@@ -58,82 +58,88 @@ function block(reason: string): void {
   console.log(JSON.stringify({ decision: 'block', reason }));
 }
 
-// eslint-disable-next-line complexity -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
-async function main() {
-  const extensionDir = getExtensionRoot();
-
-  let inputData: string;
+function readInputData(): string | null {
   try {
-    // eslint-disable-next-line pickle/no-sync-in-async -- stdin read (fd 0) has no async alternative
-    inputData = fs.readFileSync(0, 'utf8');
+    return fs.readFileSync(0, 'utf8');
   } catch {
-    approve();
-    return;
+    return null;
   }
+}
 
-  if (!inputData.trim()) {
-    approve();
-    return;
-  }
+function parseInput(inputData: string): PreToolUseInput | null {
+  if (!inputData.trim()) return null;
 
-  let input: PreToolUseInput;
   try {
-    input = JSON.parse(inputData);
+    return JSON.parse(inputData) as PreToolUseInput;
   } catch {
-    approve();
-    return;
+    return null;
   }
+}
 
-  // Feature flag: enable_config_protection (default true — missing flag = enabled)
+function isConfigProtectionDisabled(extensionDir: string): boolean {
   try {
     const flagSettings = readRecoverableJsonObject(path.join(extensionDir, 'pickle_settings.json')) as Record<string, unknown> | null;
-    if (flagSettings?.enable_config_protection === false) {
-      approve();
-      return;
-    }
+    return flagSettings?.enable_config_protection === false;
   } catch { /* default true — continue with protection enabled */ }
+  return false;
+}
 
-  // Activation guard: only active during automated sessions
+function getConfigProtectionRoot(): string {
+  return process.env.EXTENSION_DIR || getExtensionRoot();
+}
+
+function loadSessionState(): { stateFile: string; state: NonNullable<ReturnType<typeof loadActiveState>> } | null {
   const stateFile = resolveStateFile(getDataRoot());
-  if (!stateFile) {
-    approve();
-    return;
-  }
+  if (!stateFile) return null;
 
   const state = loadActiveState(stateFile);
-  if (!state) {
-    approve();
-    return;
-  }
+  if (!state) return null;
+  return { stateFile, state };
+}
 
+function targetedConfigFile(input: PreToolUseInput): string | null {
   const toolName = input.tool_name || '';
   const filePath = input.tool_input?.file_path || '';
   const command = input.tool_input?.command || '';
 
-  let targetedConfigFile: string | null = null;
-
   if ((toolName === 'Write' || toolName === 'Edit') && filePath) {
-    if (isProtectedFile(filePath)) {
-      targetedConfigFile = path.basename(filePath);
-    }
-  } else if (toolName === 'Bash' && command) {
-    if (isBashTargetingConfig(command)) {
-      targetedConfigFile = '<config file>';
-    }
+    return isProtectedFile(filePath) ? path.basename(filePath) : null;
   }
 
-  if (!targetedConfigFile) {
+  if (toolName === 'Bash' && command) {
+    return isBashTargetingConfig(command) ? '<config file>' : null;
+  }
+
+  return null;
+}
+
+async function main() {
+  const extensionDir = getConfigProtectionRoot();
+  const inputData = readInputData();
+  if (inputData === null) {
     approve();
     return;
   }
 
-  // Check per-ticket override
-  if (hasConfigChangeOverride(path.dirname(stateFile), state)) {
+  const input = parseInput(inputData);
+  if (!input || isConfigProtectionDisabled(extensionDir)) {
     approve();
     return;
   }
 
-  block(`Config file protected: ${targetedConfigFile}. Set config_change: true in ticket frontmatter to override.`);
+  const session = loadSessionState();
+  if (!session) {
+    approve();
+    return;
+  }
+
+  const configFile = targetedConfigFile(input);
+  if (!configFile || hasConfigChangeOverride(path.dirname(session.stateFile), session.state)) {
+    approve();
+    return;
+  }
+
+  block(`Config file protected: ${configFile}. Set config_change: true in ticket frontmatter to override.`);
 }
 
 main().catch((err) => {

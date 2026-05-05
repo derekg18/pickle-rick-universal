@@ -146,7 +146,6 @@ The abort file must contain: reason, affected file:line, what fix was requested,
   return sections.join('\n');
 }
 
-// eslint-disable-next-line complexity, max-lines-per-function -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
 export async function spawnGateRemediatorMain(opts: SpawnGateRemediatorOpts): Promise<number> {
   const {
     argv,

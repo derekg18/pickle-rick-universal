@@ -41,7 +41,6 @@ function statusToExitCode(status: GateResult['status']): number {
   return 1;
 }
 
-// eslint-disable-next-line complexity -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
 export async function checkGateMain(opts: CheckGateMainOpts): Promise<number> {
   const { argv, runGateFn = runGate } = opts;
   const out = opts.stdout ?? ((msg: string) => process.stdout.write(msg + '\n'));

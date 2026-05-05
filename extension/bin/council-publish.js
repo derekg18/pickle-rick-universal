@@ -204,7 +204,6 @@ function isMarkerPublished(p) {
         return false;
     }
 }
-// eslint-disable-next-line complexity, max-lines-per-function -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
 export default function publishCouncilStack(sessionRoot, opts = {}) {
     const ghCommand = opts.ghCommand || 'gh';
     const dryRun = !!opts.dryRun;

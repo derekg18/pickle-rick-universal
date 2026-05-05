@@ -4,7 +4,6 @@ import * as path from 'path';
 import { printMinimalPanel, collectTickets, statusSymbol, findSessionPathForCwd } from '../services/pickle-utils.js';
 import { StateManager } from '../services/state-manager.js';
 const sm = new StateManager();
-// eslint-disable-next-line complexity -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
 export function showStatus(cwd) {
     const sessionPath = findSessionPathForCwd(cwd);
     if (!sessionPath || !fs.existsSync(sessionPath)) {

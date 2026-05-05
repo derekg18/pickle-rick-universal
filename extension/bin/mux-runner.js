@@ -413,7 +413,6 @@ export function transitionToMeeseeks(state, extensionRoot) {
         current_ticket: null,
     };
 }
-// eslint-disable-next-line complexity -- pre-existing model tier resolver; out of scope for ticket 53caa9a4
 export function loadMeeseeksModel(extensionRoot, passCount = 1) {
     const fallback = 'sonnet';
     let defaultModel = fallback;
@@ -580,7 +579,6 @@ export function computeRateLimitAction(exitResult, consecutiveRateLimits, maxRet
         hasResetsAt,
     };
 }
-// eslint-disable-next-line max-lines-per-function, complexity -- ticket 53caa9a4 forbids modifying runIteration
 export async function runIteration(sessionDir, iterationNum, extensionRoot, meeseeksModel) {
     const statePath = path.join(sessionDir, 'state.json');
     let state;
@@ -1357,7 +1355,6 @@ async function main() {
     }
     await runMuxRunnerMain();
 }
-// eslint-disable-next-line max-lines-per-function, complexity -- legacy loop retained while extracted helpers are tested independently
 async function runMuxRunnerMain() {
     const sessionDir = process.argv[2];
     // eslint-disable-next-line pickle/no-sync-in-async -- intentional blocking call

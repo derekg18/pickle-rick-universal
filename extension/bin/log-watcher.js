@@ -24,7 +24,6 @@ export function formatToolUse(name, input) {
  * Processes a single line from a stream-json log.
  * Returns a human-readable string or null to skip.
  */
-// eslint-disable-next-line complexity -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
 export function processLine(line) {
     const trimmed = line.trim();
     if (!trimmed)

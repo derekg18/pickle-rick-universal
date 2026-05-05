@@ -7,7 +7,6 @@ import { State } from '../types/index.js';
 
 const sm = new StateManager();
 
-// eslint-disable-next-line complexity -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
 export function showStatus(cwd: string): void {
   const sessionPath = findSessionPathForCwd(cwd);
 

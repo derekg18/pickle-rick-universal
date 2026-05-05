@@ -67,7 +67,6 @@ function formatTool(name: string, input: Record<string, unknown>): string {
 }
 
 // ── Process a single stream-json line ───────────────────────────
-// eslint-disable-next-line complexity -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
 export function processLineRaw(line: string): string | null {
   const trimmed = line.trim();
   if (!trimmed) return null;

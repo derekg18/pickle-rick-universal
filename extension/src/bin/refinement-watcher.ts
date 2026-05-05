@@ -61,7 +61,6 @@ function roleStatus(refinementDir: string, roleId: RoleId): '⏳' | '✅' | '❌
   }
 }
 
-// eslint-disable-next-line complexity, max-lines-per-function -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
 async function main() {
   const sessionDir = process.argv[2];
   // eslint-disable-next-line pickle/no-sync-in-async -- intentional blocking call

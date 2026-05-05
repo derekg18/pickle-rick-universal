@@ -1009,7 +1009,6 @@ function createPipelineLog(sessionDir) {
         process.stderr.write(line);
     };
 }
-// eslint-disable-next-line complexity -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
 function loadPipelineRuntime(sessionDir, opts, log) {
     const extensionRoot = getExtensionRoot();
     const statePath = path.join(sessionDir, 'state.json');
