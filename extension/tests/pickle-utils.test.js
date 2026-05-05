@@ -14,6 +14,7 @@ import {
     resolveSessionPath,
     pruneOldSessions,
     extractFrontmatter,
+    readTicketStatusFromFrontmatter,
     getRuntimeRoot,
     getHostNeutralRuntimeRoot,
     LEGACY_CLAUDE_RUNTIME_ROOT,
@@ -271,6 +272,28 @@ test('extractFrontmatter: handles Windows \\r\\n line endings', () => {
 
 test('extractFrontmatter: \\r\\n returns null when no closing delimiter', () => {
     assert.equal(extractFrontmatter('---\r\nid: abc\r\nstatus: Todo'), null);
+});
+
+// --- readTicketStatusFromFrontmatter ---
+
+test('readTicketStatusFromFrontmatter: reads unquoted status', () => {
+    assert.equal(readTicketStatusFromFrontmatter('---\nid: abc\nstatus: Todo\n---\n# Body'), 'Todo');
+});
+
+test('readTicketStatusFromFrontmatter: reads double-quoted status', () => {
+    assert.equal(readTicketStatusFromFrontmatter('---\nid: abc\nstatus: "In Progress"\n---\n# Body'), 'In Progress');
+});
+
+test('readTicketStatusFromFrontmatter: reads single-quoted status', () => {
+    assert.equal(readTicketStatusFromFrontmatter("---\nid: abc\nstatus: 'Done'\n---\n# Body"), 'Done');
+});
+
+test('readTicketStatusFromFrontmatter: missing status returns null', () => {
+    assert.equal(readTicketStatusFromFrontmatter('---\nid: abc\n---\n# Body'), null);
+});
+
+test('readTicketStatusFromFrontmatter: missing frontmatter returns null', () => {
+    assert.equal(readTicketStatusFromFrontmatter('# Body'), null);
 });
 
 // --- statusSymbol ---

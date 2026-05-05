@@ -294,6 +294,13 @@ export function extractFrontmatter(content: string): { body: string; start: numb
   return { body: content.slice(openLen, closeIdx), start: 0, end };
 }
 
+export function readTicketStatusFromFrontmatter(content: string): string | null {
+  const fm = extractFrontmatter(content);
+  if (!fm) return null;
+  const match = /^status:\s*(.+)$/m.exec(fm.body);
+  return match ? match[1].trim().replace(/^["']|["']$/g, '') : null;
+}
+
 export function clearTicketResolutionTimestamps(content: string): string {
   const fm = extractFrontmatter(content);
   if (!fm) return content;
@@ -381,7 +388,7 @@ export function parseTicketFrontmatter(filePath: string): TicketInfo | null {
     return {
       id: get('id'),
       title: get('title'),
-      status: get('status'),
+      status: readTicketStatusFromFrontmatter(content),
       order: parseInt(get('order') || '0', 10) || 0,
       type: get('type'),
       working_dir: get('working_dir'),
