@@ -9,6 +9,9 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const INSTALL_SH = path.join(REPO_ROOT, 'install.sh');
+const LEGACY_CLAUDE_RUNTIME_ROOT = '/Users/derekgreene/.gemini/extensions/pickle-rick';
+const CLAUDE_STOP_HOOK = 'node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/hooks/dispatch.js stop-hook';
+const CLAUDE_COMMIT_HOOK = 'node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/log-commit.js';
 
 function makeFixture() {
   const dir = mkdtempSync(path.join(tmpdir(), 'pickle-universal-install-'));
@@ -74,14 +77,14 @@ describe('universal install.sh host adapters', () => {
       assert.equal(manifest.hosts.gemini.command_count, 33);
 
       assert.equal(existsSync(path.join(fixture.xdg, 'pickle-rick', 'runtime', 'extension', 'bin', 'setup.js')), true);
-      assert.equal(existsSync(path.join(fixture.home, '.claude', 'pickle-rick', 'extension', 'hooks', 'dispatch.js')), true);
+      assert.ok(manifest.hosts.claude.files_written.includes(LEGACY_CLAUDE_RUNTIME_ROOT));
       assert.equal(existsSync(path.join(fixture.home, '.codex', 'prompts', 'pickle-rick', 'pickle.md')), true);
       assert.equal(existsSync(path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'commands', 'pickle.toml')), true);
 
       const claudeSettings = JSON.parse(readFileSync(settingsPath(fixture, 'claude'), 'utf8'));
       const stopCommands = claudeSettings.hooks.Stop.flatMap((group) => group.hooks.map((hook) => hook.command));
       assert.ok(stopCommands.includes('third-party'));
-      assert.ok(stopCommands.includes('node $HOME/.claude/pickle-rick/extension/hooks/dispatch.js stop-hook'));
+      assert.ok(stopCommands.includes(CLAUDE_STOP_HOOK));
       assert.equal(readdirSync(path.join(fixture.home, '.claude', 'backups')).length, 1);
     } finally {
       rmSync(fixture.dir, { recursive: true, force: true });
@@ -143,10 +146,10 @@ describe('universal install.sh host adapters', () => {
       assert.equal(second.status, 0, second.stderr);
       const claudeSettings = JSON.parse(readFileSync(settingsPath(fixture, 'claude'), 'utf8'));
       const stopCommands = claudeSettings.hooks.Stop.flatMap((group) => group.hooks.map((hook) => hook.command));
-      const pickleStops = stopCommands.filter((command) => command === 'node $HOME/.claude/pickle-rick/extension/hooks/dispatch.js stop-hook');
+      const pickleStops = stopCommands.filter((command) => command === CLAUDE_STOP_HOOK);
       assert.equal(pickleStops.length, 1);
       const postCommands = claudeSettings.hooks.PostToolUse.flatMap((group) => group.hooks.map((hook) => hook.command));
-      assert.equal(postCommands.filter((command) => command === 'node $HOME/.claude/pickle-rick/extension/bin/log-commit.js').length, 1);
+      assert.equal(postCommands.filter((command) => command === CLAUDE_COMMIT_HOOK).length, 1);
       assert.ok(readdirSync(path.join(fixture.home, '.claude', 'backups')).length >= 2);
       assert.equal(readManifest(fixture).hosts.claude.status, 'installed');
     } finally {
@@ -159,7 +162,7 @@ describe('universal install.sh host adapters', () => {
     try {
       const original = { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'existing-stop' }] }] } };
       writeJson(settingsPath(fixture, 'claude'), original);
-      writeJson(path.join(fixture.home, '.claude', 'pickle-rick', 'pickle_settings.json'), { custom_legacy_setting: true });
+      writeJson(path.join(fixture.xdg, 'pickle-rick', 'runtime', 'pickle_settings.json'), { custom_runtime_setting: true });
 
       const result = runInstall(fixture);
 
@@ -170,7 +173,7 @@ describe('universal install.sh host adapters', () => {
       assert.deepEqual(JSON.parse(readFileSync(path.join(backupDir, backups[0]), 'utf8')), original);
       assert.deepEqual(readManifest(fixture).hosts.claude.backups.map((file) => path.basename(file)), backups);
       assert.equal(
-        JSON.parse(readFileSync(path.join(fixture.xdg, 'pickle-rick', 'runtime', 'pickle_settings.json'), 'utf8')).custom_legacy_setting,
+        JSON.parse(readFileSync(path.join(fixture.xdg, 'pickle-rick', 'runtime', 'pickle_settings.json'), 'utf8')).custom_runtime_setting,
         true,
       );
     } finally {

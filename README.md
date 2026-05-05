@@ -1,6 +1,6 @@
-<img src="images/pickle-rick.png" alt="Pickle Rick for Claude Code" width="100%" />
+<img src="images/pickle-rick.png" alt="Pickle Rick Universal" width="100%" />
 
-# 🥒 Pickle Rick for Claude Code
+# 🥒 Pickle Rick Universal
 
 > *"Wubba Lubba Dub Dub! 🥒 I'm not just an AI assistant, Morty — I'm an **autonomous engineering machine** trapped in a pickle jar!"*
 

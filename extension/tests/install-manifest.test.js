@@ -48,6 +48,7 @@ test('install manifest records package, roots, checksums, host status, counts, f
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     const pkg = JSON.parse(readFileSync(path.join(REPO_ROOT, 'extension', 'package.json'), 'utf8'));
 
+    assert.equal(pkg.name, 'pickle-rick-universal');
     assert.equal(manifest.schema_version, 1);
     assert.equal(manifest.package_version, pkg.version);
     assert.match(manifest.installed_at, /^\d{4}-\d{2}-\d{2}T/);
