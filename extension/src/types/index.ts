@@ -64,6 +64,7 @@ export interface State {
   flags?: StateFlags;
   readiness?: ReadinessState;
   codex_version_seen?: string | null;
+  last_tool_error_retry_count?: number;
 }
 
 /**

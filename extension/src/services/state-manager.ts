@@ -127,6 +127,7 @@ const V3_STATE_SHAPE_MARKERS = [
   'max_parallel',
   'effort',
   'codex_manager_relaunch_count',
+  'last_tool_error_retry_count',
 ] as const;
 
 function presentV3StateShapeMarkers(state: object): string[] {
@@ -153,6 +154,9 @@ function normalizeV3StateDefaults(state: State): void {
   }
 
   if (typeof state.codex_version_seen !== 'string') state.codex_version_seen = null;
+  if (typeof state.last_tool_error_retry_count !== 'number' || !Number.isFinite(state.last_tool_error_retry_count)) {
+    state.last_tool_error_retry_count = 0;
+  }
 }
 
 function isStateSnapshotNewer(

@@ -133,3 +133,4 @@ Compiled TS → JS lives in `extension/services/`, `extension/bin/`, `extension/
 - INVARIANT: `flags` stores optional persisted runtime feature flags. ENFORCE: extension/tests/state-field-invariants.test.js.
 - INVARIANT: `readiness` stores optional readiness-gate state and cycle history. ENFORCE: extension/tests/state-field-invariants.test.js.
 - INVARIANT: `codex_version_seen` stores nullable codex version smoke-check evidence. ENFORCE: extension/tests/state-field-invariants.test.js.
+- INVARIANT: `last_tool_error_retry_count` stores the finite consecutive tool-error retry count. ENFORCE: extension/tests/state-field-invariants.test.js.

@@ -104,6 +104,7 @@ const V3_STATE_SHAPE_MARKERS = [
     'max_parallel',
     'effort',
     'codex_manager_relaunch_count',
+    'last_tool_error_retry_count',
 ];
 function presentV3StateShapeMarkers(state) {
     return V3_STATE_SHAPE_MARKERS.filter(field => Object.prototype.hasOwnProperty.call(state, field));
@@ -129,6 +130,9 @@ function normalizeV3StateDefaults(state) {
     }
     if (typeof state.codex_version_seen !== 'string')
         state.codex_version_seen = null;
+    if (typeof state.last_tool_error_retry_count !== 'number' || !Number.isFinite(state.last_tool_error_retry_count)) {
+        state.last_tool_error_retry_count = 0;
+    }
 }
 function isStateSnapshotNewer(currentState, currentMtimeMs, candidateState, candidateMtimeMs) {
     const currentIteration = readFiniteIteration(currentState);

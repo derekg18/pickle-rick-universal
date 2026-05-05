@@ -7,7 +7,9 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const extensionRoot = path.resolve(__dirname, '..');
 const stateTypesPath = path.join(extensionRoot, 'src', 'types', 'index.ts');
-const claudePath = path.join(extensionRoot, 'CLAUDE.md');
+const invariantDocPath = fs.existsSync(path.join(extensionRoot, 'CLAUDE.md'))
+  ? path.join(extensionRoot, 'CLAUDE.md')
+  : path.join(extensionRoot, 'GEMINI.md');
 
 function extractStateFields(source) {
   const match = source.match(/export interface State \{([\s\S]*?)\n\}/);
@@ -22,8 +24,8 @@ function extractFieldInvariantSection(source) {
 }
 
 test('AC-BUNDLE-17: trap-door entries stay under 1500 chars', () => {
-  const claude = fs.readFileSync(claudePath, 'utf8');
-  const overlong = claude
+  const invariantDoc = fs.readFileSync(invariantDocPath, 'utf8');
+  const overlong = invariantDoc
     .split('\n')
     .map((line, index) => ({ line, lineNumber: index + 1 }))
     .filter(({ line }) => line.startsWith('- `') && line.length > 1500);
@@ -33,9 +35,9 @@ test('AC-BUNDLE-17: trap-door entries stay under 1500 chars', () => {
 
 test('AC-BUNDLE-17: every State field has exactly one field invariant', () => {
   const stateSource = fs.readFileSync(stateTypesPath, 'utf8');
-  const claude = fs.readFileSync(claudePath, 'utf8');
+  const invariantDoc = fs.readFileSync(invariantDocPath, 'utf8');
   const fields = extractStateFields(stateSource);
-  const section = extractFieldInvariantSection(claude);
+  const section = extractFieldInvariantSection(invariantDoc);
 
   for (const field of fields) {
     const escaped = field.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

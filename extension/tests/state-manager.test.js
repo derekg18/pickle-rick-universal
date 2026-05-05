@@ -62,6 +62,7 @@ function assertV3Defaults(state) {
   assert.deepEqual(state.flags, {});
   assert.deepEqual(state.readiness, { cycle_history: [] });
   assert.equal(state.codex_version_seen, null);
+  assert.equal(state.last_tool_error_retry_count, 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -225,6 +226,7 @@ test('StateManager.read: any v3 marker without schema fails recoverably on v2-aw
     ['flags', { flags: { strict_teams: true } }],
     ['readiness', { readiness: { cycle_history: [] } }],
     ['codex_version_seen', { codex_version_seen: '0.42.0' }],
+    ['last_tool_error_retry_count', { last_tool_error_retry_count: 1 }],
   ];
 
   for (const [marker, override] of cases) {
@@ -281,6 +283,7 @@ test('StateManager.read: preserves existing v3 values while hydrating missing de
       flags: { strict_teams: true, custom: 'yes' },
       readiness: { cycle_history: [{ cycle: 1, status: 'pass', suggested_analyst: null, user_action: null, timestamp: '2026-04-30T00:00:00Z' }] },
       codex_version_seen: '0.42.0',
+      last_tool_error_retry_count: 2,
     }));
 
     const result = sm.read(sp);
@@ -291,6 +294,7 @@ test('StateManager.read: preserves existing v3 values while hydrating missing de
     assert.deepEqual(result.flags, { strict_teams: true, custom: 'yes' });
     assert.equal(result.readiness.cycle_history.length, 1);
     assert.equal(result.codex_version_seen, '0.42.0');
+    assert.equal(result.last_tool_error_retry_count, 2);
     assert.equal(result.archaeology, null);
     assert.equal(result.last_course_correction, null);
   });
