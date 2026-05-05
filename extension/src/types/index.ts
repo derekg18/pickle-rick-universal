@@ -83,6 +83,12 @@ export type Backend = 'claude' | 'codex' | 'gemini';
 
 export const BACKENDS: readonly Backend[] = ['claude', 'codex', 'gemini'] as const;
 
+export type PassModelOverridePass = 'quality' | 'review';
+
+export type PassModelOverrideBackendMap = Partial<Record<Backend, string>>;
+
+export type PassModelOverrides = Partial<Record<PassModelOverridePass, PassModelOverrideBackendMap>>;
+
 export interface ProjectContext {
   project_context_path: string;
   last_run_iso: string;

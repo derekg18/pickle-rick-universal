@@ -75,6 +75,33 @@ test('buildManagerInvocation(gemini): uses gemini -p and drops claude manager fl
     assert.equal(inv.args[inv.args.indexOf('-p') + 1], 'manage');
 });
 
+test('buildManagerInvocation(gemini): applies configured review pass model override', () => {
+    const inv = buildManagerInvocation('gemini', {
+        prompt: 'manage',
+        addDirs: [],
+        model: 'gemini-default',
+        pass: 'review',
+        passModelOverrides: {
+            review: { gemini: 'gemini-review' },
+        },
+    });
+
+    assert.equal(inv.args[inv.args.indexOf('-m') + 1], 'gemini-review');
+});
+
+test('buildWorkerInvocation(gemini): ignores non-gemini pass model overrides', () => {
+    const inv = buildWorkerInvocation('gemini', {
+        prompt: 'x',
+        addDirs: [],
+        pass: 'quality',
+        passModelOverrides: {
+            quality: { codex: 'gpt-quality' },
+        },
+    });
+
+    assert.equal(inv.args.includes('-m'), false);
+});
+
 test('buildJudgeInvocation(gemini): uses read-only plan approval and never yolo', () => {
     const dir = mkTmpDir('gemini-judge-');
     const inv = buildJudgeInvocation('gemini', {

@@ -5,6 +5,12 @@ import { StateManager } from './state-manager.js';
 export function isBackend(value) {
     return typeof value === 'string' && BACKENDS.includes(value);
 }
+function resolvePassModelOverride(backend, pass, fallbackModel, overrides) {
+    if (!pass || !overrides)
+        return fallbackModel;
+    const model = overrides[pass]?.[backend];
+    return typeof model === 'string' && model.length > 0 ? model : fallbackModel;
+}
 // Dedupe by (source, value) so a bad state.json or typo'd env var warns once
 // per process rather than N times per call site. Same silent-fallback trap-door
 // class as the spawnSync-no-timeout cluster: a downgrade to 'claude' that should
@@ -57,10 +63,16 @@ export function resolveBackendFromStateFile(statePath) {
     }
 }
 export function buildWorkerInvocation(backend, opts) {
-    return backendAdapters[backend].buildWorkerInvocation(opts);
+    return backendAdapters[backend].buildWorkerInvocation({
+        ...opts,
+        model: resolvePassModelOverride(backend, opts.pass, opts.model, opts.passModelOverrides),
+    });
 }
 export function buildManagerInvocation(backend, opts) {
-    return backendAdapters[backend].buildManagerInvocation(opts);
+    return backendAdapters[backend].buildManagerInvocation({
+        ...opts,
+        model: resolvePassModelOverride(backend, opts.pass, opts.model, opts.passModelOverrides),
+    });
 }
 export function backendSupportsTeamsMode(backend) {
     return backendAdapters[backend].supportsTeamsMode();
@@ -170,7 +182,10 @@ function buildCodexInvocation(prompt, addDirs, model, effort) {
  * user prompt; the read-only sandbox replaces the tool allowlist.
  */
 export function buildJudgeInvocation(backend, opts) {
-    return backendAdapters[backend].buildJudgeInvocation(opts);
+    return backendAdapters[backend].buildJudgeInvocation({
+        ...opts,
+        model: resolvePassModelOverride(backend, opts.pass, opts.model, opts.passModelOverrides),
+    });
 }
 function buildClaudeJudgeInvocation(opts) {
     const args = ['--dangerously-skip-permissions'];

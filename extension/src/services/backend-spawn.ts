@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Backend, BACKENDS, State } from '../types/index.js';
+import { BACKENDS, type Backend, type PassModelOverridePass, type PassModelOverrides, type State } from '../types/index.js';
 import { StateManager } from './state-manager.js';
 
 export type ReasoningEffort = 'low' | 'medium' | 'high';
@@ -9,6 +9,8 @@ export interface WorkerInvocationOptions {
   prompt: string;
   addDirs: string[];
   model?: string;
+  pass?: PassModelOverridePass;
+  passModelOverrides?: PassModelOverrides;
   outputFormat?: string;
   effort?: ReasoningEffort;
 }
@@ -17,6 +19,8 @@ export interface ManagerInvocationOptions {
   prompt: string;
   addDirs: string[];
   model?: string;
+  pass?: PassModelOverridePass;
+  passModelOverrides?: PassModelOverrides;
   maxTurns?: number;
   streamJson?: boolean;
   noSessionPersistence?: boolean;
@@ -26,6 +30,8 @@ export interface JudgeInvocationOptions {
   prompt: string;
   addDirs: string[];
   model?: string;
+  pass?: PassModelOverridePass;
+  passModelOverrides?: PassModelOverrides;
   systemPrompt?: string;
 }
 
@@ -48,6 +54,17 @@ export interface BackendAdapter {
   workerPromptAddendum(doneToken: string): string | null;
   missingCliHint(): string;
   setupVersionCheck(): { command: string; packageEngine: string } | null;
+}
+
+function resolvePassModelOverride(
+  backend: Backend,
+  pass: PassModelOverridePass | undefined,
+  fallbackModel: string | undefined,
+  overrides: PassModelOverrides | undefined
+): string | undefined {
+  if (!pass || !overrides) return fallbackModel;
+  const model = overrides[pass]?.[backend];
+  return typeof model === 'string' && model.length > 0 ? model : fallbackModel;
 }
 
 export function isBackend(value: unknown): value is Backend {
@@ -105,11 +122,17 @@ export function resolveBackendFromStateFile(statePath: string): Backend {
 }
 
 export function buildWorkerInvocation(backend: Backend, opts: WorkerInvocationOptions): SpawnInvocation {
-  return backendAdapters[backend].buildWorkerInvocation(opts);
+  return backendAdapters[backend].buildWorkerInvocation({
+    ...opts,
+    model: resolvePassModelOverride(backend, opts.pass, opts.model, opts.passModelOverrides),
+  });
 }
 
 export function buildManagerInvocation(backend: Backend, opts: ManagerInvocationOptions): SpawnInvocation {
-  return backendAdapters[backend].buildManagerInvocation(opts);
+  return backendAdapters[backend].buildManagerInvocation({
+    ...opts,
+    model: resolvePassModelOverride(backend, opts.pass, opts.model, opts.passModelOverrides),
+  });
 }
 
 export function backendSupportsTeamsMode(backend: Backend): boolean {
@@ -222,7 +245,10 @@ function buildCodexInvocation(prompt: string, addDirs: string[], model?: string,
  * user prompt; the read-only sandbox replaces the tool allowlist.
  */
 export function buildJudgeInvocation(backend: Backend, opts: JudgeInvocationOptions): SpawnInvocation {
-  return backendAdapters[backend].buildJudgeInvocation(opts);
+  return backendAdapters[backend].buildJudgeInvocation({
+    ...opts,
+    model: resolvePassModelOverride(backend, opts.pass, opts.model, opts.passModelOverrides),
+  });
 }
 
 function buildClaudeJudgeInvocation(opts: JudgeInvocationOptions): SpawnInvocation {

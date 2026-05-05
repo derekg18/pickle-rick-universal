@@ -222,6 +222,49 @@ test('buildWorkerInvocation(codex): omits -m when no model given', () => {
     assert.equal(inv.args.includes('-m'), false);
 });
 
+test('buildWorkerInvocation(codex): applies configured quality pass model override', () => {
+    const inv = buildWorkerInvocation('codex', {
+        prompt: 'x',
+        addDirs: [],
+        model: 'gpt-default',
+        pass: 'quality',
+        passModelOverrides: {
+            quality: { codex: 'gpt-quality' },
+            review: { codex: 'gpt-review' },
+        },
+    });
+
+    const mIdx = inv.args.indexOf('-m');
+    assert.ok(mIdx >= 0);
+    assert.equal(inv.args[mIdx + 1], 'gpt-quality');
+});
+
+test('buildWorkerInvocation(codex): absent pass_model_overrides falls back to backend default', () => {
+    const inv = buildWorkerInvocation('codex', {
+        prompt: 'x',
+        addDirs: [],
+        pass: 'quality',
+    });
+
+    assert.equal(inv.args.includes('-m'), false);
+});
+
+test('buildWorkerInvocation(codex): missing backend override falls back to provided model', () => {
+    const inv = buildWorkerInvocation('codex', {
+        prompt: 'x',
+        addDirs: [],
+        model: 'gpt-default',
+        pass: 'quality',
+        passModelOverrides: {
+            quality: { claude: 'opus' },
+        },
+    });
+
+    const mIdx = inv.args.indexOf('-m');
+    assert.ok(mIdx >= 0);
+    assert.equal(inv.args[mIdx + 1], 'gpt-default');
+});
+
 test('buildWorkerInvocation(codex): drops missing add-dir entries (mirrors claude-worker)', () => {
     // Both backends filter non-existent add-dir paths via existsSilently; the
     // claude test already covers this. Mirror it for codex so a regression that
@@ -290,6 +333,23 @@ test('buildManagerInvocation(codex): omits -m when no model given', () => {
         noSessionPersistence: true,
     });
     assert.equal(inv.args.includes('-m'), false);
+});
+
+test('buildManagerInvocation(claude): applies configured review pass model override', () => {
+    const inv = buildManagerInvocation('claude', {
+        prompt: 'manage',
+        addDirs: [],
+        model: 'sonnet',
+        pass: 'review',
+        passModelOverrides: {
+            quality: { claude: 'sonnet-quality' },
+            review: { claude: 'opus-review' },
+        },
+    });
+
+    const modelIdx = inv.args.indexOf('--model');
+    assert.ok(modelIdx >= 0);
+    assert.equal(inv.args[modelIdx + 1], 'opus-review');
 });
 
 // --- backendEnvOverrides ---

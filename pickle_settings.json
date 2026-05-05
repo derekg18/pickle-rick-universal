@@ -13,6 +13,7 @@
   "default_refinement_cycles": 3,
   "default_refinement_max_turns": 100,
   "default_meeseeks_model": "sonnet",
+  "pass_model_overrides": {},
   "default_meeseeks_min_passes": 10,
   "default_meeseeks_max_passes": 50,
   "default_council_min_rounds": 2,
