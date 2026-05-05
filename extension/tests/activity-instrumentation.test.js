@@ -96,7 +96,7 @@ function readActivityEvents(activityDir) {
   return activityEvents;
 }
 
-function runMuxWithCommittingClaude() {
+function runMuxWithCommittingBackend(backend = 'claude') {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-mux-'));
   const sessionDir = path.join(tmpDir, 'session');
   const repoDir = path.join(tmpDir, 'repo');
@@ -122,11 +122,11 @@ function runMuxWithCommittingClaude() {
     tmux_mode: true,
     step: 'implement',
     max_iterations: 100,
-    backend: 'claude',
+    backend,
   }), null, 2));
 
-  const fakeClaude = path.join(binDir, 'claude');
-  fs.writeFileSync(fakeClaude, [
+  const fakeBackend = path.join(binDir, backend);
+  fs.writeFileSync(fakeBackend, [
     '#!/usr/bin/env node',
     "const fs = require('fs');",
     "const path = require('path');",
@@ -140,7 +140,7 @@ function runMuxWithCommittingClaude() {
     "fs.writeFileSync(statePath, JSON.stringify(state, null, 2));",
     "process.stdout.write('made a change without a completion promise\\n');",
   ].join('\n'));
-  fs.chmodSync(fakeClaude, 0o755);
+  fs.chmodSync(fakeBackend, 0o755);
 
   try {
     execFileSync(process.execPath, [TMUX_RUNNER, sessionDir], {
@@ -148,7 +148,7 @@ function runMuxWithCommittingClaude() {
         ...process.env,
         EXTENSION_DIR: tmpDir,
         PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`,
-        PICKLE_BACKEND: 'claude',
+        PICKLE_BACKEND: backend,
         FORCE_COLOR: '0',
       },
       encoding: 'utf-8',
@@ -158,6 +158,10 @@ function runMuxWithCommittingClaude() {
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+}
+
+function runMuxWithCommittingClaude() {
+  return runMuxWithCommittingBackend('claude');
 }
 
 // ---------------------------------------------------------------------------
@@ -319,3 +323,22 @@ test('activity: wasted_iter includes wasted, action, and sha fields', () => {
   assert.equal(wasted[0].iteration, 1);
   assert.ok(wasted[0].session, 'should have session ID');
 });
+
+for (const backend of ['claude', 'codex', 'gemini']) {
+  test(`activity: mux runner preserves ${backend} backend on lifecycle events`, () => {
+    const { activityEvents } = runMuxWithCommittingBackend(backend);
+    const lifecycleEvents = activityEvents.filter(e =>
+      e.event === 'session_end' ||
+      e.event === 'iteration_start' ||
+      e.event === 'iteration_end'
+    );
+
+    assert.deepEqual(
+      lifecycleEvents.map(e => e.event).sort(),
+      ['iteration_end', 'iteration_start', 'session_end'],
+    );
+    for (const event of lifecycleEvents) {
+      assert.equal(event.backend, backend, `${event.event} should preserve backend`);
+    }
+  });
+}

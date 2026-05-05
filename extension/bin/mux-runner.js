@@ -8,7 +8,7 @@ import { PromiseTokens, hasToken, VALID_STEPS, Defaults, FALSE_EPIC_THRESHOLD, h
 import { StateManager, safeDeactivate, writeActivityEntry, writeTimeoutStub, assertSchemaVersionDeployParity, SchemaVersionDeployDriftError } from '../services/state-manager.js';
 import { logActivity } from '../services/activity-logger.js';
 import { loadSettings, initCircuitBreaker, canExecute, detectProgress, extractErrorSignature, recordIterationResult, resetCircuitBreaker } from '../services/circuit-breaker.js';
-import { backendSupportsCommitPendingProbe, backendSupportsDefaultClaudeModels, buildManagerInvocation, resolveBackend, backendEnvOverrides, } from '../services/backend-spawn.js';
+import { backendSupportsCommitPendingProbe, backendSupportsDefaultClaudeModels, buildManagerInvocation, resolveBackend, resolveBackendFromStateFile, backendEnvOverrides, } from '../services/backend-spawn.js';
 import { readRecoverableJsonObject } from '../services/microverse-state.js';
 import { evaluateCodexManagerRelaunch, recordCodexManagerRelaunch, } from '../services/codex-manager-relaunch.js';
 import { extractAssistantContent } from '../services/classifier-utils.js';
@@ -1049,7 +1049,7 @@ export function setupSignalHandlers(statePath, log) {
         safeDeactivate(statePath);
         if (currentChildProc && !currentChildProc.killed)
             currentChildProc.kill('SIGTERM');
-        logActivity({ event: 'session_end', source: 'pickle', session: path.basename(path.dirname(statePath)), mode: 'tmux' });
+        logActivity({ event: 'session_end', source: 'pickle', session: path.basename(path.dirname(statePath)), mode: 'tmux', backend: resolveBackendFromStateFile(statePath) });
         process.exit(0);
     };
     process.on('SIGTERM', () => handleShutdownSignal('SIGTERM'));
@@ -1393,7 +1393,7 @@ async function runMuxRunnerMain() {
         if (currentChildProc && !currentChildProc.killed) {
             currentChildProc.kill('SIGTERM');
         }
-        logActivity({ event: 'session_end', source: 'pickle', session: path.basename(sessionDir), mode: 'tmux' });
+        logActivity({ event: 'session_end', source: 'pickle', session: path.basename(sessionDir), mode: 'tmux', backend: resolveBackendFromStateFile(statePath) });
         process.exit(0);
     };
     process.on('SIGTERM', () => handleShutdownSignal('SIGTERM'));
@@ -1554,7 +1554,8 @@ async function runMuxRunnerMain() {
         if (previousTicket === null)
             previousTicket = preTicket;
         log(`--- Iteration ${iteration} (state.iteration=${state.iteration}) ---`);
-        logActivity({ event: 'iteration_start', source: 'pickle', session: path.basename(sessionDir), iteration });
+        const backend = resolveBackend(state);
+        logActivity({ event: 'iteration_start', source: 'pickle', session: path.basename(sessionDir), iteration, backend });
         if (!readinessGateChecked && curIter === 0) {
             readinessGateChecked = true;
             const readinessStatus = runMuxReadinessGate({
@@ -1674,7 +1675,7 @@ async function runMuxRunnerMain() {
             wallSeconds: outcome.wallSeconds,
         });
         const exitType = exitResult.type;
-        logActivity({ event: 'iteration_end', source: 'pickle', session: path.basename(sessionDir), iteration, exit_type: exitType });
+        logActivity({ event: 'iteration_end', source: 'pickle', session: path.basename(sessionDir), iteration, exit_type: exitType, backend });
         const postIterationSha = safeGetHeadSha(iterationWorkingDir);
         const postIterationDirty = safeIsWorkingTreeDirty(iterationWorkingDir);
         if (isWastedIteration(preIterationSha, postIterationSha, preIterationDirty, postIterationDirty, result)) {
@@ -2053,7 +2054,7 @@ async function runMuxRunnerMain() {
     }
     const totalElapsed = Math.floor((Date.now() - startTime) / 1000);
     const isFailedExit = isFailureExit(exitReason);
-    logActivity({ event: 'session_end', source: 'pickle', session: path.basename(sessionDir), duration_min: Math.round(totalElapsed / 60), mode: 'tmux', ...(isFailedExit ? { error: exitReason } : {}) });
+    logActivity({ event: 'session_end', source: 'pickle', session: path.basename(sessionDir), duration_min: Math.round(totalElapsed / 60), mode: 'tmux', backend: resolveBackendFromStateFile(statePath), ...(isFailedExit ? { error: exitReason } : {}) });
     let finalStep = 'unknown';
     let finalActive = 'unknown';
     let finalMinIter = 0;

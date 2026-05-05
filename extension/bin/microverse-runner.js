@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { Defaults } from '../types/index.js';
-import { resolveBackend, buildJudgeInvocation, buildWorkerInvocation, backendEnvOverrides, backendSupportsDefaultClaudeModels, } from '../services/backend-spawn.js';
+import { resolveBackend, resolveBackendFromStateFile, buildJudgeInvocation, buildWorkerInvocation, backendEnvOverrides, backendSupportsDefaultClaudeModels, } from '../services/backend-spawn.js';
 import { readMicroverseState, readRecoverableJsonObject, writeMicroverseState, recordIteration as stateRecordIteration, recordStall, recordFailedApproach, isConverged, compareMetric, classifyFailure, } from '../services/microverse-state.js';
 import { getHeadSha, resetToSha, isWorkingTreeDirty } from '../services/git-utils.js';
 import { writeStateFile, getExtensionRoot, isoCompactStamp, sleep, Style, formatTime, formatLocalDateKey, printMinimalPanel, safeErrorMessage, ensureMonitorWindow, collectTickets, } from '../services/pickle-utils.js';
@@ -825,7 +825,7 @@ function installShutdownHandlers(sessionDir, statePath, log) {
             finalMv.exit_reason = 'signal';
             writeMicroverseState(sessionDir, finalMv);
         }
-        logActivity({ event: 'session_end', source: 'pickle', session: path.basename(sessionDir), mode: 'tmux' });
+        logActivity({ event: 'session_end', source: 'pickle', session: path.basename(sessionDir), mode: 'tmux', backend: resolveBackendFromStateFile(statePath) });
         process.exit(0);
     };
     process.on('SIGTERM', () => handleShutdownSignal('SIGTERM'));
@@ -1115,7 +1115,7 @@ async function prepareIteration(state, ctx) {
     });
     ctx.iteration++;
     ctx.log(`--- Iteration ${ctx.iteration} ---`);
-    logActivity({ event: 'iteration_start', source: 'pickle', session: path.basename(ctx.sessionDir), iteration: ctx.iteration });
+    logActivity({ event: 'iteration_start', source: 'pickle', session: path.basename(ctx.sessionDir), iteration: ctx.iteration, backend: resolveBackend(ctx.currentRunnerState) });
     ctx.preIterSha = _deps.getHeadSha(ctx.workingDir);
     writeHandoffFile(ctx.sessionDir, buildMicroverseHandoff(state, ctx.iteration, ctx.workingDir, ctx.sessionDir));
     sm.update(ctx.statePath, s => { s.iteration = ctx.iteration; });
@@ -1168,7 +1168,7 @@ async function handleIterationOutcome(state, baseline, ctx, outcome) {
     const exitResult = classifyIterationExit(outcome.completion, iterLogFile, {
         didTimeout: outcome.timedOut, exitCode: outcome.exitCode, wallSeconds: outcome.wallSeconds,
     });
-    logActivity({ event: 'iteration_end', source: 'pickle', session: path.basename(ctx.sessionDir), iteration: ctx.iteration, exit_type: exitResult.type });
+    logActivity({ event: 'iteration_end', source: 'pickle', session: path.basename(ctx.sessionDir), iteration: ctx.iteration, exit_type: exitResult.type, backend: resolveBackend(ctx.currentRunnerState) });
     const rateLimitExit = await handleRateLimitExit(state, ctx, exitResult);
     if (rateLimitExit)
         return rateLimitExit;
@@ -1350,6 +1350,7 @@ function finalizeMicroverseRun(sessionDir, ctx, outcome, log) {
             session: path.basename(sessionDir),
             duration_min: Math.round(outcome.elapsedSeconds / 60),
             mode: 'tmux',
+            backend: resolveBackend(ctx.currentRunnerState),
             ...(outcome.exitReason === 'error' || outcome.exitReason === 'rate_limit_exhausted' ? { error: outcome.exitReason } : {}),
         });
         const panelBestScore = getBestScore(outcome.state);
