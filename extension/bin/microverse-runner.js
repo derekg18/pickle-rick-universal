@@ -181,7 +181,8 @@ function maybeEmitGateRegressionWarning(opts) {
 }
 export async function ensurePerIterationGateBaseline(opts) {
     const { currentMv, workingDir, sessionDir, enabledFiles, log, currentIteration, baselineMaxAgeIterations, baselineMaxAgeSeconds, _deps, } = opts;
-    if (!enabledFiles.includes(currentMv.convergence_file ?? ''))
+    const convergenceFile = currentMv.convergence_mode === 'worker' ? currentMv.convergence_file : undefined;
+    if (!convergenceFile || !enabledFiles.includes(convergenceFile))
         return;
     const baselinePath = path.join(sessionDir, 'gate', 'baseline.json');
     if (await pathExists(baselinePath)) {
@@ -224,7 +225,8 @@ export async function runPerIterationGateHook(opts) {
     const { preIterSha, workingDir, sessionDir, enabledFiles, regressionWarningThreshold, backend, remediatorTimeoutS, log, _deps, } = opts;
     let currentMv = opts.currentMv;
     const deps = resolvePerIterationGateDeps({ workingDir, backend, remediatorTimeoutS, _deps });
-    const isEnabled = enabledFiles.includes(currentMv.convergence_file ?? '');
+    const convergenceFile = currentMv.convergence_mode === 'worker' ? currentMv.convergence_file : undefined;
+    const isEnabled = convergenceFile != null && enabledFiles.includes(convergenceFile);
     const headSha = deps.getHeadShaFn(workingDir);
     const commitsHappened = preIterSha !== headSha;
     const baselinePath = path.join(sessionDir, 'gate', 'baseline.json');
@@ -258,6 +260,9 @@ export async function handleWorkerManagedIteration(opts) {
     let converged = false;
     let reason = 'no reason';
     const priorIterationRegressions = Number(currentMv.iteration_regressions ?? 0);
+    if (currentMv.convergence_mode !== 'worker') {
+        return { currentMv, converged, reason };
+    }
     const cfPath = path.join(sessionDir, currentMv.convergence_file);
     try {
         const raw = readRecoverableJsonObject(cfPath);
@@ -592,10 +597,9 @@ export function buildMicroverseHandoff(mvState, iteration, workingDir, sessionDi
     return parts.join('\n');
 }
 export function getBestScore(mvState) {
-    if (!mvState.convergence)
-        return null;
+    const history = mvState.convergence?.history ?? [];
     const bestFn = (mvState.key_metric.direction ?? 'higher') === 'lower' ? Math.min : Math.max;
-    const accepted = mvState.convergence.history.filter(h => h.action === 'accept').map(h => h.score);
+    const accepted = history.filter(h => h.action === 'accept').map(h => h.score);
     if (accepted.length === 0)
         return mvState.baseline_score;
     return bestFn(...accepted, mvState.baseline_score);
@@ -633,7 +637,7 @@ export function buildEfficiencySection(history, totalIterations) {
 }
 export function writeFinalReport(sessionDir, mvState, exitReason, iterations, elapsedSeconds) {
     const history = mvState.convergence?.history ?? [];
-    const isWorkerMode = !mvState.convergence || mvState.key_metric?.type === 'none' || mvState.convergence_mode === 'worker';
+    const isWorkerMode = mvState.convergence_mode === 'worker' || mvState.key_metric?.type === 'none' || !mvState.convergence;
     const accepted = history.filter(h => h.action === 'accept').length;
     const reverted = history.filter(h => h.action === 'revert').length;
     const bestScore = isWorkerMode ? null : getBestScore(mvState);
@@ -643,11 +647,11 @@ export function writeFinalReport(sessionDir, mvState, exitReason, iterations, el
         `- **Exit Reason**: ${exitReason}`,
         `- **Iterations**: ${iterations}`,
         `- **Elapsed**: ${formatTime(elapsedSeconds)}`,
-        `- **Convergence Mode**: ${isWorkerMode ? 'worker' : 'metric'}`,
+        `- **Convergence Mode**: ${mvState.convergence_mode}`,
         `- **Metric**: ${mvState.key_metric?.description ?? 'n/a'}`,
     ];
-    if (isWorkerMode) {
-        report.push(`- **Worker Convergence Signal**: see ${mvState.convergence_file ?? 'phase config file'}`);
+    if (mvState.convergence_mode === 'worker') {
+        report.push(`- **Worker Convergence Signal**: see ${mvState.convergence_file}`);
     }
     else {
         report.push(`- **Baseline Score**: ${mvState.baseline_score}`);
@@ -726,7 +730,7 @@ export function loadFailureClassificationFlag(extensionRoot) {
 function resetStoppedMicroverseState(state, sessionDir, log) {
     if (state.status !== 'stopped')
         return;
-    const hasHistory = state.convergence?.history?.length > 0;
+    const hasHistory = (state.convergence?.history?.length ?? 0) > 0;
     const hasBaseline = state.baseline_score !== 0;
     const newStatus = (hasHistory || hasBaseline) ? 'iterating' : 'gap_analysis';
     log(`Resuming from failed state — resetting status to ${newStatus}`);
@@ -1267,6 +1271,10 @@ async function runMicroversePhases(currentMv, ctx, log) {
     }
     return outcome;
 }
+function isSuccessfulOutcome(reason) {
+    const successfulReasons = ['converged', 'stopped', 'limit_reached', 'approach_exhaustion', 'no_progress'];
+    return successfulReasons.includes(reason);
+}
 function finalizeMicroverseRun(sessionDir, ctx, outcome, log) {
     outcome.state.status = outcome.exitReason === 'converged' ? 'converged' : 'stopped';
     outcome.state.exit_reason = outcome.exitReason;
@@ -1278,26 +1286,31 @@ function finalizeMicroverseRun(sessionDir, ctx, outcome, log) {
         log(`sm.update failed at finalize path, falling back to safeDeactivate: ${safeErrorMessage(err)}`);
         deactivateRunnerState(ctx.statePath);
     }
-    writeFinalReport(sessionDir, outcome.state, outcome.exitReason, outcome.iterations, outcome.elapsedSeconds);
-    logActivity({
-        event: 'session_end', source: 'pickle',
-        session: path.basename(sessionDir),
-        duration_min: Math.round(outcome.elapsedSeconds / 60),
-        mode: 'tmux',
-        ...(outcome.exitReason === 'error' || outcome.exitReason === 'rate_limit_exhausted' ? { error: outcome.exitReason } : {}),
-    });
-    const panelBestScore = getBestScore(outcome.state);
-    printMinimalPanel('microverse-runner Complete', {
-        Iterations: outcome.iterations,
-        Elapsed: formatTime(outcome.elapsedSeconds),
-        ExitReason: outcome.exitReason,
-        BestScore: panelBestScore ?? 'n/a',
-    }, 'GREEN', '🔬');
+    // Guarded finalization steps: reporting and UI should not crash the process or revert state
+    try {
+        writeFinalReport(sessionDir, outcome.state, outcome.exitReason, outcome.iterations, outcome.elapsedSeconds);
+        logActivity({
+            event: 'session_end', source: 'pickle',
+            session: path.basename(sessionDir),
+            duration_min: Math.round(outcome.elapsedSeconds / 60),
+            mode: 'tmux',
+            ...(outcome.exitReason === 'error' || outcome.exitReason === 'rate_limit_exhausted' ? { error: outcome.exitReason } : {}),
+        });
+        const panelBestScore = getBestScore(outcome.state);
+        printMinimalPanel('microverse-runner Complete', {
+            Iterations: outcome.iterations,
+            Elapsed: formatTime(outcome.elapsedSeconds),
+            ExitReason: outcome.exitReason,
+            BestScore: panelBestScore ?? 'n/a',
+        }, 'GREEN', '🔬');
+    }
+    catch (finalizerErr) {
+        log(`[finalizer] non-fatal reporting error: ${safeErrorMessage(finalizerErr)}`);
+    }
     log(`microverse-runner finished. ${outcome.iterations} iterations, ${formatTime(outcome.elapsedSeconds)}, exit: ${outcome.exitReason}`);
 }
 function microverseExitCode(exitReason) {
-    const successfulReasons = ['converged', 'stopped', 'limit_reached', 'approach_exhaustion', 'no_progress'];
-    return successfulReasons.includes(exitReason) ? 0 : 1;
+    return isSuccessfulOutcome(exitReason) ? 0 : 1;
 }
 export async function main(sessionDir) {
     try {
@@ -1323,23 +1336,36 @@ export function markMicroverseFatalError(sessionDir, error) {
     if (!recovered)
         return;
     const mv = recovered;
-    const successfulReasons = ['converged', 'stopped', 'limit_reached', 'approach_exhaustion', 'no_progress'];
-    if (successfulReasons.includes(String(mv.exit_reason))) {
+    const errorRecord = {
+        message: safeErrorMessage(error),
+        stack: error instanceof Error ? error.stack : undefined,
+        timestamp: new Date().toISOString(),
+    };
+    if (isSuccessfulOutcome(mv.exit_reason)) {
         // SUCCESS PRESERVATION (F5): The run already finished successfully; don't
         // overwrite the success marker with 'error' just because the finalizer crashed.
+        // Instead, append the error to the state so it can be rendered by the monitor.
+        mv.finalizer_error = errorRecord;
+        writeMicroverseState(sessionDir, mv);
+        // Also write a sibling for visibility in file explorers
         const crashReportPath = path.join(sessionDir, 'microverse-finalizer-error.json');
         sm.forceWrite(crashReportPath, {
             status: 'crashed',
             exit_reason: 'finalizer_error',
             original_exit_reason: mv.exit_reason,
-            error: safeErrorMessage(error),
-            timestamp: new Date().toISOString(),
+            error: errorRecord,
         });
         return;
     }
-    mv.status = 'stopped';
-    mv.exit_reason = 'error';
-    sm.forceWrite(mvPath, mv);
+    // Destruction path: the run failed OR crashed before finishing.
+    // Overwrite with stopped/error status.
+    const fatalState = {
+        ...mv,
+        status: 'stopped',
+        exit_reason: 'error',
+        finalizer_error: errorRecord,
+    };
+    writeMicroverseState(sessionDir, fatalState);
 }
 if (process.argv[1] && path.basename(process.argv[1]) === 'microverse-runner.js') {
     const sessionDir = process.argv[2];

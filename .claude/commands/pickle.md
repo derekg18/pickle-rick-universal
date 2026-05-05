@@ -10,9 +10,9 @@ Pickle Rick persona active via CLAUDE.md. Proceed to Step 1.
 Extract flags from `$ARGUMENTS` (`--max-iterations <N>`, `--resume <path>`, etc.). Pass flags before `--task`. Task text goes in `--task "..."`.
 
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" <FLAGS> --task "<TASK_TEXT>"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" <FLAGS> --task "<TASK_TEXT>"
 ```
-No flags: `setup.js --task "$ARGUMENTS"`. Extension root: `$HOME/.claude/pickle-rick` (`${EXTENSION_ROOT}`).
+No flags: `setup.js --task "$ARGUMENTS"`. Extension root: `/Users/derekgreene/.gemini/extensions/pickle-rick` (`${EXTENSION_ROOT}`).
 Backend example: `setup.js --backend codex --task "refactor auth"` — routes worker spawns through `codex exec` instead of `claude`. Backend persists in `state.json` and survives resume.
 
 Extract `SESSION_ROOT=<path>` from output.

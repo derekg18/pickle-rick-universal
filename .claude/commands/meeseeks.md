@@ -34,14 +34,14 @@ Before you finish:
 Run `tmux -V`. If missing: "Install tmux: `brew install tmux` or `apt install tmux`." Stop.
 
 ### Step 2: Read Settings
-Read `$HOME/.claude/pickle-rick/pickle_settings.json`: `default_meeseeks_min_passes` → MIN_PASSES (default:10), `default_meeseeks_max_passes` → MAX_PASSES (default:50).
+Read `/Users/derekgreene/.gemini/extensions/pickle-rick/pickle_settings.json`: `default_meeseeks_min_passes` → MIN_PASSES (default:10), `default_meeseeks_max_passes` → MAX_PASSES (default:50).
 
 ### Step 3: Parse Flags
 From `$ARGUMENTS`: `--min-iterations <N>` overrides MIN_PASSES, `--max-iterations <N>` overrides MAX_PASSES. Remainder = task text.
 
 ### Step 4: Initialize
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" --tmux --min-iterations <MIN_PASSES> --max-iterations <MAX_PASSES> --command-template meeseeks.md --task "Mr. Meeseeks Code Review: <task-text>"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --tmux --min-iterations <MIN_PASSES> --max-iterations <MAX_PASSES> --command-template meeseeks.md --task "Mr. Meeseeks Code Review: <task-text>"
 ```
 Default task: `"Mr. Meeseeks Code Review"`. Extract `SESSION_ROOT=<path>` from output.
 
@@ -55,14 +55,14 @@ Print attach command immediately: `tmux attach -t <name>` (Window 1 "monitor" = 
 
 ### Step 6: Launch Runner
 ```bash
-tmux send-keys -t <name>:0 "node $HOME/.claude/pickle-rick/extension/bin/mux-runner.js <SESSION_ROOT>; echo ''; echo 'Mr. Meeseeks has ceased to exist.'; read" Enter
+tmux send-keys -t <name>:0 "node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/mux-runner.js <SESSION_ROOT>; echo ''; echo 'Mr. Meeseeks has ceased to exist.'; read" Enter
 ```
 
 ### Step 7: Monitor (3-pane)
 mux-runner auto-creates the monitor window on startup (meeseeks layout — dashboard / log-stream / mux-runner tail / raw-morty), no manual invocation needed.
 
 ### Step 8: Report
-Print: session name, `tmux attach -t <name>`, window layout (monitor: dashboard/log-stream/runner-log, runner: background), min/max passes, cancel: `cd <working_dir> && /eat-pickle`, emergency: `tmux kill-session -t <name>` then `node ~/.claude/pickle-rick/extension/bin/cancel.js`, state path: `<SESSION_ROOT>/state.json`.
+Print: session name, `tmux attach -t <name>`, window layout (monitor: dashboard/log-stream/runner-log, runner: background), min/max passes, cancel: `cd <working_dir> && /eat-pickle`, emergency: `tmux kill-session -t <name>` then `node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/cancel.js`, state path: `<SESSION_ROOT>/state.json`.
 
 ### Step 9: Exit
 Output: `<promise` + `>TASK_COMPLETED</promise>`
@@ -78,8 +78,8 @@ Read `<SESSION_ROOT>/state.json`: `iteration`, `min_iterations`, `original_promp
 
 ### Step 11: Update State
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/update-state.js" iteration <current+1> <SESSION_ROOT>
-node "$HOME/.claude/pickle-rick/extension/bin/update-state.js" step review <SESSION_ROOT>
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/update-state.js" iteration <current+1> <SESSION_ROOT>
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/update-state.js" step review <SESSION_ROOT>
 ```
 
 ### Step 11b: Findings Summary
@@ -170,7 +170,7 @@ Or run without --team for sequential mode: /meeseeks <task>
 
 ### Step 21: Parse Flags & Settings
 
-Read `$HOME/.claude/pickle-rick/pickle_settings.json` for defaults.
+Read `/Users/derekgreene/.gemini/extensions/pickle-rick/pickle_settings.json` for defaults.
 From `$ARGUMENTS` (after removing `--team`):
 - `--max-rounds <N>` → MAX_ROUNDS (default: 10). Each round = one parallel review cycle.
 - `--min-rounds <N>` → MIN_ROUNDS (default: 2). Minimum rounds before clean exit.

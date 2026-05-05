@@ -30,9 +30,9 @@ If `EXEMPLAR` is empty → ask user: "Where should I open the portal? Give me a 
 ## Step 1: Initialize Session
 
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" --paused --task "Portal Gun: ${EXEMPLAR}"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --paused --task "Portal Gun: ${EXEMPLAR}"
 ```
-Extract `SESSION_ROOT=<path>`. Extension root: `$HOME/.claude/pickle-rick` (`${EXTENSION_ROOT}`).
+Extract `SESSION_ROOT=<path>`. Extension root: `/Users/derekgreene/.gemini/extensions/pickle-rick` (`${EXTENSION_ROOT}`).
 
 ## Step 2: Open the Portal (Acquire Exemplar)
 
@@ -78,12 +78,12 @@ Announce what was acquired: **total file count**, languages detected, directory 
 
 Before analyzing, check if a matching pattern already exists:
 
-1. Read `~/.claude/pickle-rick/patterns/index.md` (if it exists)
+1. Read `/Users/derekgreene/.gemini/extensions/pickle-rick/patterns/index.md` (if it exists)
 2. For each entry, compare the **Source** column against `${EXEMPLAR}`:
    - Exact path/URL match → **HIT**
    - Same repo/directory name but different subpath → **PARTIAL**
    - No match → continue
-3. On **HIT**: Read the cached pattern file (`~/.claude/pickle-rick/patterns/${name}.md`). If the file is missing or unreadable, warn: "Pattern `${name}` listed in index but file missing — proceeding with full analysis." and treat as no match. Otherwise print: "Found cached pattern: `${name}`. Using as baseline — will verify against current donor and update if stale."
+3. On **HIT**: Read the cached pattern file (`/Users/derekgreene/.gemini/extensions/pickle-rick/patterns/${name}.md`). If the file is missing or unreadable, warn: "Pattern `${name}` listed in index but file missing — proceeding with full analysis." and treat as no match. Otherwise print: "Found cached pattern: `${name}`. Using as baseline — will verify against current donor and update if stale."
    - Use the cached analysis as a starting template — verify each section against the actual donor files (they may have changed since extraction)
    - Skip sections that match, update sections that diverged
    - If donor files are identical: skip to Step 4 with cached analysis (copy to `${SESSION_ROOT}/portal/migration_inventory.md`). Note: cached patterns in old format (pre-migration-inventory) should be treated as partial — perform full fresh analysis.
@@ -581,13 +581,13 @@ This runs AFTER Step 6g's consistency check. The sequence is: user requests edit
 Save the extracted pattern for future reuse. This implements the "Propagate" step of gene transfusion — making patterns discoverable and reusable across projects.
 
 ### 7a: Pattern Library
-Pattern library location: `~/.claude/pickle-rick/patterns/`
+Pattern library location: `/Users/derekgreene/.gemini/extensions/pickle-rick/patterns/`
 
 Derive `PATTERN_NAME`: use `SAVE_PATTERN` value if set, otherwise infer from exemplar (repo name, file basename without extension, or slugified description). Fallback: `pattern-<date>`.
 
 **Decision tree:**
 1. `--save-pattern <name>` set → `PATTERN_NAME = SAVE_PATTERN`. Save immediately, no prompt.
-2. `--save-pattern` not set AND `--no-refine` not set → check if `~/.claude/pickle-rick/patterns/${PATTERN_NAME}.md` already exists:
+2. `--save-pattern` not set AND `--no-refine` not set → check if `/Users/derekgreene/.gemini/extensions/pickle-rick/patterns/${PATTERN_NAME}.md` already exists:
    - If exists: prompt user: "Pattern `${PATTERN_NAME}` already in library. Update it with this session's analysis? (y/n)"
      - User accepts → overwrite file, update index entry date
      - User declines → skip
@@ -597,9 +597,9 @@ Derive `PATTERN_NAME`: use `SAVE_PATTERN` value if set, otherwise infer from exe
 3. `--save-pattern` not set AND `--no-refine` set → skip with hint: "Pattern available at `${SESSION_ROOT}/portal/migration_inventory.md` — use `--save-pattern <name>` to persist."
 
 **When saving:**
-1. Create `~/.claude/pickle-rick/patterns/` if it doesn't exist. If creation fails, warn and skip (non-fatal).
-2. Copy `${SESSION_ROOT}/portal/migration_inventory.md` → `~/.claude/pickle-rick/patterns/${PATTERN_NAME}.md`
-3. Create or append to `~/.claude/pickle-rick/patterns/index.md`:
+1. Create `/Users/derekgreene/.gemini/extensions/pickle-rick/patterns/` if it doesn't exist. If creation fails, warn and skip (non-fatal).
+2. Copy `${SESSION_ROOT}/portal/migration_inventory.md` → `/Users/derekgreene/.gemini/extensions/pickle-rick/patterns/${PATTERN_NAME}.md`
+3. Create or append to `/Users/derekgreene/.gemini/extensions/pickle-rick/patterns/index.md`:
 
 If `index.md` doesn't exist, create with header:
 ```markdown
@@ -651,7 +651,7 @@ The portal-gun convergence loop: execute → measure coverage → generate delta
 
 Re-initialize for execution:
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" --tmux --resume "${SESSION_ROOT}" --max-iterations 0 --max-time 0
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --tmux --resume "${SESSION_ROOT}" --max-iterations 0 --max-time 0
 ```
 If CHAIN_MEESEEKS: append `--chain-meeseeks`.
 
@@ -661,7 +661,7 @@ PORTAL_HASH="$(basename "${SESSION_ROOT}" | sed 's/.*\(.\{8\}\)$/\1/')"
 PORTAL_SESSION="portal-${PORTAL_HASH}"
 tmux new-session -d -s "$PORTAL_SESSION" -c <working_dir>
 sleep 1
-tmux send-keys -t "$PORTAL_SESSION":0 "node $HOME/.claude/pickle-rick/extension/bin/mux-runner.js ${SESSION_ROOT}; echo ''; echo 'Pass complete. Checking coverage...'; read" Enter
+tmux send-keys -t "$PORTAL_SESSION":0 "node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/mux-runner.js ${SESSION_ROOT}; echo ''; echo 'Pass complete. Checking coverage...'; read" Enter
 ```
 
 mux-runner auto-creates the 4-pane monitor window on startup — no manual invocation needed.

@@ -9,7 +9,7 @@ Run `tmux -V`. If missing: "Install tmux: `brew install tmux` or `apt install tm
 Extract flags from `$ARGUMENTS` (`--resume <path>`, `--max-iterations <N>`, `--backend <claude|codex>`, etc.). Pass flags before `--task`. Task text goes in `--task "..."`.
 
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" --tmux <FLAGS> --task "<TASK_TEXT>"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --tmux <FLAGS> --task "<TASK_TEXT>"
 ```
 No flags: `setup.js --tmux --task "$ARGUMENTS"`.
 Resume example: `setup.js --tmux --resume /sessions/057f0263` (no --task needed).
@@ -28,13 +28,13 @@ Print attach command immediately: `tmux attach -t <name>` (Window 1 "monitor" = 
 
 ## Step 4: Launch Runner
 ```bash
-tmux send-keys -t <name>:0 "node $HOME/.claude/pickle-rick/extension/bin/mux-runner.js <SESSION_ROOT>; echo ''; echo 'Runner finished.  Ctrl+B 1 → monitor  |  Ctrl+B D → detach'; read" Enter
+tmux send-keys -t <name>:0 "node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/mux-runner.js <SESSION_ROOT>; echo ''; echo 'Runner finished.  Ctrl+B 1 → monitor  |  Ctrl+B D → detach'; read" Enter
 ```
 
 ## Step 5: Monitor (4-pane)
 mux-runner auto-creates the 4-pane monitor window on startup — no manual invocation needed.
 
 ## Step 6: Report
-Print: session name, `tmux attach -t <name>`, window layout (monitor: dashboard top-left / log-stream top-right / morty-logs bottom-left / raw-morty bottom-right; runner: Ctrl+B 0), cancel: `cd <working_dir> && /eat-pickle`, emergency: `tmux kill-session -t <name>` then `node ~/.claude/pickle-rick/extension/bin/cancel.js`, state path: `<SESSION_ROOT>/state.json`.
+Print: session name, `tmux attach -t <name>`, window layout (monitor: dashboard top-left / log-stream top-right / morty-logs bottom-left / raw-morty bottom-right; runner: Ctrl+B 0), cancel: `cd <working_dir> && /eat-pickle`, emergency: `tmux kill-session -t <name>` then `node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/cancel.js`, state path: `<SESSION_ROOT>/state.json`.
 
 Output: `<promise` + `>TASK_COMPLETED</promise>`

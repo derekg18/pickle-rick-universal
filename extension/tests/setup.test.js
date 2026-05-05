@@ -111,7 +111,7 @@ test('setup initializeNewSession: fresh PRD-backed state records prd_path and st
         const persisted = JSON.parse(fs.readFileSync(path.join(session.sessionRoot, 'state.json'), 'utf-8'));
         const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf-8' }).trim();
 
-        assert.equal(persisted.schema_version, 3);
+        assert.equal(persisted.schema_version, 4);
         assert.equal(persisted.prd_path, prdPath);
         assert.equal(persisted.start_commit, head);
         assert.equal(session.state.prd_path, prdPath);

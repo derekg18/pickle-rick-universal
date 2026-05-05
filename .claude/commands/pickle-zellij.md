@@ -29,7 +29,7 @@ If `$ZELLIJ` env var is set, warn: "Nested Zellij session detected — this may 
 Extract flags from `$ARGUMENTS` (`--resume <path>`, `--max-iterations <N>`, etc.). Pass flags before `--task`. Task text goes in `--task "..."`.
 
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" --tmux <FLAGS> --task "<TASK_TEXT>"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --tmux <FLAGS> --task "<TASK_TEXT>"
 ```
 No flags: `setup.js --tmux --task "$ARGUMENTS"`.
 Resume example: `setup.js --tmux --resume /sessions/057f0263` (no --task needed).
@@ -49,27 +49,27 @@ Export env vars for the KDL layout:
 ```bash
 export PICKLE_SESSION_ROOT=<SESSION_ROOT>
 export PICKLE_CWD=<working_dir>
-export PICKLE_EXTENSION_ROOT=$HOME/.claude/pickle-rick
+export PICKLE_EXTENSION_ROOT=/Users/derekgreene/.gemini/extensions/pickle-rick
 ```
 
 **Three-tier session creation** — try each approach in order, use the first that succeeds:
 
 **(A) Preferred — `--new-session-with-layout` (Zellij >= 0.41):**
 ```bash
-zellij --new-session-with-layout $HOME/.claude/pickle-rick/extension/layouts/monitor-pickle.kdl \
+zellij --new-session-with-layout /Users/derekgreene/.gemini/extensions/pickle-rick/extension/layouts/monitor-pickle.kdl \
   attach --create-background pickle-<hash>
 ```
 
 **(B) Fallback — `--layout` flag:**
 ```bash
-zellij --layout $HOME/.claude/pickle-rick/extension/layouts/monitor-pickle.kdl \
+zellij --layout /Users/derekgreene/.gemini/extensions/pickle-rick/extension/layouts/monitor-pickle.kdl \
   attach --create-background pickle-<hash>
 ```
 
 **(C) Two-step fallback — create then apply layout:**
 ```bash
 zellij attach --create-background pickle-<hash>
-ZELLIJ_SESSION_NAME=pickle-<hash> zellij action new-tab --layout $HOME/.claude/pickle-rick/extension/layouts/monitor-pickle.kdl
+ZELLIJ_SESSION_NAME=pickle-<hash> zellij action new-tab --layout /Users/derekgreene/.gemini/extensions/pickle-rick/extension/layouts/monitor-pickle.kdl
 # Remove the empty default tab created by attach
 ZELLIJ_SESSION_NAME=pickle-<hash> zellij action go-to-previous-tab
 ZELLIJ_SESSION_NAME=pickle-<hash> zellij action close-tab
@@ -80,6 +80,6 @@ The KDL layout (`monitor-pickle.kdl`) creates both tabs automatically:
 - **monitor** tab (focused): dashboard top-left, log-stream top-right, morty-watcher bottom
 
 ## Step 4: Report
-Print: session name, `zellij attach pickle-<hash>`, tab layout (monitor: dashboard top-left / log-stream top-right / morty-logs bottom; runner: switch tabs with Zellij keybinds), cancel: `cd <working_dir> && /eat-pickle` (graceful), emergency: `zellij delete-session pickle-<hash>` then `node ~/.claude/pickle-rick/extension/bin/cancel.js`, state path: `<SESSION_ROOT>/state.json`.
+Print: session name, `zellij attach pickle-<hash>`, tab layout (monitor: dashboard top-left / log-stream top-right / morty-logs bottom; runner: switch tabs with Zellij keybinds), cancel: `cd <working_dir> && /eat-pickle` (graceful), emergency: `zellij delete-session pickle-<hash>` then `node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/cancel.js`, state path: `<SESSION_ROOT>/state.json`.
 
 Output: `<promise>TASK_COMPLETED</promise>`

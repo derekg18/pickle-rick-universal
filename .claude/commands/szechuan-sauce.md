@@ -45,7 +45,7 @@ If `--scope` and `--dry-run` are BOTH set: print `SCOPE_DRYRUN_CONFLICT: --scope
 
 Resolve TARGET to an absolute path. Verify it exists (file or directory). If not found, print error and stop.
 
-If DOMAIN is set, verify `$HOME/.claude/pickle-rick/szechuan-sauce-${DOMAIN}-principles.md` exists. If not found, print "Unknown domain: DOMAIN. Available domains:" then glob `$HOME/.claude/pickle-rick/szechuan-sauce-*-principles.md` and list them. Stop.
+If DOMAIN is set, verify `/Users/derekgreene/.gemini/extensions/pickle-rick/szechuan-sauce-${DOMAIN}-principles.md` exists. If not found, print "Unknown domain: DOMAIN. Available domains:" then glob `/Users/derekgreene/.gemini/extensions/pickle-rick/szechuan-sauce-*-principles.md` and list them. Stop.
 
 ### Step 3: Validate Target
 
@@ -58,7 +58,7 @@ Count source files. Print: "Target: TARGET (N source files)"
 ### Step 4: Dry Run (if `--dry-run`)
 
 If DRY_RUN mode: perform gap analysis without creating a session or modifying code:
-1. Read `$HOME/.claude/pickle-rick/szechuan-sauce-principles.md`. If DOMAIN is set, also read `$HOME/.claude/pickle-rick/szechuan-sauce-${DOMAIN}-principles.md`.
+1. Read `/Users/derekgreene/.gemini/extensions/pickle-rick/szechuan-sauce-principles.md`. If DOMAIN is set, also read `/Users/derekgreene/.gemini/extensions/pickle-rick/szechuan-sauce-${DOMAIN}-principles.md`.
 2. If FOCUS is set, apply it as a review lens: prioritize violations matching the focus and elevate them by one priority level (e.g. a P2 violation matching the focus becomes P1).
 3. Read all target source files
 4. Catalog all violations using this format:
@@ -104,7 +104,7 @@ Detect and run the project's test suite (check `package.json` scripts, `Makefile
 ### Step 6: Initialize Session
 
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" --tmux --max-iterations <MAX_ITER> --command-template szechuan-sauce.md [--backend <BACKEND>] --task "Szechuan Sauce: deslop TARGET"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --tmux --max-iterations <MAX_ITER> --command-template szechuan-sauce.md [--backend <BACKEND>] --task "Szechuan Sauce: deslop TARGET"
 ```
 Append `--backend <BACKEND>` only when the flag was passed. Extract `SESSION_ROOT=<path>` from output.
 
@@ -112,15 +112,15 @@ Append `--backend <BACKEND>` only when the flag was passed. Extract `SESSION_ROO
 
 If SCOPE_FLAG is set:
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/resolve-scope.js" --scope "<SCOPE_FLAG>" --scope-base "<SCOPE_BASE>" --session-root "${SESSION_ROOT}" --target "${TARGET_ABSOLUTE_PATH}"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/resolve-scope.js" --scope "<SCOPE_FLAG>" --scope-base "<SCOPE_BASE>" --session-root "${SESSION_ROOT}" --target "${TARGET_ABSOLUTE_PATH}"
 ```
 Omit `--scope-base` when SCOPE_BASE was not provided. If the command exits non-zero, print the stderr and stop.
 
 ### Step 8: Create microverse.json
 
 If DOMAIN is set or FOCUS is set, create a combined judge context file:
-1. Read `$HOME/.claude/pickle-rick/szechuan-sauce-principles.md`
-2. If DOMAIN is set, read `$HOME/.claude/pickle-rick/szechuan-sauce-${DOMAIN}-principles.md`
+1. Read `/Users/derekgreene/.gemini/extensions/pickle-rick/szechuan-sauce-principles.md`
+2. If DOMAIN is set, read `/Users/derekgreene/.gemini/extensions/pickle-rick/szechuan-sauce-${DOMAIN}-principles.md`
 3. If FOCUS is set, append a Focus section:
 ```markdown
 
@@ -133,10 +133,10 @@ Violations matching this focus are elevated by one priority level (e.g. P2 → P
 4. Write all contents to `${SESSION_ROOT}/judge-context.md`
 5. Use `${SESSION_ROOT}/judge-context.md` as JUDGE_CONTEXT_PATH
 
-If neither DOMAIN nor FOCUS is set, use `$HOME/.claude/pickle-rick/szechuan-sauce-principles.md` as JUDGE_CONTEXT_PATH.
+If neither DOMAIN nor FOCUS is set, use `/Users/derekgreene/.gemini/extensions/pickle-rick/szechuan-sauce-principles.md` as JUDGE_CONTEXT_PATH.
 
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/init-microverse.js" "${SESSION_ROOT}" "${TARGET_ABSOLUTE_PATH}" --stall-limit ${STALL_LIMIT} --convergence-target 0 --judge-context "${JUDGE_CONTEXT_PATH}" [if SCOPE_FLAG set: --allowed-paths-file "${SESSION_ROOT}/scope.json"]
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/init-microverse.js" "${SESSION_ROOT}" "${TARGET_ABSOLUTE_PATH}" --stall-limit ${STALL_LIMIT} --convergence-target 0 --judge-context "${JUDGE_CONTEXT_PATH}" [if SCOPE_FLAG set: --allowed-paths-file "${SESSION_ROOT}/scope.json"]
 ```
 
 Replace shell variables with actual values. The `--convergence-target 0` tells the runner to stop immediately when the violation count reaches zero (instead of waiting for stall_limit iterations of finding nothing). When SCOPE_FLAG was set (Step 7 wrote `scope.json`), append `--allowed-paths-file "${SESSION_ROOT}/scope.json"` — this injects `allowed_paths` into `microverse.json` so Worker Mode Override 3 clamps its per-iteration glob to the scoped file set.
@@ -155,8 +155,8 @@ Eliminate all coding principle violations in TARGET through iterative review and
 TARGET_ABSOLUTE_PATH
 
 ## Principles Reference
-Read: $HOME/.claude/pickle-rick/szechuan-sauce-principles.md
-[If DOMAIN is set, add this line]: Read: $HOME/.claude/pickle-rick/szechuan-sauce-${DOMAIN}-principles.md
+Read: /Users/derekgreene/.gemini/extensions/pickle-rick/szechuan-sauce-principles.md
+[If DOMAIN is set, add this line]: Read: /Users/derekgreene/.gemini/extensions/pickle-rick/szechuan-sauce-${DOMAIN}-principles.md
 [Domain principles override base principles where they conflict.]
 [If FOCUS is set, add this section]:
 ## Focus
@@ -202,8 +202,8 @@ Session name: `szechuan-<hash>` from SESSION_ROOT basename.
 ```bash
 tmux new-session -d -s <name> -c <working_dir>
 sleep 1
-tmux send-keys -t <name>:0 "node $HOME/.claude/pickle-rick/extension/bin/microverse-runner.js ${SESSION_ROOT} && \
-  node $HOME/.claude/pickle-rick/extension/bin/finalize-gate.js ${SESSION_ROOT} szechuan; \
+tmux send-keys -t <name>:0 "node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/microverse-runner.js ${SESSION_ROOT} && \
+  node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/finalize-gate.js ${SESSION_ROOT} szechuan; \
   RC=$?; if [ $RC -eq 0 ]; then echo ''; echo 'The sauce... is obtained. Gate green.'; \
   else echo ''; echo 'Sauce obtained but gate exhausted remediation cycles — see ${SESSION_ROOT}/gate/escalation_*.md'; fi; read" Enter
 ```
@@ -239,7 +239,7 @@ Follow the **Microverse Worker protocol** (the standard microverse iteration loo
 
 ### Override 1: Principles Reference
 
-Before assessing the codebase, check the handoff's `microverse.json` for a `judge_context_path`. If set, read that file — it contains the combined base + domain principles and any focus directive. If not set, read `$HOME/.claude/pickle-rick/szechuan-sauce-principles.md`. If the PRD's Principles Reference section lists additional domain-specific principles files, also read those. Domain principles take precedence over base principles where they overlap. If a Focus Directive section is present, apply it: violations matching the focus are elevated by one priority level and take precedence over same-priority non-focus violations. Cross-reference each finding against the priority matrix (P0–P4) and the diagnostic guide. Then cross-reference each finding against `## Confidence Scoring` (score 0/25/50/75/100 — anything under 80 is dropped) and the `## False Positives — Do NOT Flag` list (exclude those categories before you even score).
+Before assessing the codebase, check the handoff's `microverse.json` for a `judge_context_path`. If set, read that file — it contains the combined base + domain principles and any focus directive. If not set, read `/Users/derekgreene/.gemini/extensions/pickle-rick/szechuan-sauce-principles.md`. If the PRD's Principles Reference section lists additional domain-specific principles files, also read those. Domain principles take precedence over base principles where they overlap. If a Focus Directive section is present, apply it: violations matching the focus are elevated by one priority level and take precedence over same-priority non-focus violations. Cross-reference each finding against the priority matrix (P0–P4) and the diagnostic guide. Then cross-reference each finding against `## Confidence Scoring` (score 0/25/50/75/100 — anything under 80 is dropped) and the `## False Positives — Do NOT Flag` list (exclude those categories before you even score).
 
 ### Override 2: Phase 0 — Contract Discovery (first iteration only)
 

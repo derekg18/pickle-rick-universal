@@ -63,12 +63,12 @@ describe('init-microverse convergence flags', () => {
     }
   });
 
-  test('default: no convergence flags produces no convergence_mode field', () => {
+  test('default: no convergence flags produces convergence_mode: metric', () => {
     const dir = makeTempDir();
     try {
       run([dir, '/some/target']);
       const state = readMicroverse(dir);
-      assert.equal(state.convergence_mode, undefined);
+      assert.equal(state.convergence_mode, 'metric');
       assert.equal(state.convergence_file, undefined);
     } finally {
       fs.rmSync(dir, { recursive: true });

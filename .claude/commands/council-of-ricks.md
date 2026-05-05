@@ -39,7 +39,7 @@ Remainder = task text.
 Publish resolution: read `default_council_publish` from `pickle_settings.json` (default: `true`) in Step 4; `--no-publish` CLI overrides to `false`. Thread the resolved boolean into Step 8's `council-stack.json` as `publish_enabled`.
 
 ### Step 4: Read Settings
-Read `$HOME/.claude/pickle-rick/pickle_settings.json`:
+Read `/Users/derekgreene/.gemini/extensions/pickle-rick/pickle_settings.json`:
 - `default_council_min_rounds` (default: `2`) — every round exercises all unconditional categories, so the approval gate wants two clean rounds back-to-back
 - `default_council_max_rounds` (default: `5`) — exhaustion ceiling; a healthy stack converges in 2–3 rounds
 - `default_council_publish` (default: `true`) — enables Step 17.7 auto-publish at session end; `--no-publish` on the CLI overrides to `false` (see Step 3 "Publish resolution")
@@ -51,7 +51,7 @@ Read project `CLAUDE.md`, extract rules/required patterns/forbidden patterns/arc
 
 ### Step 6: Bake In Principles + Detect Codex
 
-**Szechuan principles (always):** Read `$HOME/.claude/pickle-rick/szechuan-sauce-principles.md`. Copy it to `<SESSION_ROOT>/council-principles.md`. This is the canonical principle/severity reference for the Council — every round has access to the P0–P4 priority matrix, the diagnostic guide, and the principle tensions table.
+**Szechuan principles (always):** Read `/Users/derekgreene/.gemini/extensions/pickle-rick/szechuan-sauce-principles.md`. Copy it to `<SESSION_ROOT>/council-principles.md`. This is the canonical principle/severity reference for the Council — every round has access to the P0–P4 priority matrix, the diagnostic guide, and the principle tensions table.
 
 **Council schemas artifact:** Write the following JSON literal verbatim to `<SESSION_ROOT>/council-schemas.json` alongside `council-principles.md`. This file is the canonical shape reference for all subagent payload validation in this session.
 
@@ -182,13 +182,13 @@ Write `<SESSION_ROOT>/council-stack.json` with:
 Use the effective values computed in Step 8:
 
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" --tmux --min-iterations <effective_min_rounds> --max-iterations <effective_max_rounds> --command-template council-of-ricks.md --task "Council of Ricks Stack Review: <task-text>"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --tmux --min-iterations <effective_min_rounds> --max-iterations <effective_max_rounds> --command-template council-of-ricks.md --task "Council of Ricks Stack Review: <task-text>"
 ```
 
 Extract `SESSION_ROOT=<path>`. Session name: `council-<hash>` from basename.
 ```bash
 tmux new-session -d -s <name> -c <working_dir> && sleep 1
-tmux send-keys -t <name>:0 "node $HOME/.claude/pickle-rick/extension/bin/mux-runner.js <SESSION_ROOT>; echo ''; echo 'The Council has adjourned.'; read" Enter
+tmux send-keys -t <name>:0 "node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/mux-runner.js <SESSION_ROOT>; echo ''; echo 'The Council has adjourned.'; read" Enter
 ```
 
 mux-runner auto-creates the monitor window on startup (council layout — dashboard / log-stream / mux-runner tail / raw-morty), no manual invocation needed. Each mux-runner iteration runs one complete round.
@@ -213,8 +213,8 @@ Read `state.json` (iteration, min_iterations, working_dir), `council-stack.json`
 
 ### Step 11: Update State
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/update-state.js" iteration <current+1> <SESSION_ROOT>
-node "$HOME/.claude/pickle-rick/extension/bin/update-state.js" step review <SESSION_ROOT>
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/update-state.js" iteration <current+1> <SESSION_ROOT>
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/update-state.js" step review <SESSION_ROOT>
 ```
 Read or create `<SESSION_ROOT>/council-of-ricks-summary.md`. Create `<SESSION_ROOT>/round-<N>/` for per-round scratch (historical brief, subagent payloads).
 
@@ -530,7 +530,7 @@ Both conditions run Step 17.7 BEFORE emitting the terminal `<promise>` tag.
 Otherwise:
 
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/council-publish.js" "<SESSION_ROOT>"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/council-publish.js" "<SESSION_ROOT>"
 ```
 
 Append `--dry-run` to skip the `gh pr comment` POST while still writing body files and publish.log — useful when debugging the publisher without spamming PRs.

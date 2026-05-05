@@ -115,7 +115,7 @@ Skip Steps 6–11 entirely.
 ### Step 6: Initialize Session
 
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" --tmux --max-iterations <MAX_ITER> --command-template plumbus.md --task "Plumbus: shape TARGET into a proper plumbus"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --tmux --max-iterations <MAX_ITER> --command-template plumbus.md --task "Plumbus: shape TARGET into a proper plumbus"
 ```
 Extract `SESSION_ROOT=<path>` from output.
 
@@ -137,7 +137,7 @@ Violations matching this focus are elevated by one priority level (e.g. P2 → P
 ### Step 8: Initialize microverse.json
 
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/init-microverse.js" "${SESSION_ROOT}" "${TARGET_ABSOLUTE_PATH}" --stall-limit ${STALL_LIMIT} --convergence-target 0 --judge-context "${JUDGE_CONTEXT_PATH}"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/init-microverse.js" "${SESSION_ROOT}" "${TARGET_ABSOLUTE_PATH}" --stall-limit ${STALL_LIMIT} --convergence-target 0 --judge-context "${JUDGE_CONTEXT_PATH}"
 ```
 
 `--convergence-target 0` tells the runner to stop immediately when the violation count reaches zero (validator clean + no pattern violations).
@@ -207,7 +207,7 @@ Session name: `plumbus-<hash>` from SESSION_ROOT basename.
 ```bash
 tmux new-session -d -s <name> -c <working_dir>
 sleep 1
-tmux send-keys -t <name>:0 "node $HOME/.claude/pickle-rick/extension/bin/microverse-runner.js ${SESSION_ROOT}; echo ''; echo 'That... is a plumbus.'; read" Enter
+tmux send-keys -t <name>:0 "node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/microverse-runner.js ${SESSION_ROOT}; echo ''; echo 'That... is a plumbus.'; read" Enter
 ```
 
 microverse-runner auto-creates the 4-pane monitor window on startup — no manual invocation needed.
@@ -339,7 +339,7 @@ Any value other than `"off"` (including `"false"`, `"0"`, absent) means the kill
 #### Invocation
 
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/plumbus-frame-analyzer.js" "${TARGET}" > "${SESSION_ROOT}/frame-analysis.json"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/plumbus-frame-analyzer.js" "${TARGET}" > "${SESSION_ROOT}/frame-analysis.json"
 ```
 
 Exit 0 = full analysis; exit 2 = degraded mode (partial results still written — continue). Any other exit code = abort and record in TASK_NOTES `## Dead Ends`.
@@ -397,7 +397,7 @@ Where:
 - `sortedEdgeTripleList` — all `[from, to, condition]` triples, sorted lexicographically (condition is `""` when absent).
 - `sortedEdgeAttributeMap` — map of `"from→to"` → sorted attribute key-value pairs.
 
-**Storage exclusivity**: the fingerprint is persisted ONLY in `gap_analysis.md`. Never write or cache it in the deployed extension tree (`~/.claude/pickle-rick/extension/**`).
+**Storage exclusivity**: the fingerprint is persisted ONLY in `gap_analysis.md`. Never write or cache it in the deployed extension tree (`/Users/derekgreene/.gemini/extensions/pickle-rick/extension/**`).
 
 ### Finding Format
 

@@ -66,7 +66,7 @@ Detect and run the project's test suite. If tests fail, fix them first and commi
 ### Step 6: Initialize Session
 
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" --tmux --max-iterations <MAX_ITER> --command-template anatomy-park.md [--backend <BACKEND>] --task "Anatomy Park: deep review TARGET"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --tmux --max-iterations <MAX_ITER> --command-template anatomy-park.md [--backend <BACKEND>] --task "Anatomy Park: deep review TARGET"
 ```
 Append `--backend <BACKEND>` only when the flag was passed. Extract `SESSION_ROOT=<path>` from output.
 
@@ -74,7 +74,7 @@ Append `--backend <BACKEND>` only when the flag was passed. Extract `SESSION_ROO
 
 If SCOPE_FLAG is set:
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/resolve-scope.js" --scope "<SCOPE_FLAG>" --scope-base "<SCOPE_BASE>" --session-root "${SESSION_ROOT}" --target "${TARGET_ABSOLUTE_PATH}"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/resolve-scope.js" --scope "<SCOPE_FLAG>" --scope-base "<SCOPE_BASE>" --session-root "${SESSION_ROOT}" --target "${TARGET_ABSOLUTE_PATH}"
 ```
 Omit `--scope-base` when SCOPE_BASE was not provided. If the command exits non-zero, print the stderr and stop.
 
@@ -84,7 +84,7 @@ Capture pre-existing typecheck + lint failures so the per-iteration gate (in mic
 
 ```bash
 mkdir -p "${SESSION_ROOT}/gate"
-node "$HOME/.claude/pickle-rick/extension/bin/check-gate.js" \
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/check-gate.js" \
   --mode baseline \
   --scope full \
   --checks typecheck,lint \
@@ -146,7 +146,7 @@ METRIC_JSON='{"description":"none","validation":"none","type":"none","timeout_se
 
 Initialize microverse:
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/init-microverse.js" "${SESSION_ROOT}" "${TARGET_ABSOLUTE_PATH}" --stall-limit ${RUNNER_STALL_LIMIT} --convergence-mode worker --convergence-file anatomy-park.json --metric-json "${METRIC_JSON}" ${SCOPE_FLAG:+--allowed-paths-file "${SESSION_ROOT}/scope.json"}
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/init-microverse.js" "${SESSION_ROOT}" "${TARGET_ABSOLUTE_PATH}" --stall-limit ${RUNNER_STALL_LIMIT} --convergence-mode worker --convergence-file anatomy-park.json --metric-json "${METRIC_JSON}" ${SCOPE_FLAG:+--allowed-paths-file "${SESSION_ROOT}/scope.json"}
 ```
 
 ### Step 8: Write prd.md
@@ -199,10 +199,10 @@ Session name: `anatomy-park-<hash>` from SESSION_ROOT basename.
 ```bash
 tmux new-session -d -s <name> -c <working_dir>
 sleep 1
-tmux send-keys -t <name>:0 "node $HOME/.claude/pickle-rick/extension/bin/microverse-runner.js ${SESSION_ROOT} && \
-  node $HOME/.claude/pickle-rick/extension/bin/finalize-gate.js ${SESSION_ROOT} anatomy-park; \
+tmux send-keys -t <name>:0 "node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/microverse-runner.js ${SESSION_ROOT} && \
+  node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/finalize-gate.js ${SESSION_ROOT} anatomy-park; \
   RC=$?; \
-  REGRESSIONS=\$(node $HOME/.claude/pickle-rick/extension/bin/read-microverse.js ${SESSION_ROOT} iteration_regressions); \
+  REGRESSIONS=\$(node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/read-microverse.js ${SESSION_ROOT} iteration_regressions); \
   if [ \"\$PICKLE_GATE_DISABLED\" = \"1\" ]; then echo ''; echo 'Anatomy Park is closed. All organs accounted for. Gate skipped (PICKLE_GATE_DISABLED=1).'; \
   elif [ \$RC -eq 0 ] && [ \$REGRESSIONS -eq 0 ]; then echo ''; echo 'Anatomy Park is closed. All organs accounted for. Gate green. No regressions during loop.'; \
   elif [ \$RC -eq 0 ]; then echo ''; echo 'Anatomy Park is closed. All organs accounted for. Gate green. \$REGRESSIONS regression flags during loop, all cleared by final gate.'; \
@@ -249,7 +249,7 @@ Before each iteration:
 
 ### Override 1.5: Principles Reference
 
-Before Phase 1 of each iteration, read `$HOME/.claude/pickle-rick/szechuan-sauce-principles.md`. The `## Priority Matrix` is the severity source; the `## Confidence Scoring` section is the confidence rubric; the `## False Positives — Do NOT Flag` section is the exclusion list.
+Before Phase 1 of each iteration, read `/Users/derekgreene/.gemini/extensions/pickle-rick/szechuan-sauce-principles.md`. The `## Priority Matrix` is the severity source; the `## Confidence Scoring` section is the confidence rubric; the `## False Positives — Do NOT Flag` section is the exclusion list.
 
 Every finding emitted from Phase 1 must carry both a severity label (CRITICAL or HIGH — anatomy-park's native taxonomy) AND a confidence score from the rubric, formatted `[<SEVERITY>, conf=<score>]`. Drop any finding with `conf < 80` BEFORE Phase 2.
 

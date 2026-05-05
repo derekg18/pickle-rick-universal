@@ -19,7 +19,7 @@ Usage:
 1. Resolve the active Pickle Rick session root and repository root.
 2. Run:
 
-   `node "$HOME/.claude/pickle-rick/extension/bin/debate.js" "<question>" --session-dir "$SESSION_ROOT" --repo-root "$PWD" [flags]`
+   `node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/debate.js" "<question>" --session-dir "$SESSION_ROOT" --repo-root "$PWD" [flags]`
 
 3. Read the emitted brief path.
 4. Create a debate team:

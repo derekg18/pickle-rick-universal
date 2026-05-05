@@ -16,14 +16,14 @@ describe('microverse-runner finalizer', () => {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  test('getBestScore returns null in worker mode (missing convergence)', () => {
+  test('getBestScore returns baseline in worker mode (missing convergence)', () => {
     const state = {
       key_metric: { direction: 'higher' },
       baseline_score: 70,
       // no convergence object
     };
     const score = getBestScore(state);
-    assert.strictEqual(score, null, 'Should return null when convergence is missing');
+    assert.strictEqual(score, 70, 'Should return baseline_score when convergence is missing');
   });
 
   test('writeFinalReport does not throw in worker mode (missing convergence)', () => {
@@ -82,11 +82,12 @@ describe('microverse-runner finalizer', () => {
 
     const preserved = JSON.parse(fs.readFileSync(mvPath, 'utf8'));
     assert.strictEqual(preserved.exit_reason, 'converged', 'Should not overwrite successful exit_reason');
+    assert.strictEqual(preserved.finalizer_error.message, 'Post-success crash', 'Should record finalizer error message in main file');
 
     const errorPath = path.join(tmpDir, 'microverse-finalizer-error.json');
     assert.ok(fs.existsSync(errorPath), 'Should write sibling error file');
     const errorData = JSON.parse(fs.readFileSync(errorPath, 'utf8'));
     assert.strictEqual(errorData.status, 'crashed');
-    assert.strictEqual(errorData.error, 'Post-success crash');
+    assert.strictEqual(errorData.error.message, 'Post-success crash', 'Error field should have a message property');
   });
 });

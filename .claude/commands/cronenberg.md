@@ -116,4 +116,4 @@ Forward any flag (e.g. --backend codex, --scope branch, --max-iterations 50) by 
 
 ## Logging
 
-At Step 6 entry: `node ~/.claude/pickle-rick/extension/bin/log-activity.js research "cronenberg → <refine?>+<metaphor>+<followups> (<refine reason>)"`
+At Step 6 entry: `node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/log-activity.js research "cronenberg → <refine?>+<metaphor>+<followups> (<refine reason>)"`

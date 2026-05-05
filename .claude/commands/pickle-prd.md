@@ -5,9 +5,9 @@ Persona via CLAUDE.md. Proceed to Step 1.
 
 ## Step 1: Initialize
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" --task "$ARGUMENTS" --paused
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --task "$ARGUMENTS" --paused
 ```
-Extract `SESSION_ROOT=<path>`. Extension root: `$HOME/.claude/pickle-rick` (`${EXTENSION_ROOT}`).
+Extract `SESSION_ROOT=<path>`. Extension root: `/Users/derekgreene/.gemini/extensions/pickle-rick` (`${EXTENSION_ROOT}`).
 
 ## Step 2: Interview
 PAUSED mode — normal chat. Interrogate:

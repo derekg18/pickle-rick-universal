@@ -34,13 +34,13 @@ Otherwise:
 
 ### New Session
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" --command-template microverse.md --tmux [--max-iterations <N>] [--backend <BACKEND>] --task "<TASK_TEXT>"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --command-template microverse.md --tmux [--max-iterations <N>] [--backend <BACKEND>] --task "<TASK_TEXT>"
 ```
 If `--interactive` flag was passed, omit `--tmux` from the setup.js call. Append `--backend <BACKEND>` only when the flag was passed.
 
 ### Resume
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" --command-template microverse.md --resume [<PATH>] --tmux [--max-iterations <N>] [--backend <BACKEND>]
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --command-template microverse.md --resume [<PATH>] --tmux [--max-iterations <N>] [--backend <BACKEND>]
 ```
 If `--interactive` flag was passed, omit `--tmux` from the setup.js call. Append `--backend <BACKEND>` only when the flag was passed — omitting it preserves the stored backend on resume.
 
@@ -57,7 +57,7 @@ METRIC_JSON='{"description":"<TASK_TEXT>","validation":"<VALIDATION>","type":"<T
 If type is `llm`, add `judge_model` to the JSON: `"judge_model":"<JUDGE_MODEL>"` (default `claude-sonnet-4-6`).
 
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/init-microverse.js" "${SESSION_ROOT}" "${SESSION_ROOT}/prd.md" --stall-limit <STALL_LIMIT> --metric-json "${METRIC_JSON}"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/init-microverse.js" "${SESSION_ROOT}" "${SESSION_ROOT}/prd.md" --stall-limit <STALL_LIMIT> --metric-json "${METRIC_JSON}"
 ```
 
 Replace placeholders with parsed values:
@@ -114,7 +114,7 @@ Print attach command: `tmux attach -t <name>`
 
 5. Launch runner:
 ```bash
-tmux send-keys -t <name>:0 "node $HOME/.claude/pickle-rick/extension/bin/microverse-runner.js ${SESSION_ROOT}; echo ''; echo 'Microverse runner finished.  Ctrl+B 1 → monitor  |  Ctrl+B D → detach'; read" Enter
+tmux send-keys -t <name>:0 "node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/microverse-runner.js ${SESSION_ROOT}; echo ''; echo 'Microverse runner finished.  Ctrl+B 1 → monitor  |  Ctrl+B D → detach'; read" Enter
 ```
 
 6. Launch monitor: microverse-runner auto-creates the 4-pane monitor window on startup — no manual invocation needed.

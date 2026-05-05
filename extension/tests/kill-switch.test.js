@@ -82,15 +82,15 @@ describe('kill-switch: shouldRunGenerativeAudit', () => {
     });
   });
 
-  describe('CLAUDE.md documented', () => {
-    test('PLUMBUS_GENERATIVE_AUDIT appears in CLAUDE.md', () => {
-      const claudeMdPath = path.resolve(__dirname, '..', '..', 'CLAUDE.md');
+  describe('GEMINI.md documented', () => {
+    test('PLUMBUS_GENERATIVE_AUDIT appears in GEMINI.md', () => {
+      const claudeMdPath = path.resolve(__dirname, '..', '..', 'GEMINI.md');
       const count = Number(
         execSync(`grep -c 'PLUMBUS_GENERATIVE_AUDIT' ${JSON.stringify(claudeMdPath)}`, {
           encoding: 'utf8',
         }).trim(),
       );
-      assert.ok(count >= 1, `expected ≥ 1 match in CLAUDE.md, got ${count}`);
+      assert.ok(count >= 1, `expected ≥ 1 match in GEMINI.md, got ${count}`);
     });
   });
 });

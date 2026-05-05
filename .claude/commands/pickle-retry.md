@@ -4,7 +4,7 @@ You are retrying a failed or timed-out Pickle Rick ticket.
 
 Run the retry script with the ticket ID:
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/retry-ticket.js" $ARGUMENTS
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/retry-ticket.js" $ARGUMENTS
 ```
 
 After the script runs:

@@ -47,7 +47,7 @@ const DOC_FILES_WITH_FRAMES = [
 
 const DOC_FILES_WITH_ENV_VAR = [
   '.claude/commands/plumbus.md',
-  'CLAUDE.md',
+  'GEMINI.md',
   'README.md',
 ];
 
@@ -118,11 +118,11 @@ test('README.md documents the Generative Audit Frames rubric section', () => {
   );
 });
 
-test('CLAUDE.md documents extension/data/ convention', () => {
-  const content = readDoc('CLAUDE.md');
+test('GEMINI.md documents extension/data/ convention', () => {
+  const content = readDoc('GEMINI.md');
   assert.ok(
     content.includes('extension/data'),
-    'CLAUDE.md: missing extension/data/ convention',
+    'GEMINI.md: missing extension/data/ convention',
   );
 });
 
@@ -144,7 +144,7 @@ test('AC-BUNDLE-17: trap-door ticket rows and enforcement surfaces stay cross-re
   const bT1Row = findBundleTicketRow('B-T1');
   const aT4Row = findBundleTicketRow('A-T4');
   const h4Row = findBundleTicketRow('H4');
-  const claude = readDoc('extension/CLAUDE.md');
+  const claude = readDoc('extension/GEMINI.md');
   const invariantTests = readDoc('extension/tests/state-field-invariants.test.js');
 
   assert.match(bT1Row, /AC-APF-A1, AC-APF-A2, AC-APF-A3, AC-APF-A4/);

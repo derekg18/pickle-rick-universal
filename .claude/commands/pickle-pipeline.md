@@ -36,7 +36,7 @@ If `REFINE=false` → strip `--refine`/`--no-refine` from `$ARGUMENTS` if presen
 **0a — Resolve PRD path AND session, if any.** First match wins:
 1. Explicit path in `$ARGUMENTS` (e.g. `path/to/prd.md`) → `PRD_PATH=<resolved>`, leave `SESSION_ROOT` unset (no session associated yet)
 2. `prd.md` or `PRD.md` in current working directory → `PRD_PATH=<resolved>`, leave `SESSION_ROOT` unset
-3. Most recent session's `prd.md` via `node "$HOME/.claude/pickle-rick/extension/bin/get-session.js"` → `PRD_PATH=<resolved>`, set `SESSION_ROOT=$(dirname "$PRD_PATH")` (the returned path is session-relative)
+3. Most recent session's `prd.md` via `node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/get-session.js"` → `PRD_PATH=<resolved>`, set `SESSION_ROOT=$(dirname "$PRD_PATH")` (the returned path is session-relative)
 
 No PRD found → **fail fast**: print `"No prd.md found. Run /pickle-prd first to draft one, then re-invoke /pickle-pipeline."` Stop. Do NOT launch tmux.
 
@@ -65,7 +65,7 @@ Only runs when `SESSION_INITIALIZED=true` and `${SESSION_ROOT}/decomposition_man
 ```
 TICKET_COUNT=$(jq '.tickets | length' "${SESSION_ROOT}/decomposition_manifest.json" 2>/dev/null || echo 0)
 BACKEND="${BACKEND:-claude}"  # whatever was resolved in Step 0
-THROUGHPUT=$(jq -r ".throughput_baselines[\"${BACKEND}\"] // 5.0" "$HOME/.claude/pickle-rick/pickle_settings.json")
+THROUGHPUT=$(jq -r ".throughput_baselines[\"${BACKEND}\"] // 5.0" "/Users/derekgreene/.gemini/extensions/pickle-rick/pickle_settings.json")
 EXPECTED_MIN=$(awk "BEGIN { print int((${TICKET_COUNT} / ${THROUGHPUT}) * 60 + 0.999) }")
 RECOMMENDED_MIN=$(awk "BEGIN { print int(${EXPECTED_MIN} * 1.25 + 0.999) }")
 ```
@@ -130,12 +130,12 @@ Branch on whether Step 0 already initialized a session via refinement (i.e. `SES
 
 **If Step 0 set `SESSION_INITIALIZED=true` (refinement ran):** call setup.js in resume mode to preserve refinement artifacts (`prd_refined.md`, ticket directories):
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" --tmux --resume "${SESSION_ROOT}" --max-iterations <PICKLE_MAX_ITER> --max-time <MAX_TIME> --worker-timeout <WORKER_TIMEOUT> [--backend <BACKEND>]
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --tmux --resume "${SESSION_ROOT}" --max-iterations <PICKLE_MAX_ITER> --max-time <MAX_TIME> --worker-timeout <WORKER_TIMEOUT> [--backend <BACKEND>]
 ```
 
 **Otherwise (no refinement, fresh pipeline):**
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" --tmux --max-iterations <PICKLE_MAX_ITER> --max-time <MAX_TIME> --worker-timeout <WORKER_TIMEOUT> [--backend <BACKEND>] --task "<TASK>"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --tmux --max-iterations <PICKLE_MAX_ITER> --max-time <MAX_TIME> --worker-timeout <WORKER_TIMEOUT> [--backend <BACKEND>] --task "<TASK>"
 ```
 
 Append `--backend <BACKEND>` only when the flag was passed. Extract `SESSION_ROOT=<path>` from output (resume mode echoes the same path).
@@ -179,7 +179,7 @@ Print attach command immediately: `tmux attach -t <name>`
 ## Step 6: Launch Runner
 
 ```bash
-tmux send-keys -t <name>:0 "node $HOME/.claude/pickle-rick/extension/bin/pipeline-runner.js <SESSION_ROOT>; echo ''; echo 'Pipeline finished. Ctrl+B 1 → monitor | Ctrl+B D → detach'; read" Enter
+tmux send-keys -t <name>:0 "node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/pipeline-runner.js <SESSION_ROOT>; echo ''; echo 'Pipeline finished. Ctrl+B 1 → monitor | Ctrl+B D → detach'; read" Enter
 ```
 
 ## Step 7: Monitor (4-pane)

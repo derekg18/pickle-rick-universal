@@ -6,7 +6,7 @@ Review Worker (Meeseeks-lite). Persona via CLAUDE.md. **Text before every tool c
 
 ## Init
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/worker-setup.js" $ARGUMENTS
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/worker-setup.js" $ARGUMENTS
 ```
 Extract `${SESSION_ROOT}`, `${TICKET_ID}`, `${TICKET_DIR}`.
 

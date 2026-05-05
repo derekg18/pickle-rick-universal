@@ -2,7 +2,7 @@ You are re-enabling Pickle Rick.
 
 Run the following command to remove the disabled marker:
 ```bash
-rm -f "$HOME/.claude/pickle-rick/disabled"
+rm -f "/Users/derekgreene/.gemini/extensions/pickle-rick/disabled"
 ```
 
 Then inform the user:

@@ -354,7 +354,7 @@ test('createMicroverseState with convergenceFile sets convergence_file', () => {
     assert.equal(mv.convergence_file, 'ap.json');
 });
 
-test('createMicroverseState without convergenceMode defaults to undefined', () => {
+test('createMicroverseState without convergenceMode defaults to metric', () => {
     const metric = {
         description: 'test',
         validation: 'echo 1',
@@ -363,7 +363,7 @@ test('createMicroverseState without convergenceMode defaults to undefined', () =
         timeout_seconds: 10,
     };
     const mv = createMicroverseState({ prdPath: 'prd.md', metric, stallLimit: 3 });
-    assert.equal(mv.convergence_mode, undefined);
+    assert.equal(mv.convergence_mode, 'metric');
     assert.equal(mv.convergence_file, undefined);
 });
 

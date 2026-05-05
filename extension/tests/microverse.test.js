@@ -418,7 +418,7 @@ test('writeMicroverseState and readMicroverseState round-trip', () => {
         const state = createMicroverseState({ prdPath: '/tmp/prd.md', metric: TEST_METRIC, stallLimit: 3 });
         writeMicroverseState(dir, state);
         const loaded = readMicroverseState(dir);
-        assert.deepEqual(loaded, { ...state, convergence_mode: 'metric' });
+        assert.deepEqual(loaded, state);
     } finally {
         fs.rmSync(dir, { recursive: true });
     }
@@ -2022,29 +2022,25 @@ test('resume recovery: non-failed status is not modified', () => {
 
 // --- Worker-managed convergence tests ---
 
-test('worker mode: stall_counter stays 0 across simulated no-commit iterations', () => {
+test('worker mode: convergence is undefined', () => {
     const state = createMicroverseState({
         prdPath: '/tmp/prd.md', metric: TEST_METRIC, stallLimit: 3,
         convergenceMode: 'worker', convergenceFile: 'convergence.json',
     });
-    state.status = 'iterating';
-    // In worker mode the runner skips recordStall — stall_counter stays 0
-    for (let i = 0; i < 5; i++) {
-        assert.equal(state.convergence.stall_counter, 0, `stall_counter should stay 0 at iteration ${i}`);
-    }
+    assert.equal(state.convergence, undefined, 'worker mode should have no convergence object');
 });
 
-test('worker mode: isConverged is irrelevant — runner checks convergence file instead', () => {
+test('worker mode: isConverged handles undefined convergence', () => {
     const state = createMicroverseState({
         prdPath: '/tmp/prd.md', metric: TEST_METRIC, stallLimit: 1,
         convergenceMode: 'worker', convergenceFile: 'convergence.json',
     });
-    state.convergence.stall_counter = 999;
     // Guard check: convergence_mode === 'worker' means runner never calls isConverged
     assert.equal(state.convergence_mode, 'worker');
     assert.equal(state.convergence_file, 'convergence.json');
-    // isConverged itself still works — runner just bypasses it
-    assert.equal(isConverged(state), true);
+    assert.equal(state.convergence, undefined);
+    // isConverged should return false when convergence is undefined and no target set
+    assert.equal(isConverged(state), false);
 });
 
 test('worker mode: convergence file with converged=true triggers exit', () => {
@@ -2138,6 +2134,7 @@ test('metric mode handoff: unchanged behavior (backward compat)', () => {
 
 test('backward compat: state without convergence_mode uses metric path', () => {
     const state = createMicroverseState({ prdPath: '/tmp/prd.md', metric: TEST_METRIC, stallLimit: 3 });
+    delete state.convergence_mode; // simulate legacy state
     assert.equal(state.convergence_mode, undefined);
     const handoff = buildMicroverseHandoff(state, 1, '/tmp/work');
     assert.ok(handoff.includes('Validation:'), 'metric mode includes validation');

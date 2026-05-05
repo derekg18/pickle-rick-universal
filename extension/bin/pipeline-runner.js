@@ -796,6 +796,8 @@ export function setupSzechuanSauce(sessionDir, target, stallLimit, extensionRoot
         sessionDir, target,
         '--stall-limit', String(stallLimit),
         '--convergence-target', '0',
+        '--convergence-mode', 'worker',
+        '--convergence-file', 'szechuan-sauce.json',
     ];
     if (judgeContextArg)
         initArgs.push('--judge-context', judgeContextArg);

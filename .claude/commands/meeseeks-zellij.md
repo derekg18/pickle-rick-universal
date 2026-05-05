@@ -31,8 +31,8 @@ If `$ZELLIJ` env var is set, warn: "Nested Zellij session detected — this may 
 
 Read min/max passes from `pickle_settings.json`:
 ```bash
-MIN_PASSES=$(node -e "const s=JSON.parse(require('fs').readFileSync('$HOME/.claude/pickle-rick/pickle_settings.json'));console.log(s.default_meeseeks_min_passes||10)")
-MAX_PASSES=$(node -e "const s=JSON.parse(require('fs').readFileSync('$HOME/.claude/pickle-rick/pickle_settings.json'));console.log(s.default_meeseeks_max_passes||50)")
+MIN_PASSES=$(node -e "const s=JSON.parse(require('fs').readFileSync('/Users/derekgreene/.gemini/extensions/pickle-rick/pickle_settings.json'));console.log(s.default_meeseeks_min_passes||10)")
+MAX_PASSES=$(node -e "const s=JSON.parse(require('fs').readFileSync('/Users/derekgreene/.gemini/extensions/pickle-rick/pickle_settings.json'));console.log(s.default_meeseeks_max_passes||50)")
 ```
 
 ## Step 3: Parse Flags
@@ -42,7 +42,7 @@ From `$ARGUMENTS`: `--min-iterations <N>` overrides MIN_PASSES, `--max-iteration
 ## Step 4: Session Setup
 
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" --tmux \
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --tmux \
   --min-iterations $MIN_PASSES --max-iterations $MAX_PASSES \
   --command-template meeseeks.md --task "Mr. Meeseeks Code Review: <task-text>"
 ```
@@ -64,27 +64,27 @@ Export env vars for the KDL layout:
 ```bash
 export PICKLE_SESSION_ROOT=<SESSION_ROOT>
 export PICKLE_CWD=<working_dir>
-export PICKLE_EXTENSION_ROOT=$HOME/.claude/pickle-rick
+export PICKLE_EXTENSION_ROOT=/Users/derekgreene/.gemini/extensions/pickle-rick
 ```
 
 **Three-tier session creation** — try each approach in order, use the first that succeeds:
 
 **(A) Preferred — `--new-session-with-layout` (Zellij >= 0.41):**
 ```bash
-zellij --new-session-with-layout $HOME/.claude/pickle-rick/extension/layouts/monitor-meeseeks.kdl \
+zellij --new-session-with-layout /Users/derekgreene/.gemini/extensions/pickle-rick/extension/layouts/monitor-meeseeks.kdl \
   attach --create-background meeseeks-<hash>
 ```
 
 **(B) Fallback — `--layout` flag:**
 ```bash
-zellij --layout $HOME/.claude/pickle-rick/extension/layouts/monitor-meeseeks.kdl \
+zellij --layout /Users/derekgreene/.gemini/extensions/pickle-rick/extension/layouts/monitor-meeseeks.kdl \
   attach --create-background meeseeks-<hash>
 ```
 
 **(C) Two-step fallback — create then apply layout:**
 ```bash
 zellij attach --create-background meeseeks-<hash>
-ZELLIJ_SESSION_NAME=meeseeks-<hash> zellij action new-tab --layout $HOME/.claude/pickle-rick/extension/layouts/monitor-meeseeks.kdl
+ZELLIJ_SESSION_NAME=meeseeks-<hash> zellij action new-tab --layout /Users/derekgreene/.gemini/extensions/pickle-rick/extension/layouts/monitor-meeseeks.kdl
 # Remove the empty default tab created by attach
 ZELLIJ_SESSION_NAME=meeseeks-<hash> zellij action go-to-previous-tab
 ZELLIJ_SESSION_NAME=meeseeks-<hash> zellij action close-tab
@@ -96,7 +96,7 @@ The KDL layout (`monitor-meeseeks.kdl`) creates both tabs automatically:
 
 ## Step 6: Report
 
-Print: session name, `zellij attach meeseeks-<hash>`, tab layout (monitor: dashboard top-left / log-stream top-right / runner-log bottom; runner: switch tabs with Zellij keybinds), min passes: `<MIN_PASSES>`, max passes: `<MAX_PASSES>`, cancel: `cd <working_dir> && /eat-pickle` (graceful), emergency: `zellij delete-session meeseeks-<hash>` then `node ~/.claude/pickle-rick/extension/bin/cancel.js`, state path: `<SESSION_ROOT>/state.json`.
+Print: session name, `zellij attach meeseeks-<hash>`, tab layout (monitor: dashboard top-left / log-stream top-right / runner-log bottom; runner: switch tabs with Zellij keybinds), min passes: `<MIN_PASSES>`, max passes: `<MAX_PASSES>`, cancel: `cd <working_dir> && /eat-pickle` (graceful), emergency: `zellij delete-session meeseeks-<hash>` then `node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/cancel.js`, state path: `<SESSION_ROOT>/state.json`.
 
 "I'm Mr. Meeseeks, look at me! CAN DO!"
 

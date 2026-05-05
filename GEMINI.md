@@ -1,6 +1,13 @@
-# Pickle Rick for Claude Code
+# Pickle Rick for Gemini CLI
 
 PRD → Breakdown → Research → Plan → Implement → Verify → Review → Simplify.
+
+## Project Mandates
+
+- **Model Preference:** Always use the `gemini-3.1-pro-preview` model for all tasks and sub-agents.
+- **Backend Preference:** Use the `gemini` backend for the Pickle Rick extension.
+- **Pickle Rick Persona:** The Pickle Rick persona is active. Maintain the "God Mode" engineering lifecycle: PRD -> Breakdown -> Research -> Plan -> Implement -> Refactor.
+- **Zero Tolerance for Slop:** Optimize aggressively, minimize boilerplate, and prefer raw performance over unnecessary dependencies.
 
 ## Documentation Rule
 
@@ -9,7 +16,7 @@ When adding, removing, or modifying commands (`.claude/commands/*.md`), update `
 ## Source of Truth
 
 Canonical → Deployed (`bash install.sh` rsyncs, overwrites):
-`extension/src/*.ts` → `~/.claude/pickle-rick/extension/**/*.js` | `.claude/commands/*.md` → `~/.claude/commands/*.md` | `pickle_settings.json` + `persona.md` → `~/.claude/pickle-rick/`
+`extension/src/*.ts` → `/Users/derekgreene/.gemini/extensions/pickle-rick/extension/**/*.js` | `.claude/commands/*.md` → `/Users/derekgreene/.gemini/extensions/pickle-rick/commands-md/*.md` | `pickle_settings.json` + `persona.md` → `/Users/derekgreene/.gemini/extensions/pickle-rick/`
 
 NEVER edit deployed files. Edit source, run `bash install.sh`.
 
@@ -28,7 +35,7 @@ Tests: `extension/tests/*.test.js` via `node --test`. No `.test.ts` files.
 CLI guard: `if (process.argv[1] && path.basename(process.argv[1]) === 'foo.js') { ... }`
 Hook decisions: `"approve"` or `"block"` only (never `"allow"`)
 Error handling: `const msg = err instanceof Error ? err.message : String(err);`
-Extension path: `~/.claude/pickle-rick` (never `.gemini`)
+Extension path: `/Users/derekgreene/.gemini/extensions/pickle-rick`
 
 ## Versioning
 
@@ -45,11 +52,11 @@ Before creating a release, run the full lint and test gate from `extension/`: `n
 | dispatch.js | Hook entry, stdin JSON, spawns handler, fail-open |
 | stop-hook.js | Checks state.json tokens, no lifecycle advance, tmux passthrough |
 | setup.js | Session init (state.json, ticket dirs), first prompt |
-| spawn-morty.js | Per-ticket `claude -p` subprocess |
+| spawn-morty.js | Per-ticket `gemini` subprocess |
 | spawn-refinement-team.js | 3 parallel analysts/cycle, writes refinement_manifest.json |
 | mux-runner.js | Context-clearing outer loop via tmux |
 | jar-runner.js | Batch runner for jar queue |
-| metrics.js + metrics-utils.js | Token/commit/LOC reporter, cache at `~/.claude/pickle-rick/metrics-cache.json` |
+| metrics.js + metrics-utils.js | Token/commit/LOC reporter, cache at `/Users/derekgreene/.gemini/extensions/pickle-rick/metrics-cache.json` |
 | monitor.js / log-watcher.js / morty-watcher.js / raw-morty.js | tmux TUI panes (Matrix-styled) |
 | refinement-watcher.js | PRD refinement team monitor pane |
 | microverse-runner.js + microverse-state.js | Metric convergence loop: measure, compare, rollback, stall detection |
@@ -68,7 +75,7 @@ Before creating a release, run the full lint and test gate from `extension/`: `n
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-Indexed as **pickle-rick-claude** (341 symbols, 689 relationships, 12 flows).
+Indexed as **pickle-rick-gemini** (341 symbols, 689 relationships, 12 flows).
 
 1. Read `gitnexus://repo/{name}/context` — overview + freshness check
 2. Match task to skill below, read that SKILL.md

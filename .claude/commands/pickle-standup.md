@@ -7,7 +7,7 @@ Persona active via CLAUDE.md. **SPEAK BEFORE ACTING**.
 ### Step 1: Run the activity helper
 
 ```bash
-node ~/.claude/pickle-rick/extension/bin/standup.js $ARGUMENTS
+node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/standup.js $ARGUMENTS
 ```
 
 If no arguments provided, defaults to `--days 1` (yesterday's activity). Save the output mentally — the user does NOT see it; you must surface findings yourself.

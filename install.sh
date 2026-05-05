@@ -6,14 +6,14 @@ XDG_DATA_HOME="${XDG_DATA_HOME:-$HOME/.local/share}"
 DATA_ROOT="$XDG_DATA_HOME/pickle-rick"
 RUNTIME_ROOT="$DATA_ROOT/runtime"
 EXTENSION_ROOT="$RUNTIME_ROOT"
-LEGACY_CLAUDE_RUNTIME_ROOT="$HOME/.claude/pickle-rick"
+LEGACY_CLAUDE_RUNTIME_ROOT="/Users/derekgreene/.gemini/extensions/pickle-rick"
 MANIFEST_FILE="$DATA_ROOT/install_manifest.json"
 COMMANDS_SOURCE_DIR="$SCRIPT_DIR/.claude/commands"
 AGENTS_SOURCE_DIR="$SCRIPT_DIR/.claude/agents"
 SOURCE_SETTINGS="$SCRIPT_DIR/.claude/settings.json"
 # IMPORTANT: $HOME is intentionally a literal here — it gets expanded at runtime
-# by the shell when Claude Code executes the hook command. Do NOT expand it at install time.
-HOOK_CMD_LITERAL='node $HOME/.claude/pickle-rick/extension/hooks/dispatch.js stop-hook'
+# by the shell when Gemini CLI executes the hook command. Do NOT expand it at install time.
+HOOK_CMD_LITERAL='node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/hooks/dispatch.js stop-hook'
 
 # --- LOCK (Forward Fix F2: serialize concurrent install.sh invocations) ---
 # Cross-skill workers can run install.sh simultaneously, racing on settings.json
@@ -365,13 +365,13 @@ install_claude_adapter() {
   rm -f "$commands_dir/pickle-microverse-tmux.md"
 
   # --- STOP HOOK (idempotent jq merge, $HOME stays LITERAL in JSON) ---
-  if jq -e '.hooks.Stop // [] | map(.hooks // [] | map(.command)) | flatten | any(. == "node $HOME/.claude/pickle-rick/extension/hooks/dispatch.js stop-hook")' \
+  if jq -e '.hooks.Stop // [] | map(.hooks // [] | map(.command)) | flatten | any(. == "node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/hooks/dispatch.js stop-hook")' \
       "$settings_file" >/dev/null 2>&1; then
     echo "⚠️  Stop hook already registered — skipping"
   else
     TMPFILE="$(mktemp)"
     jq '
-      "node $HOME/.claude/pickle-rick/extension/hooks/dispatch.js stop-hook" as $cmd |
+      "node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/hooks/dispatch.js stop-hook" as $cmd |
       {"type": "command", "command": $cmd} as $entry |
       if .hooks == null then
         .hooks = {"Stop": [{"hooks": [$entry]}]}
@@ -386,7 +386,7 @@ install_claude_adapter() {
   fi
 
   # --- POST-TOOL-USE HOOK (git commit activity logger, idempotent) ---
-  COMMIT_HOOK_CMD='node $HOME/.claude/pickle-rick/extension/bin/log-commit.js'
+  COMMIT_HOOK_CMD='node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/log-commit.js'
   if jq -e --arg cmd "$COMMIT_HOOK_CMD" \
       '.hooks.PostToolUse // [] | map(.hooks // [] | map(.command)) | flatten | any(. == $cmd)' \
       "$settings_file" >/dev/null 2>&1; then
@@ -594,5 +594,5 @@ echo "📝 Persona setup — add the Pickle Rick persona to your project's AGENT
 echo ""
 echo "   cat $RUNTIME_ROOT/persona.md >> /path/to/project/AGENTS.md"
 echo ""
-echo "Get started in Claude Code: /pickle \"your task here\""
+echo "Get started in Gemini CLI: /pickle \"your task here\""
 echo "Queue tasks for later:      /add-to-pickle-jar  then  /pickle-jar-open"

@@ -77,7 +77,7 @@ test('StateManager.read: reads valid state file', () => {
     const result = sm.read(sp);
     assert.equal(result.active, true);
     assert.equal(result.iteration, 1);
-    assert.equal(result.schema_version, 3);
+    assert.equal(result.schema_version, 4);
   });
 });
 
@@ -157,11 +157,11 @@ test('StateManager.read: migrates undefined schema_version to current schema', (
     delete state.schema_version;
     fs.writeFileSync(sp, JSON.stringify(state, null, 2));
     const result = sm.read(sp);
-    assert.equal(result.schema_version, 3);
+    assert.equal(result.schema_version, 4);
     assertV3Defaults(result);
     // Persisted to disk
     const onDisk = JSON.parse(fs.readFileSync(sp, 'utf-8'));
-    assert.equal(onDisk.schema_version, 3);
+    assert.equal(onDisk.schema_version, 4);
     assertV3Defaults(onDisk);
   });
 });
@@ -254,16 +254,16 @@ test('StateManager.read: any v3 marker without schema fails recoverably on v2-aw
 
 test('StateManager.read: migrates past schema version to current schema', () => {
   withDir((dir) => {
-    const sm = new StateManager({ schemaVersion: 3 });
+    const sm = new StateManager({ schemaVersion: 4 });
     const sp = path.join(dir, 'state.json');
     writeStateFile(sp, makeState({ schema_version: 2 }));
     const result = sm.read(sp);
-    assert.equal(result.schema_version, 3);
+    assert.equal(result.schema_version, 4);
     assertV3Defaults(result);
     assert.equal(result.prd_path, undefined);
     assert.equal(result.start_commit, undefined);
     const onDisk = JSON.parse(fs.readFileSync(sp, 'utf-8'));
-    assert.equal(onDisk.schema_version, 3);
+    assert.equal(onDisk.schema_version, 4);
     assertV3Defaults(onDisk);
     assert.equal('prd_path' in onDisk, false);
     assert.equal('start_commit' in onDisk, false);
@@ -272,7 +272,7 @@ test('StateManager.read: migrates past schema version to current schema', () => 
 
 test('StateManager.read: preserves existing v3 values while hydrating missing defaults', () => {
   withDir((dir) => {
-    const sm = new StateManager({ schemaVersion: 3 });
+    const sm = new StateManager({ schemaVersion: 4 });
     const sp = path.join(dir, 'state.json');
     writeStateFile(sp, makeState({
       schema_version: 2,
@@ -285,7 +285,7 @@ test('StateManager.read: preserves existing v3 values while hydrating missing de
 
     const result = sm.read(sp);
 
-    assert.equal(result.schema_version, 3);
+    assert.equal(result.schema_version, 4);
     assert.equal(result.tickets_version, 7);
     assert.equal(result.phase_personas_active, true);
     assert.deepEqual(result.flags, { strict_teams: true, custom: 'yes' });
@@ -377,7 +377,7 @@ test('StateManager.read: promotes same-iteration orphan tmp before legacy schema
     const onDisk = JSON.parse(fs.readFileSync(sp, 'utf-8'));
     assert.equal(onDisk.active, false);
     assert.equal(onDisk.current_ticket, 'T-RECOVERED');
-    assert.equal(onDisk.schema_version, 3);
+    assert.equal(onDisk.schema_version, 4);
   });
 });
 
@@ -665,26 +665,26 @@ test('StateManager.transaction: releases locks on failure', () => {
 
 test('StateManager.transaction: refuses write when on-disk schema advances after read', () => {
   withDir((dir) => {
-    const sm = new StateManager({ schemaVersion: 3 });
+    const sm = new StateManager({ schemaVersion: 4 });
     const sp = path.join(dir, 'state.json');
-    writeStateFile(sp, makeState({ schema_version: 3, iteration: 1 }));
+    writeStateFile(sp, makeState({ schema_version: 4, iteration: 1 }));
 
     assert.throws(
       () => sm.transaction([sp], (states) => {
         states[0].iteration = 2;
-        fs.writeFileSync(sp, JSON.stringify(makeState({ schema_version: 4, iteration: 99 }), null, 2));
+        fs.writeFileSync(sp, JSON.stringify(makeState({ schema_version: 5, iteration: 99 }), null, 2));
       }),
       (err) => {
         assert.ok(err instanceof SchemaVersionMismatchError);
         assert.equal(err.code, 'SCHEMA_MISMATCH');
-        assert.equal(err.onDiskVersion, 4);
-        assert.equal(err.cachedVersion, 3);
+        assert.equal(err.onDiskVersion, 5);
+        assert.equal(err.cachedVersion, 4);
         return true;
       },
     );
 
     const onDisk = JSON.parse(fs.readFileSync(sp, 'utf-8'));
-    assert.equal(onDisk.schema_version, 4);
+    assert.equal(onDisk.schema_version, 5);
     assert.equal(onDisk.iteration, 99);
   });
 });
@@ -779,7 +779,7 @@ test('STATE_MANAGER_DEFAULTS: has expected values', () => {
   assert.equal(STATE_MANAGER_DEFAULTS.baseLockDelayMs, 100);
   assert.equal(STATE_MANAGER_DEFAULTS.lockJitter, true);
   assert.equal(STATE_MANAGER_DEFAULTS.staleLockTimeoutMs, 30_000);
-  assert.equal(STATE_MANAGER_DEFAULTS.schemaVersion, 3);
+  assert.equal(STATE_MANAGER_DEFAULTS.schemaVersion, 4);
 });
 
 // ---------------------------------------------------------------------------
@@ -793,7 +793,7 @@ test('StateManager: custom options override defaults', () => {
     writeStateFile(sp, makeState());
     // Should work with custom options
     const result = sm.read(sp);
-    assert.equal(result.schema_version, 3);
+    assert.equal(result.schema_version, 4);
   });
 });
 
@@ -913,9 +913,9 @@ test('assertSchemaVersionDeployParity: exits 1 with actionable stderr on drift',
 
   const driver = `
     import { STATE_MANAGER_DEFAULTS } from ${JSON.stringify(typesUrl)};
-    // Simulate stale-deploy drift: deployed defaults stuck at 3 while a newer
-    // LATEST_SCHEMA_VERSION (4) is what the parity check expects.
-    STATE_MANAGER_DEFAULTS.schemaVersion = 3;
+    // Simulate stale-deploy drift: deployed defaults stuck at 4 while a newer
+    // LATEST_SCHEMA_VERSION (5) is what the parity check expects.
+    STATE_MANAGER_DEFAULTS.schemaVersion = 4;
     const sm = await import(${JSON.stringify(stateManagerUrl)});
     // Override the bound LATEST_SCHEMA_VERSION the function compares against
     // by re-defining the module's view via a local replacement check. Since

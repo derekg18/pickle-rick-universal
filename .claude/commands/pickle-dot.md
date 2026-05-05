@@ -253,7 +253,7 @@ On zero errors, print a brief summary and offer `/attract ${SLUG}.dot` as the ne
 
 ## Step 3: Construct BuilderSpec JSON (`--builder` path)
 
-Translate your Step 2 analysis into a `BuilderSpec` JSON object. The builder CLI (`node ~/.claude/pickle-rick/extension/bin/dot-builder.js`) enforces all 15 validation rules, auto-applies Tier 1/2 patterns, and produces deterministic DOT output. Your role shifts from "write raw DOT" to "analyze PRD and construct typed JSON."
+Translate your Step 2 analysis into a `BuilderSpec` JSON object. The builder CLI (`node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/dot-builder.js`) enforces all 15 validation rules, auto-applies Tier 1/2 patterns, and produces deterministic DOT output. Your role shifts from "write raw DOT" to "analyze PRD and construct typed JSON."
 
 ### BuilderSpec Interface
 
@@ -654,7 +654,7 @@ Pipe the BuilderSpec JSON to the builder CLI. Run the fix loop on validation fai
 
 **Invocation:**
 ```bash
-echo '<BuilderSpec JSON>' | node ~/.claude/pickle-rick/extension/bin/dot-builder.js
+echo '<BuilderSpec JSON>' | node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/dot-builder.js
 ```
 
 **Exit codes:**

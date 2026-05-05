@@ -24,7 +24,7 @@ export function compareMetric(current, previous, tolerance, direction) {
 }
 // eslint-disable-next-line complexity -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
 export function createMicroverseState(opts) {
-    const { prdPath, metric, stallLimit, convergenceTarget, convergenceMode, convergenceFile, allowedPaths } = opts;
+    const { prdPath, metric, stallLimit, convergenceTarget, convergenceMode = 'metric', convergenceFile, allowedPaths } = opts;
     if (!Number.isInteger(stallLimit) || stallLimit < 1) {
         throw new Error(`stall_limit must be a positive integer, got ${stallLimit}`);
     }
@@ -37,15 +37,10 @@ export function createMicroverseState(opts) {
     if (convergenceTarget != null && !Number.isFinite(convergenceTarget)) {
         throw new Error(`convergence_target must be a finite number, got ${convergenceTarget}`);
     }
-    const state = {
+    const base = {
         status: 'gap_analysis',
         prd_path: prdPath,
         key_metric: { ...metric, direction: metric.direction ?? 'higher' },
-        convergence: {
-            stall_limit: stallLimit,
-            stall_counter: 0,
-            history: [],
-        },
         gap_analysis_path: '',
         failed_approaches: [],
         baseline_score: 0,
@@ -55,14 +50,25 @@ export function createMicroverseState(opts) {
         gate_regression_threshold_warning_emitted: false,
     };
     if (convergenceTarget != null)
-        state.convergence_target = convergenceTarget;
-    if (convergenceMode != null)
-        state.convergence_mode = convergenceMode;
-    if (convergenceFile != null)
-        state.convergence_file = convergenceFile;
+        base.convergence_target = convergenceTarget;
     if (allowedPaths != null && allowedPaths.length > 0)
-        state.allowed_paths = allowedPaths;
-    return state;
+        base.allowed_paths = allowedPaths;
+    if (convergenceMode === 'worker') {
+        return {
+            ...base,
+            convergence_mode: 'worker',
+            convergence_file: convergenceFile ?? 'phase_state.json', // fallback or throw
+        };
+    }
+    return {
+        ...base,
+        convergence_mode: 'metric',
+        convergence: {
+            stall_limit: stallLimit,
+            stall_counter: 0,
+            history: [],
+        },
+    };
 }
 /**
  * Record a scored iteration (agent made commits and metric was measured).
@@ -73,9 +79,12 @@ export function createMicroverseState(opts) {
  * potentially inconsistent) re-classification inside this function.
  */
 export function recordIteration(state, entry, classification) {
-    const history = [...state.convergence.history, entry];
+    if (state.convergence_mode === 'worker' || !state.convergence) {
+        return state;
+    }
+    const history = [...(state.convergence?.history ?? []), entry];
     if (!classification) {
-        const lastAccepted = [...state.convergence.history].reverse().find(h => h.action === 'accept');
+        const lastAccepted = [...(state.convergence?.history ?? [])].reverse().find(h => h.action === 'accept');
         const previousScore = lastAccepted ? lastAccepted.score : state.baseline_score;
         classification = compareMetric(entry.score, previousScore, state.key_metric.tolerance, state.key_metric.direction);
     }
@@ -98,6 +107,9 @@ export function recordIteration(state, entry, classification) {
  * incremented outside of recordIteration — centralizing stall logic.
  */
 export function recordStall(state) {
+    if (state.convergence_mode === 'worker' || !state.convergence) {
+        return state;
+    }
     return {
         ...state,
         convergence: {
@@ -190,7 +202,15 @@ export function readMicroverseState(sessionDir) {
         parsed.approach_exhaustion_fired ??= false;
         parsed.iteration_regressions ??= 0;
         parsed.gate_regression_threshold_warning_emitted ??= false;
-        parsed.convergence_mode ??= 'metric';
+        // Legacy inference logic
+        if (parsed.convergence_mode === undefined) {
+            if (parsed.convergence_file != null || parsed.key_metric?.type === 'none') {
+                parsed.convergence_mode = 'worker';
+            }
+            else {
+                parsed.convergence_mode = 'metric';
+            }
+        }
         return parsed;
     }
     catch (err) {

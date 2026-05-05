@@ -15,13 +15,13 @@ The one exception is the post-refinement handoff to `/pickle --teams`, which own
 ## Step 0: Parse Flags
 `$ARGUMENTS`: `--run` → AUTO_RUN. `--meeseeks` → CHAIN_MEESEEKS (implies --run). `--resume [PATH]` → RESUME_MODE (reuse existing session). Remainder = `${TASK_ARGS}`.
 
-If `--resume` has a path argument → `RESUME_SESSION = <path>`. If `--resume` with no path → resolve via `node "$HOME/.claude/pickle-rick/extension/bin/get-session.js"` → `RESUME_SESSION`.
+If `--resume` has a path argument → `RESUME_SESSION = <path>`. If `--resume` with no path → resolve via `node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/get-session.js"` → `RESUME_SESSION`.
 
 ## Step 1: Locate PRD
 
 **If RESUME_MODE**: PRD is at `${RESUME_SESSION}/prd.md`. If missing → "Session has no prd.md. Run `/pickle-prd` first." Stop. Set `SESSION_ROOT = ${RESUME_SESSION}`.
 
-**If NOT RESUME_MODE**: Priority: 1) explicit path in `${TASK_ARGS}`, 2) `prd.md`/`PRD.md` in cwd, 3) `node "$HOME/.claude/pickle-rick/extension/bin/get-session.js"` → session's `prd.md`.
+**If NOT RESUME_MODE**: Priority: 1) explicit path in `${TASK_ARGS}`, 2) `prd.md`/`PRD.md` in cwd, 3) `node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/get-session.js"` → session's `prd.md`.
 
 Not found → "Run `/pickle-prd` first or pass path." Stop.
 
@@ -62,13 +62,13 @@ Iterate until PASS. Update PRD in place. Continue to Step 3.
 
 ## Step 3: Initialize Session
 
-Extension root: `$HOME/.claude/pickle-rick` (`${EXTENSION_ROOT}`).
+Extension root: `/Users/derekgreene/.gemini/extensions/pickle-rick` (`${EXTENSION_ROOT}`).
 
 **If RESUME_MODE**: `SESSION_ROOT` is already set from Step 1. `<PRD_PATH> = ${SESSION_ROOT}/prd.md`. Skip session creation — reuse existing session directory and state.
 
 **If NOT RESUME_MODE**:
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" --paused --task "PRD Refinement: ${TASK_ARGS}"
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --paused --task "PRD Refinement: ${TASK_ARGS}"
 ```
 Extract `SESSION_ROOT`. Save original path as `<PRD_PATH>`. `cp "<PRD_PATH>" "${SESSION_ROOT}/prd.md"`.
 
@@ -710,7 +710,7 @@ Never recommend `--resume` if state incomplete.
 
 ### 11b: Re-initialize (tmux)
 ```bash
-node "$HOME/.claude/pickle-rick/extension/bin/setup.js" --tmux --resume "${SESSION_ROOT}" --max-iterations 0 --max-time 0
+node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --tmux --resume "${SESSION_ROOT}" --max-iterations 0 --max-time 0
 ```
 CHAIN_MEESEEKS → append `--chain-meeseeks`.
 
@@ -725,7 +725,7 @@ sleep 1
 
 ### 11d: Launch Runner
 ```bash
-tmux send-keys -t <name>:0 "node $HOME/.claude/pickle-rick/extension/bin/mux-runner.js ${SESSION_ROOT}; echo 'Runner finished.'; read" Enter
+tmux send-keys -t <name>:0 "node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/mux-runner.js ${SESSION_ROOT}; echo 'Runner finished.'; read" Enter
 ```
 
 ### 11e: Monitor
