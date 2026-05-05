@@ -16,10 +16,13 @@ import { Backend, PromiseTokens, hasToken, Defaults } from '../types/index.js';
 import { readRecoverableJsonObject } from '../services/microverse-state.js';
 import { runAcPhaseGate } from '../services/ac-phase-gate.js';
 
-// PRD refinement is planning, not implementation. Codex is reserved for
-// implementation loops only — if the parent session opted into codex, we
-// still force claude here so analysis stays on the Claude model family.
-const REFINEMENT_BACKEND: Backend = 'claude';
+/**
+ * The backend to use for refinement workers. Refinement is planning, not
+ * implementation, so we force a reasoning-capable model. Codex is reserved
+ * for implementation loops only. Defaults to 'claude', but allows 'gemini'
+ * if explicitly requested by the session or environment.
+ */
+let REFINEMENT_BACKEND: Backend = 'claude';
 const sm = new StateManager();
 
 // Emit the codex-override warning at most once per process.
@@ -30,17 +33,22 @@ export function __resetRefinementBackendWarning(): void {
 
 /**
  * Log a one-shot stderr warning if the parent session or env opted into codex.
- * Refinement always downgrades to claude regardless.
+ * Refinement always downgrades to claude (or gemini) regardless.
  *
  * Exported for tests; callers pass an explicit stateBackend (e.g. read from
  * state.json) so the check is deterministic and doesn't depend on test-run env.
  */
 export function warnIfCodexRequested(stateBackend: unknown, envBackend: string | undefined): void {
+  // Update the global REFINEMENT_BACKEND if gemini is requested.
+  if (stateBackend === 'gemini' || envBackend === 'gemini') {
+    REFINEMENT_BACKEND = 'gemini';
+  }
+
   if (_codexOverrideWarned) return;
   if (stateBackend === 'codex' || envBackend === 'codex') {
     _codexOverrideWarned = true;
     process.stderr.write(
-      '[pickle-rick] PRD refinement forces backend=claude (ignoring session/env preference "codex"). Refinement is planning, not implementation.\n'
+      `[pickle-rick] PRD refinement forces backend=${REFINEMENT_BACKEND} (ignoring session/env preference "codex"). Refinement is planning, not implementation.\n`
     );
   }
 }
@@ -62,8 +70,9 @@ export function buildRefinementWorkerInvocation(opts: {
     addDirs: opts.addDirs,
   });
   // buildWorkerInvocation doesn't take max-turns for workers; splice it in
-  // before the `-p <prompt>` trailer so the flag applies to the claude CLI.
-  if (opts.maxTurns > 0) {
+  // before the `-p <prompt>` trailer so the flag applies to the backend CLI.
+  // Note: gemini CLI does not support --max-turns.
+  if (opts.maxTurns > 0 && REFINEMENT_BACKEND !== 'gemini') {
     const promptIdx = invocation.args.lastIndexOf('-p');
     const insertAt = promptIdx === -1 ? invocation.args.length : promptIdx;
     invocation.args.splice(insertAt, 0, '--max-turns', String(opts.maxTurns));
