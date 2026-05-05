@@ -578,6 +578,20 @@ export function buildHandoffSummary(state: Partial<State>, sessionDir: string, i
   return lines.join('\n');
 }
 
+export function buildTicketHandoffNotes(state: Partial<State>, sessionDir: string): string {
+  const ticketId = typeof state.current_ticket === 'string' ? state.current_ticket.trim() : '';
+  if (!ticketId) return '';
+  const notesPath = path.join(sessionDir, ticketId, 'handoff_notes.md');
+  try {
+    if (!fs.existsSync(notesPath)) return '';
+    const notes = fs.readFileSync(notesPath, 'utf-8').trim();
+    if (!notes) return '';
+    return `\n\n=== PRIOR ITERATION HANDOFF ===\n${notes}`;
+  } catch {
+    return '';
+  }
+}
+
 // Shared buffer for Atomics.wait()-based synchronous sleep (no CPU spin).
 const _sleepBuf = new Int32Array(new SharedArrayBuffer(4));
 

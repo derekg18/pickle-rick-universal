@@ -46,6 +46,42 @@ function run(extDir, args = []) {
     });
 }
 
+function writeFakeClaude(binDir, capturePath) {
+    fs.mkdirSync(binDir, { recursive: true });
+    const claudePath = path.join(binDir, 'claude');
+    fs.writeFileSync(claudePath, [
+        '#!/usr/bin/env node',
+        "const fs = require('fs');",
+        "const idx = process.argv.indexOf('-p');",
+        "const prompt = idx >= 0 ? process.argv[idx + 1] || '' : '';",
+        `fs.writeFileSync(${JSON.stringify(capturePath)}, prompt);`,
+    ].join('\n'));
+    fs.chmodSync(claudePath, 0o755);
+}
+
+function runIterationWithFakeClaude(sessionDir, extensionRoot, binDir) {
+    const script = [
+        `import { runIteration } from ${JSON.stringify(TMUX_RUNNER_BIN)};`,
+        "const outcome = await runIteration(process.env.TEST_SESSION_DIR, 1, process.env.TEST_EXTENSION_ROOT, '');",
+        "if (outcome.completion !== 'continue') {",
+        "  console.error(JSON.stringify(outcome));",
+        "  process.exit(1);",
+        "}",
+    ].join('\n');
+    return spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+        env: {
+            ...process.env,
+            PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`,
+            PICKLE_BACKEND: 'claude',
+            PICKLE_DATA_ROOT: path.join(extensionRoot, 'data-root'),
+            TEST_SESSION_DIR: sessionDir,
+            TEST_EXTENSION_ROOT: extensionRoot,
+        },
+        encoding: 'utf-8',
+        timeout: 60000,
+    });
+}
+
 // --- No args → exit code 1, stderr includes "Usage" ---
 
 test('mux-runner: exits with code 1 and prints Usage when no args provided', () => {
@@ -810,6 +846,75 @@ test('classifyCompletion: THE_CITADEL_APPROVES returns review_clean', () => {
 
 test('classifyCompletion: no token returns continue', () => {
     assert.equal(classifyCompletion('Some random output with no tokens'), 'continue');
+});
+
+test('runIteration: prompt includes PRIOR ITERATION HANDOFF when active ticket has handoff_notes.md', () => {
+    const tmpRoot = makeTmpRoot();
+    try {
+        const sessionDir = path.join(tmpRoot, 'session');
+        const templatesDir = path.join(tmpRoot, 'templates');
+        const ticketDir = path.join(sessionDir, 'FR01');
+        const binDir = path.join(tmpRoot, 'bin');
+        const capturePath = path.join(tmpRoot, 'prompt.txt');
+        fs.mkdirSync(templatesDir, { recursive: true });
+        fs.mkdirSync(ticketDir, { recursive: true });
+        fs.writeFileSync(path.join(templatesDir, 'pickle.md'), 'Template start $ARGUMENTS');
+        fs.writeFileSync(path.join(ticketDir, 'handoff_notes.md'), 'Keep the local discovery about prompt assembly.');
+        fs.writeFileSync(path.join(sessionDir, 'state.json'), JSON.stringify({
+            active: true,
+            step: 'implement',
+            iteration: 0,
+            command_template: 'pickle.md',
+            current_ticket: 'FR01',
+            original_prompt: 'test ticket handoff',
+            working_dir: tmpRoot,
+            backend: 'claude',
+        }, null, 2));
+        writeFakeClaude(binDir, capturePath);
+
+        const result = runIterationWithFakeClaude(sessionDir, tmpRoot, binDir);
+        assert.equal(result.status, 0, `stdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+        const prompt = fs.readFileSync(capturePath, 'utf-8');
+        assert.ok(prompt.includes('=== PRIOR ITERATION HANDOFF ==='), prompt);
+        assert.ok(prompt.includes('Keep the local discovery about prompt assembly.'), prompt);
+    } finally {
+        fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
+});
+
+test('runIteration: missing handoff_notes.md keeps worker prompt without PRIOR ITERATION HANDOFF', () => {
+    const tmpRoot = makeTmpRoot();
+    try {
+        const sessionDir = path.join(tmpRoot, 'session');
+        const templatesDir = path.join(tmpRoot, 'templates');
+        const ticketDir = path.join(sessionDir, 'FR01');
+        const binDir = path.join(tmpRoot, 'bin');
+        const capturePath = path.join(tmpRoot, 'prompt.txt');
+        fs.mkdirSync(templatesDir, { recursive: true });
+        fs.mkdirSync(ticketDir, { recursive: true });
+        fs.writeFileSync(path.join(templatesDir, 'pickle.md'), 'Template start $ARGUMENTS');
+        fs.writeFileSync(path.join(sessionDir, 'state.json'), JSON.stringify({
+            active: true,
+            step: 'implement',
+            iteration: 0,
+            command_template: 'pickle.md',
+            current_ticket: 'FR01',
+            original_prompt: 'test missing handoff notes',
+            working_dir: tmpRoot,
+            backend: 'claude',
+        }, null, 2));
+        writeFakeClaude(binDir, capturePath);
+
+        const result = runIterationWithFakeClaude(sessionDir, tmpRoot, binDir);
+        assert.equal(result.status, 0, `stdout: ${result.stdout}\nstderr: ${result.stderr}`);
+
+        const prompt = fs.readFileSync(capturePath, 'utf-8');
+        assert.ok(!prompt.includes('=== PRIOR ITERATION HANDOFF ==='), prompt);
+        assert.ok(prompt.includes('=== PICKLE RICK LOOP CONTEXT ==='), prompt);
+    } finally {
+        fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
 });
 
 test('classifyCompletion: empty string returns continue', () => {

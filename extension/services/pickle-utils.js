@@ -527,6 +527,23 @@ export function buildHandoffSummary(state, sessionDir, iterationNum) {
     }
     return lines.join('\n');
 }
+export function buildTicketHandoffNotes(state, sessionDir) {
+    const ticketId = typeof state.current_ticket === 'string' ? state.current_ticket.trim() : '';
+    if (!ticketId)
+        return '';
+    const notesPath = path.join(sessionDir, ticketId, 'handoff_notes.md');
+    try {
+        if (!fs.existsSync(notesPath))
+            return '';
+        const notes = fs.readFileSync(notesPath, 'utf-8').trim();
+        if (!notes)
+            return '';
+        return `\n\n=== PRIOR ITERATION HANDOFF ===\n${notes}`;
+    }
+    catch {
+        return '';
+    }
+}
 // Shared buffer for Atomics.wait()-based synchronous sleep (no CPU spin).
 const _sleepBuf = new Int32Array(new SharedArrayBuffer(4));
 /** Synchronous sleep that yields to the OS scheduler instead of busy-waiting. */
