@@ -6,7 +6,7 @@ set -e
 NAME="$1"
 SESSION_ROOT="$2"
 MODE="${3:-pickle}"
-EXT="$HOME/.claude/pickle-rick/extension"
+EXT="${XDG_DATA_HOME:-$HOME/.local/share}/pickle-rick/runtime/extension"
 
 if [ -z "$NAME" ] || [ -z "$SESSION_ROOT" ]; then
   echo "Usage: tmux-monitor.sh <session-name> <session-root> [pickle|meeseeks]" >&2
