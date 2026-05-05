@@ -151,6 +151,52 @@ test('dispatch: valid handler returning block forwards it to stdout', () => {
   }
 });
 
+test('dispatch: supported handler verdict block is normalized and gates', () => {
+  const tmpRoot = makeTmpRoot();
+  try {
+    const handlersDir = makeHandlersDir(tmpRoot);
+    writeHandler(handlersDir, 'test-verdict-block', `
+      console.log(JSON.stringify({ verdict: 'block', reason: 'precheck failed' }));
+    `);
+
+    const { stdout, status } = runDispatch({
+      extRoot: tmpRoot,
+      args: ['test-verdict-block'],
+      input: '{}',
+    });
+
+    assert.equal(status, 0, 'should exit with code 0');
+    const parsed = JSON.parse(stdout.trim());
+    assert.equal(parsed.decision, 'block', 'supported verdict should become a block decision');
+    assert.equal(parsed.reason, 'precheck failed');
+    assert.equal('verdict' in parsed, false, 'dispatcher should emit Claude hook decision shape');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
+test('dispatch: unsupported handler verdict falls back to approve', () => {
+  const tmpRoot = makeTmpRoot();
+  try {
+    const handlersDir = makeHandlersDir(tmpRoot);
+    writeHandler(handlersDir, 'test-verdict-unsupported', `
+      console.log(JSON.stringify({ verdict: 'allow', reason: 'unsupported' }));
+    `);
+
+    const { stdout, status } = runDispatch({
+      extRoot: tmpRoot,
+      args: ['test-verdict-unsupported'],
+      input: '{}',
+    });
+
+    assert.equal(status, 0, 'should exit with code 0');
+    const parsed = JSON.parse(stdout.trim());
+    assert.equal(parsed.decision, 'approve', 'unsupported verdict should fail open');
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true });
+  }
+});
+
 test('dispatch: handler crash with no output falls back to approve', () => {
   const tmpRoot = makeTmpRoot();
   try {

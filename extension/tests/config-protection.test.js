@@ -44,6 +44,7 @@ function runHandler(opts = {}) {
     setStateFileEnv = withStateFile,
     persistState = true,
     configChange = false,
+    codexRequired = false,
   } = opts;
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cp-'));
@@ -60,13 +61,17 @@ function runHandler(opts = {}) {
     current_ticket: ticketId,
   };
 
-  // Create ticket file if configChange requested
-  if (configChange) {
+  // Create ticket file when an override or backend precheck fixture is needed.
+  if (configChange || codexRequired) {
     const ticketDir = path.join(sessionDir, ticketId);
     fs.mkdirSync(ticketDir, { recursive: true });
-    const frontmatter = configChange
-      ? `---\nid: ${ticketId}\ntitle: "Test"\nconfig_change: true\n---\n# Ticket\n`
-      : `---\nid: ${ticketId}\ntitle: "Test"\n---\n# Ticket\n`;
+    const fields = [
+      `id: ${ticketId}`,
+      'title: "Test"',
+      configChange ? 'config_change: true' : null,
+      codexRequired ? 'codex-required: true' : null,
+    ].filter(Boolean).join('\n');
+    const frontmatter = `---\n${fields}\n---\n# Ticket\n`;
     fs.writeFileSync(path.join(ticketDir, `linear_ticket_${ticketId}.md`), frontmatter);
   }
 
@@ -190,6 +195,37 @@ test('approves Bash npm test (no config target)', () => {
 
 test('approves Bash git commit', () => {
   const result = runHandler({ toolName: 'Bash', toolInput: { command: 'git commit -m "feat: add thing"' } });
+  assert.equal(result.decision, 'approve');
+});
+
+test('blocks worker spawn when supported hook precheck sees codex-required ticket on claude backend', () => {
+  const result = runHandler({
+    state: baseState({ backend: 'claude' }),
+    toolName: 'Bash',
+    toolInput: { command: 'node /tmp/ext/extension/bin/spawn-morty.js task --ticket-id T-1' },
+    codexRequired: true,
+  });
+  assert.equal(result.decision, 'block');
+  assert.match(result.reason, /requires codex/);
+});
+
+test('approves worker spawn precheck for codex backend as explicit no-op', () => {
+  const result = runHandler({
+    state: baseState({ backend: 'codex' }),
+    toolName: 'Bash',
+    toolInput: { command: 'node /tmp/ext/extension/bin/spawn-morty.js task --ticket-id T-1' },
+    codexRequired: true,
+  });
+  assert.equal(result.decision, 'approve');
+});
+
+test('approves worker spawn precheck for gemini backend as explicit no-op', () => {
+  const result = runHandler({
+    state: baseState({ backend: 'gemini' }),
+    toolName: 'Bash',
+    toolInput: { command: 'node /tmp/ext/extension/bin/spawn-morty.js task --ticket-id T-1' },
+    codexRequired: true,
+  });
   assert.equal(result.decision, 'approve');
 });
 

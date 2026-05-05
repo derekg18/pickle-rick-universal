@@ -97,8 +97,9 @@ function parseDecision(stdout, hookName) {
     for (let i = lines.length - 1; i >= 0; i--) {
         try {
             const obj = JSON.parse(lines[i]);
-            if (obj.decision === 'approve' || obj.decision === 'block')
-                return obj;
+            const decision = normalizeHookDecision(obj);
+            if (decision)
+                return decision;
         }
         catch { /* not JSON, try previous line */ }
     }
@@ -106,6 +107,17 @@ function parseDecision(stdout, hookName) {
         log(`Hook ${hookName} stdout contained no valid decision JSON — falling back to approve`);
     }
     return null;
+}
+function isSupportedVerdict(value) {
+    return value === 'approve' || value === 'block';
+}
+function normalizeHookDecision(obj) {
+    if (isSupportedVerdict(obj.decision))
+        return obj;
+    if (!isSupportedVerdict(obj.verdict))
+        return null;
+    const { verdict: _verdict, ...rest } = obj;
+    return { ...rest, decision: obj.verdict };
 }
 function writeChildInput(child, inputData) {
     child.stdin?.on('error', (err) => {

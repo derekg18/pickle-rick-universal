@@ -20,6 +20,8 @@ interface HookDecision {
   [key: string]: unknown;
 }
 
+type HookVerdict = HookDecision['decision'];
+
 // Prevent EPIPE errors from crashing the dispatcher when Claude Code closes the pipe
 const handleEpipe = (err: NodeJS.ErrnoException) => {
   if (err.code === 'EPIPE') process.exit(0);
@@ -117,7 +119,8 @@ function parseDecision(stdout: string, hookName: string): HookDecision | null {
   for (let i = lines.length - 1; i >= 0; i--) {
     try {
       const obj = JSON.parse(lines[i]) as Partial<HookDecision>;
-      if (obj.decision === 'approve' || obj.decision === 'block') return obj as HookDecision;
+      const decision = normalizeHookDecision(obj);
+      if (decision) return decision;
     } catch { /* not JSON, try previous line */ }
   }
 
@@ -125,6 +128,18 @@ function parseDecision(stdout: string, hookName: string): HookDecision | null {
     log(`Hook ${hookName} stdout contained no valid decision JSON — falling back to approve`);
   }
   return null;
+}
+
+function isSupportedVerdict(value: unknown): value is HookVerdict {
+  return value === 'approve' || value === 'block';
+}
+
+function normalizeHookDecision(obj: Partial<HookDecision> & { verdict?: unknown }): HookDecision | null {
+  if (isSupportedVerdict(obj.decision)) return obj as HookDecision;
+  if (!isSupportedVerdict(obj.verdict)) return null;
+
+  const { verdict: _verdict, ...rest } = obj;
+  return { ...rest, decision: obj.verdict };
 }
 
 function writeChildInput(

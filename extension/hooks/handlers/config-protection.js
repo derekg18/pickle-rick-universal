@@ -1,8 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { resolveStateFile, loadActiveState, approve } from '../resolve-state.js';
-import { getExtensionRoot, getDataRoot, extractFrontmatter } from '../../services/pickle-utils.js';
+import { getExtensionRoot, getDataRoot, extractFrontmatter, parseTicketFrontmatter } from '../../services/pickle-utils.js';
 import { readRecoverableJsonObject } from '../../services/microverse-state.js';
+import { BACKENDS } from '../../types/index.js';
 const PROTECTED_PATTERNS = [
     /^\.eslintrc(\..*)?$/,
     /^\.prettierrc(\..*)?$/,
@@ -94,6 +95,49 @@ function targetedConfigFile(input) {
     }
     return null;
 }
+function resolveHookPrecheckBackend(state) {
+    if (typeof state.backend === 'string' && BACKENDS.includes(state.backend)) {
+        return state.backend;
+    }
+    const envBackend = process.env.PICKLE_BACKEND;
+    if (typeof envBackend === 'string' && BACKENDS.includes(envBackend)) {
+        return envBackend;
+    }
+    return 'claude';
+}
+function supportsHookPrecheck(backend) {
+    return backend === 'claude';
+}
+function isWorkerSpawnPrecheck(input) {
+    return input.tool_name === 'Bash'
+        && typeof input.tool_input?.command === 'string'
+        && /\bspawn-morty\.js\b/.test(input.tool_input.command);
+}
+function currentTicketFile(sessionDir, ticketId) {
+    try {
+        const ticketDir = path.join(sessionDir, ticketId);
+        const files = fs.readdirSync(ticketDir);
+        const ticketFile = files.find(f => f.startsWith('linear_ticket_') && f.endsWith('.md'));
+        return ticketFile ? path.join(ticketDir, ticketFile) : null;
+    }
+    catch {
+        return null;
+    }
+}
+function codexRequiredWorkerBlockReason(sessionDir, state) {
+    const backend = resolveHookPrecheckBackend(state);
+    if (!supportsHookPrecheck(backend))
+        return null;
+    if (!state.current_ticket)
+        return null;
+    const ticketFile = currentTicketFile(sessionDir, state.current_ticket);
+    if (!ticketFile)
+        return null;
+    const ticket = parseTicketFrontmatter(ticketFile);
+    if (!ticket?.codex_required)
+        return null;
+    return `Ticket ${state.current_ticket} requires codex; current hook precheck backend is ${backend}. Run with --backend codex.`;
+}
 async function main() {
     const extensionDir = getConfigProtectionRoot();
     const inputData = readInputData();
@@ -113,6 +157,14 @@ async function main() {
     }
     const configFile = targetedConfigFile(input);
     if (!configFile || hasConfigChangeOverride(path.dirname(session.stateFile), session.state)) {
+        if (isWorkerSpawnPrecheck(input)) {
+            const reason = codexRequiredWorkerBlockReason(path.dirname(session.stateFile), session.state);
+            if (reason)
+                block(reason);
+            else
+                approve();
+            return;
+        }
         approve();
         return;
     }
