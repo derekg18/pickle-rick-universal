@@ -10,6 +10,10 @@ export interface State {
   completion_promise: string | null;
   original_prompt: string;
   current_ticket: string | null;
+  /** Explicit complexity tier for the active ticket, when present in ticket frontmatter. */
+  current_ticket_tier?: 'trivial' | 'small' | 'medium' | 'large';
+  /** Iteration budget resolved from current_ticket_tier and settings.tier_budgets. */
+  current_ticket_budget?: number;
   history: Array<{ step: Step; ticket?: string; timestamp: string }>;
   started_at: string;
   session_dir: string;

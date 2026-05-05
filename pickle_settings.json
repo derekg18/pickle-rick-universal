@@ -1,5 +1,6 @@
 {
   "default_max_iterations": 500,
+  "tier_budgets": { "trivial": 25, "small": 50, "medium": 100, "large": 200 },
   "_iteration_budget_per_backend_doc": "Per-backend iteration budget overrides default_max_iterations. Codex iteration semantics are coarser than claude — same wall-clock work fits in fewer codex iterations, so 80 vs 100 keeps the wall-time budget comparable.",
   "iteration_budget_per_backend": { "claude": 100, "codex": 80, "gemini": 150 },
   "throughput_baselines_units": "tickets_per_hour",

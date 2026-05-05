@@ -7,6 +7,10 @@ import {
     parseTicketFrontmatter,
     buildHandoffSummary,
 } from '../services/pickle-utils.js';
+import {
+    applyTicketTierBudgetSnapshot,
+    resolveCurrentTicketTierBudget,
+} from '../bin/mux-runner.js';
 
 function withTempFile(content, fn) {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-tier-'));
@@ -14,6 +18,21 @@ function withTempFile(content, fn) {
     fs.writeFileSync(file, content);
     try {
         fn(file);
+    } finally {
+        fs.rmSync(dir, { recursive: true });
+    }
+}
+
+function withTempSession(ticketContent, settings, fn) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-tier-session-'));
+    const ticketDir = path.join(dir, 'T1');
+    const extensionRoot = path.join(dir, 'runtime');
+    fs.mkdirSync(ticketDir, { recursive: true });
+    fs.mkdirSync(extensionRoot, { recursive: true });
+    fs.writeFileSync(path.join(ticketDir, 'linear_ticket_T1.md'), ticketContent);
+    fs.writeFileSync(path.join(extensionRoot, 'pickle_settings.json'), JSON.stringify(settings, null, 2));
+    try {
+        fn({ sessionDir: dir, extensionRoot });
     } finally {
         fs.rmSync(dir, { recursive: true });
     }
@@ -75,4 +94,51 @@ test('complexity_tier: handoff shows tag for non-medium tiers, omits for medium'
     } finally {
         fs.rmSync(dir, { recursive: true });
     }
+});
+
+// --- mux-runner: tier budget mapping ---
+
+test('complexity_tier: tier budget mapping covers trivial, small, medium, and large', () => {
+    const tierBudgets = { trivial: 11, small: 22, medium: 33, large: 44 };
+    for (const [tier, budget] of Object.entries(tierBudgets)) {
+        withTempSession(
+            `---\nid: T1\ntitle: Ticket ${tier}\nstatus: Todo\norder: 1\ncomplexity_tier: ${tier}\n---\n`,
+            { tier_budgets: tierBudgets },
+            ({ sessionDir, extensionRoot }) => {
+                const state = {
+                    current_ticket: 'T1',
+                    max_iterations: 999,
+                };
+                const resolved = resolveCurrentTicketTierBudget(state, sessionDir, extensionRoot);
+                assert.deepEqual(resolved, { tier, budget });
+
+                const next = applyTicketTierBudgetSnapshot(state, resolved);
+                assert.equal(next.current_ticket_tier, tier);
+                assert.equal(next.current_ticket_budget, budget);
+                assert.equal(next.max_iterations, budget);
+            }
+        );
+    }
+});
+
+test('complexity_tier: missing field preserves existing max_iterations behavior', () => {
+    withTempSession(
+        '---\nid: T1\ntitle: Untiered ticket\nstatus: Todo\norder: 1\n---\n',
+        { tier_budgets: { trivial: 11, small: 22, medium: 33, large: 44 } },
+        ({ sessionDir, extensionRoot }) => {
+            const state = {
+                current_ticket: 'T1',
+                current_ticket_tier: 'large',
+                current_ticket_budget: 44,
+                max_iterations: 77,
+            };
+            const resolved = resolveCurrentTicketTierBudget(state, sessionDir, extensionRoot);
+            assert.equal(resolved, null);
+
+            const next = applyTicketTierBudgetSnapshot(state, resolved);
+            assert.equal(next.max_iterations, 77);
+            assert.equal(next.current_ticket_tier, undefined);
+            assert.equal(next.current_ticket_budget, undefined);
+        }
+    );
 });

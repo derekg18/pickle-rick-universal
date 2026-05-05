@@ -306,6 +306,88 @@ function positiveIntegerOrNull(value) {
     const parsed = Number(value);
     return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
 }
+const VALID_TICKET_TIERS = ['trivial', 'small', 'medium', 'large'];
+function isTicketTier(value) {
+    return typeof value === 'string' && VALID_TICKET_TIERS.includes(value);
+}
+export function extractExplicitTicketTier(content) {
+    const openLen = content.startsWith('---\r\n') ? 5 : content.startsWith('---\n') ? 4 : 0;
+    if (openLen === 0)
+        return null;
+    const closeIdx = content.indexOf('\n---', openLen);
+    if (closeIdx === -1)
+        return null;
+    const body = content.slice(openLen, closeIdx);
+    const match = /^complexity_tier:\s*(.+)$/m.exec(body);
+    if (!match)
+        return null;
+    const tier = match[1].trim().replace(/^["']|["']$/g, '');
+    return isTicketTier(tier) ? tier : null;
+}
+function readExplicitTicketTier(sessionDir, ticketId) {
+    const ticketPath = path.join(sessionDir, ticketId, `linear_ticket_${ticketId}.md`);
+    try {
+        return extractExplicitTicketTier(fs.readFileSync(ticketPath, 'utf-8'));
+    }
+    catch {
+        return null;
+    }
+}
+export function resolveTierBudget(settings, tier) {
+    const budgets = settings.tier_budgets;
+    if (!budgets || typeof budgets !== 'object')
+        return null;
+    return positiveIntegerOrNull(budgets[tier]);
+}
+export function resolveCurrentTicketTierBudget(state, sessionDir, extensionRoot) {
+    const ticketId = typeof state.current_ticket === 'string' ? state.current_ticket.trim() : '';
+    if (!ticketId)
+        return null;
+    const tier = readExplicitTicketTier(sessionDir, ticketId);
+    if (!tier)
+        return null;
+    const settings = loadSettingsBag(extensionRoot, 'mux-runner:ticket-tier-budget:settings');
+    const budget = resolveTierBudget(settings, tier);
+    return budget === null ? null : { tier, budget };
+}
+export function applyTicketTierBudgetSnapshot(state, resolved) {
+    if (!resolved) {
+        const { current_ticket_tier: _tier, current_ticket_budget: _budget, ...rest } = state;
+        return rest;
+    }
+    return {
+        ...state,
+        current_ticket_tier: resolved.tier,
+        current_ticket_budget: resolved.budget,
+        max_iterations: resolved.budget,
+    };
+}
+function persistCurrentTicketTierBudget(statePath, state, sessionDir, extensionRoot, log) {
+    const resolved = resolveCurrentTicketTierBudget(state, sessionDir, extensionRoot);
+    const nextState = applyTicketTierBudgetSnapshot(state, resolved);
+    if (nextState.max_iterations === state.max_iterations
+        && nextState.current_ticket_tier === state.current_ticket_tier
+        && nextState.current_ticket_budget === state.current_ticket_budget) {
+        return state;
+    }
+    try {
+        sm.update(statePath, s => {
+            if (resolved) {
+                s.current_ticket_tier = resolved.tier;
+                s.current_ticket_budget = resolved.budget;
+                s.max_iterations = resolved.budget;
+            }
+            else {
+                delete s.current_ticket_tier;
+                delete s.current_ticket_budget;
+            }
+        });
+    }
+    catch (err) {
+        log(`WARN: failed to persist ticket tier budget: ${safeErrorMessage(err)}`);
+    }
+    return nextState;
+}
 /**
  * Transitions a session from ticket-execution mode to Meeseeks review mode.
  * Pure function — returns a new state object without side effects.
@@ -1422,6 +1504,7 @@ async function runMuxRunnerMain() {
             exitReason = 'cancelled';
             break;
         }
+        state = persistCurrentTicketTierBudget(statePath, state, sessionDir, extensionRoot, log);
         const rawMaxIter = Number(state.max_iterations);
         const maxIter = Number.isFinite(rawMaxIter) ? rawMaxIter : 0;
         const rawCurIter = Number(state.iteration);

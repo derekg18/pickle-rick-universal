@@ -105,6 +105,8 @@ Compiled TS → JS lives in `extension/services/`, `extension/bin/`, `extension/
 - INVARIANT: `completion_promise` is nullable evidence; never used as sole state authority. ENFORCE: extension/tests/state-field-invariants.test.js.
 - INVARIANT: `original_prompt` preserves launch request for worker prompts/reports. ENFORCE: extension/tests/state-field-invariants.test.js.
 - INVARIANT: `current_ticket` is nullable ticket pointer; changes via ticket lifecycle ops. ENFORCE: extension/tests/state-field-invariants.test.js.
+- INVARIANT: `current_ticket_tier` stores the explicit active ticket complexity tier when frontmatter provides one. ENFORCE: extension/tests/state-field-invariants.test.js.
+- INVARIANT: `current_ticket_budget` stores the positive iteration budget resolved from the active ticket tier. ENFORCE: extension/tests/state-field-invariants.test.js.
 - INVARIANT: `history` is append-only lifecycle trace data. ENFORCE: extension/tests/state-field-invariants.test.js.
 - INVARIANT: `started_at` is session start timestamp; parseable for recency ranking. ENFORCE: extension/tests/state-field-invariants.test.js.
 - INVARIANT: `session_dir` is canonical session path written at setup. ENFORCE: extension/tests/state-field-invariants.test.js.
