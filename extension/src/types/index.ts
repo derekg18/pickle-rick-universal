@@ -417,6 +417,7 @@ export interface ActivityEvent {
   actual_tickets_version?: number;
   bytes_dropped?: number;
   gate_payload?: Record<string, unknown>;
+  stall_recovery_cause?: StallRecoveryCause;
   // AC-LPB-05: emitted by setup.ts/pipeline-runner.ts on session reconstruction
   // (resume) so monitor/standup consumers can distinguish a fresh launch from a
   // resumed run and reason about wall-clock budgets correctly.
@@ -489,10 +490,20 @@ export interface MicroverseMetric {
 
 export type FailureClass = 'tool_failure' | 'approach_exhaustion' | 'regression' | 'metric_unstable' | 'no_progress';
 
+export type StallRecoveryCause = 'rollback' | 'stash' | 'no_change' | 'course_correction';
+
 export interface ClassifiedFailure {
   iteration: number;
   failure_class: FailureClass;
   description: string;
+  timestamp: string;
+  stall_recovery_cause?: StallRecoveryCause;
+}
+
+export interface StallRecoveryRecord {
+  iteration: number;
+  cause: StallRecoveryCause;
+  trigger: string;
   timestamp: string;
 }
 
@@ -506,6 +517,7 @@ export interface MicroverseHistoryEntry {
   timestamp: string;
   classification?: 'improved' | 'held' | 'regressed';
   failure_class?: FailureClass;
+  stall_recovery_cause?: StallRecoveryCause;
 }
 
 export interface MicroverseBaseState {
@@ -521,6 +533,8 @@ export interface MicroverseBaseState {
   exit_reason?: string;
   stash_ref?: string;
   failure_history: ClassifiedFailure[];
+  stall_recovery_history?: StallRecoveryRecord[];
+  last_stall_recovery_cause?: StallRecoveryCause;
   approach_exhaustion_fired: boolean;
   iteration_regressions?: number;
   gate_regression_threshold_warning_emitted?: boolean;

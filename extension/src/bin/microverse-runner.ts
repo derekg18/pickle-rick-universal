@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import { State, Defaults } from '../types/index.js';
-import type { Backend, MicroverseSessionState, MicroverseHistoryEntry, FailureClass, GateResult } from '../types/index.js';
+import type { Backend, MicroverseSessionState, MicroverseHistoryEntry, FailureClass, GateResult, StallRecoveryCause } from '../types/index.js';
 import {
   resolveBackend,
   buildJudgeInvocation,
@@ -936,6 +936,30 @@ export function buildEfficiencySection(
   return `\n## Efficiency\n\n- **Wasted iterations**: ${wasted} / ${totalIterations} (${pct}%)\n`;
 }
 
+export function buildStallRecoveryDistribution(
+  recoveries: { cause: StallRecoveryCause }[] = [],
+): string {
+  if (recoveries.length === 0) {
+    return '\n## Stall Recovery Causes\n\nNo stall recoveries recorded.\n';
+  }
+  const dist = new Map<StallRecoveryCause, number>();
+  for (const recovery of recoveries) {
+    dist.set(recovery.cause, (dist.get(recovery.cause) ?? 0) + 1);
+  }
+  const rows = [...dist.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .map(([cause, count]) => `| ${cause} | ${count} |`);
+  return [
+    '',
+    '## Stall Recovery Causes',
+    '',
+    '| Cause | Count |',
+    '|-------|-------|',
+    ...rows,
+    '',
+  ].join('\n');
+}
+
 export function writeFinalReport(
   sessionDir: string,
   mvState: MicroverseSessionState,
@@ -981,6 +1005,7 @@ export function writeFinalReport(
   }
 
   report.push(buildFailureDistribution(mvState.failure_history ?? []));
+  report.push(buildStallRecoveryDistribution(mvState.stall_recovery_history ?? []));
   if (history.length > 0) {
     report.push(buildEfficiencySection(history, iterations));
   }
@@ -1015,6 +1040,44 @@ function replaceMicroverseState(target: MicroverseState, next: MicroverseState):
     delete target[key];
   }
   Object.assign(target, next);
+}
+
+export function resolveStallRecoveryCause(
+  mvState: MicroverseState,
+  runnerState?: State,
+  explicitCause?: StallRecoveryCause,
+): StallRecoveryCause {
+  if (explicitCause) return explicitCause;
+  if (runnerState?.last_course_correction) return 'course_correction';
+  if (mvState.stash_ref) return 'stash';
+  return 'no_change';
+}
+
+function recordStallRecovery(
+  state: MicroverseState,
+  ctx: RunContext,
+  trigger: string,
+  explicitCause?: StallRecoveryCause,
+): StallRecoveryCause {
+  const cause = resolveStallRecoveryCause(state, ctx.currentRunnerState, explicitCause);
+  const record = {
+    iteration: ctx.iteration,
+    cause,
+    trigger,
+    timestamp: new Date().toISOString(),
+  };
+  state.stall_recovery_history = [...(state.stall_recovery_history ?? []), record].slice(-100);
+  state.last_stall_recovery_cause = cause;
+  logActivity({
+    event: 'wasted_iter',
+    source: 'pickle',
+    session: path.basename(ctx.sessionDir),
+    iteration: ctx.iteration,
+    action: trigger,
+    wasted: true,
+    stall_recovery_cause: cause,
+  });
+  return cause;
 }
 
 function writeHandoffFile(sessionDir: string, content: string): void {
@@ -1227,6 +1290,7 @@ export async function measureAndClassifyIteration(
   if (!metricResult) {
     ctx.log('WARNING: Metric measurement failed twice — treating as stall (commit preserved)');
     replaceMicroverseState(state, recordStall(state));
+    recordStallRecovery(state, ctx, 'metric_measurement_failed');
     writeMicroverseState(ctx.sessionDir, state);
     return { kind: 'unchanged' };
   }
@@ -1257,6 +1321,7 @@ export async function measureAndClassifyIteration(
   if (classification === 'regressed') {
     ctx.log(`Regression detected — rolling back to ${ctx.preIterSha}`);
     _deps.resetToSha(ctx.preIterSha ?? '', ctx.workingDir);
+    entry.stall_recovery_cause = recordStallRecovery(state, ctx, 'metric_regression', 'rollback');
     replaceMicroverseState(state, recordFailedApproach(state, `Iteration ${ctx.iteration}: score dropped from ${previousScore} to ${metricResult.score}`));
   }
 
@@ -1286,6 +1351,7 @@ function recordFailureClassification(
       failure_class: failureClass,
       description: entry.description,
       timestamp: new Date().toISOString(),
+      stall_recovery_cause: entry.stall_recovery_cause,
     });
     injectRecoveryGuidance(ctx.sessionDir, failureClass, state);
     if (failureClass === 'approach_exhaustion') state.approach_exhaustion_fired = true;
@@ -1323,6 +1389,7 @@ async function handleNoCommitStall(
 ): Promise<ExitReason | null> {
   ctx.log('No commits made — stall (no rollback)');
   replaceMicroverseState(state, recordStall(state));
+  recordStallRecovery(state, ctx, 'no_commits');
   writeMicroverseState(ctx.sessionDir, state);
   if (isConverged(state)) {
     ctx.log('Converged (stall limit reached with no new commits)');

@@ -16,12 +16,20 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { injectRecoveryGuidance } from '../bin/microverse-runner.js';
+import {
+  _deps,
+  measureAndClassifyIteration,
+  buildStallRecoveryDistribution,
+  injectRecoveryGuidance,
+  resolveStallRecoveryCause,
+} from '../bin/microverse-runner.js';
 import {
   classifyFailure,
   createMicroverseState,
+  readMicroverseState,
   recordIteration,
   recordFailedApproach,
+  writeMicroverseState,
 } from '../services/microverse-state.js';
 
 function makeTmpDir() {
@@ -52,6 +60,53 @@ function makeEntry(iteration, score, action, pre_sha = 'abc0000') {
     description: `score=${score}`,
     pre_iteration_sha: pre_sha,
     timestamp: new Date().toISOString(),
+  };
+}
+
+function makeRunnerState(sessionDir, workingDir) {
+  return {
+    active: true,
+    working_dir: workingDir,
+    step: 'implement',
+    iteration: 0,
+    max_iterations: 10,
+    max_time_minutes: 60,
+    worker_timeout_seconds: 0,
+    start_time_epoch: Math.floor(Date.now() / 1000),
+    completion_promise: null,
+    original_prompt: 'test',
+    current_ticket: null,
+    history: [],
+    started_at: new Date().toISOString(),
+    session_dir: sessionDir,
+  };
+}
+
+function makeRunContext(sessionDir, workingDir, runnerState, overrides = {}) {
+  return {
+    sessionDir,
+    extensionRoot: path.resolve('.'),
+    statePath: path.join(sessionDir, 'state.json'),
+    workingDir,
+    startTime: Date.now(),
+    initialIteration: 0,
+    enableFailureClassification: false,
+    cgSettings: {
+      enabled_convergence_files: ['anatomy-park.json'],
+      regression_warning_threshold: 5,
+      remediator_timeout_s: 600,
+      baseline_max_age_iterations: 30,
+      baseline_max_age_seconds: 14_400,
+    },
+    rateLimitWaitMinutes: 1,
+    maxRateLimitRetries: 1,
+    log: () => {},
+    currentRunnerState: runnerState,
+    iteration: 1,
+    consecutiveRateLimits: 0,
+    preIterSha: 'pre',
+    postIterSha: 'post',
+    ...overrides,
   };
 }
 
@@ -225,4 +280,106 @@ test('writeFinalReport includes failure distribution when failures exist', async
 test('writeFinalReport omits failure distribution when no failures', () => {
   const failureHistory = [];
   assert.equal(failureHistory.length, 0, 'empty failure history should skip distribution');
+});
+
+// ---------------------------------------------------------------------------
+// 8. Stall recovery cause classification
+// ---------------------------------------------------------------------------
+
+test('resolveStallRecoveryCause returns explicit rollback cause first', () => {
+  const mvState = makeBaseMvState();
+  const runnerState = {
+    last_course_correction: {
+      proposal_path: '/tmp/proposal.md',
+      applied_iso: new Date().toISOString(),
+      restart_ticket_id: 'FR04',
+      before_count: 1,
+      after_count: 2,
+    },
+  };
+
+  assert.equal(resolveStallRecoveryCause(mvState, runnerState, 'rollback'), 'rollback');
+});
+
+test('resolveStallRecoveryCause classifies course correction before stash fallback', () => {
+  const mvState = makeBaseMvState();
+  mvState.stash_ref = 'stash@{0}';
+  const runnerState = {
+    last_course_correction: {
+      proposal_path: '/tmp/proposal.md',
+      applied_iso: new Date().toISOString(),
+      restart_ticket_id: 'FR04',
+      before_count: 1,
+      after_count: 2,
+    },
+  };
+
+  assert.equal(resolveStallRecoveryCause(mvState, runnerState), 'course_correction');
+});
+
+test('resolveStallRecoveryCause classifies stash and no-change fallbacks', () => {
+  const stashState = makeBaseMvState();
+  stashState.stash_ref = 'stash@{0}';
+
+  assert.equal(resolveStallRecoveryCause(stashState), 'stash');
+  assert.equal(resolveStallRecoveryCause(makeBaseMvState()), 'no_change');
+});
+
+test('buildStallRecoveryDistribution reports stable cause values', () => {
+  const report = buildStallRecoveryDistribution([
+    { cause: 'rollback' },
+    { cause: 'rollback' },
+    { cause: 'stash' },
+    { cause: 'no_change' },
+    { cause: 'course_correction' },
+  ]);
+
+  assert.ok(report.includes('| rollback | 2 |'));
+  assert.ok(report.includes('| stash | 1 |'));
+  assert.ok(report.includes('| no_change | 1 |'));
+  assert.ok(report.includes('| course_correction | 1 |'));
+});
+
+test('measureAndClassifyIteration records rollback stall recovery cause on regression', async () => {
+  const sessionDir = makeTmpDir();
+  const workingDir = makeTmpDir();
+  const scoreFile = path.join(workingDir, 'score.txt');
+  fs.writeFileSync(scoreFile, '40\n');
+  const runnerState = makeRunnerState(sessionDir, workingDir);
+  fs.writeFileSync(path.join(sessionDir, 'state.json'), JSON.stringify(runnerState, null, 2));
+  const mvState = createMicroverseState({
+    prdPath: path.join(workingDir, 'prd.md'),
+    metric: {
+      description: 'score',
+      validation: `cat ${scoreFile}`,
+      type: 'command',
+      timeout_seconds: 5,
+      tolerance: 2,
+      direction: 'higher',
+    },
+    stallLimit: 5,
+  });
+  mvState.status = 'iterating';
+  mvState.baseline_score = 50;
+  writeMicroverseState(sessionDir, mvState);
+  const originalReset = _deps.resetToSha;
+
+  try {
+    _deps.resetToSha = () => {};
+    const result = await measureAndClassifyIteration(
+      mvState,
+      { raw: '50', score: 50 },
+      makeRunContext(sessionDir, workingDir, runnerState),
+    );
+    const persisted = readMicroverseState(sessionDir);
+
+    assert.deepEqual(result, { kind: 'regressed', rollback: true });
+    assert.equal(mvState.convergence.history[0].stall_recovery_cause, 'rollback');
+    assert.equal(persisted.last_stall_recovery_cause, 'rollback');
+    assert.equal(persisted.stall_recovery_history[0].cause, 'rollback');
+  } finally {
+    _deps.resetToSha = originalReset;
+    fs.rmSync(sessionDir, { recursive: true, force: true });
+    fs.rmSync(workingDir, { recursive: true, force: true });
+  }
 });
