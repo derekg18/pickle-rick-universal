@@ -239,7 +239,85 @@ function saveCache(cachePath: string, cache: MetricsCache): void {
   }
 }
 
-// eslint-disable-next-line complexity -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
+function listProjectSlugs(projectsDir: string): string[] {
+  try {
+    return fs.readdirSync(projectsDir).filter((s) => !s.startsWith('-private-var-'));
+  } catch {
+    return [];
+  }
+}
+
+function listSessionJsonlFiles(projectsDir: string, slug: string): string[] {
+  const slugDir = path.join(projectsDir, slug);
+  try {
+    if (!fs.statSync(slugDir).isDirectory()) return [];
+    return fs.readdirSync(slugDir)
+      .filter((file) => file.endsWith('.jsonl'))
+      .map((file) => path.join(slugDir, file));
+  } catch {
+    return [];
+  }
+}
+
+function getCachedSessionFileData(
+  filePath: string,
+  cache: MetricsCache,
+): { data: Record<string, DailyTokens>; changed: boolean } | null {
+  let fstat: fs.Stats;
+  try {
+    fstat = fs.statSync(filePath);
+  } catch {
+    return null;
+  }
+
+  if (fstat.size > MAX_FILE_BYTES) return null;
+
+  const cached = cache.files[filePath];
+  if (cached && cached.mtime === fstat.mtimeMs && cached.size === fstat.size) {
+    return { data: cached.data, changed: false };
+  }
+
+  try {
+    const data = parseJsonlFile(filePath);
+    cache.files[filePath] = { mtime: fstat.mtimeMs, size: fstat.size, data };
+    return { data, changed: true };
+  } catch {
+    return null;
+  }
+}
+
+function addSessionFileData(
+  result: Map<string, Map<string, DailyTokens>>,
+  slug: string,
+  fileData: Record<string, DailyTokens>,
+  since: string,
+  until: string,
+): void {
+  for (const [date, tokens] of Object.entries(fileData)) {
+    if (date < since || date > until) continue;
+    if (!result.has(slug)) result.set(slug, new Map());
+    const dateMap = result.get(slug)!;
+    if (!dateMap.has(date)) dateMap.set(date, emptyDailyTokens());
+    const target = dateMap.get(date)!;
+    target.turns += tokens.turns;
+    target.input += tokens.input;
+    target.output += tokens.output;
+    target.cache_read += tokens.cache_read;
+    target.cache_create += tokens.cache_create;
+  }
+}
+
+function pruneStaleCacheEntries(cache: MetricsCache, validPaths: Set<string>): boolean {
+  let changed = false;
+  for (const cachedPath of Object.keys(cache.files)) {
+    if (!validPaths.has(cachedPath)) {
+      delete cache.files[cachedPath];
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 export function scanSessionFiles(
   projectsDir: string,
   since: string,
@@ -251,72 +329,18 @@ export function scanSessionFiles(
   let cacheChanged = false;
   const validPaths = new Set<string>();
 
-  let slugs: string[];
-  try {
-    slugs = fs.readdirSync(projectsDir).filter((s) => !s.startsWith('-private-var-'));
-  } catch {
-    return result;
-  }
-
-  for (const slug of slugs) {
-    const slugDir = path.join(projectsDir, slug);
-    let stat: fs.Stats;
-    try {
-      stat = fs.statSync(slugDir);
-    } catch { continue; }
-    if (!stat.isDirectory()) continue;
-
-    let files: string[];
-    try {
-      files = fs.readdirSync(slugDir).filter((f) => f.endsWith('.jsonl'));
-    } catch { continue; }
-
-    for (const file of files) {
-      const filePath = path.join(slugDir, file);
+  for (const slug of listProjectSlugs(projectsDir)) {
+    for (const filePath of listSessionJsonlFiles(projectsDir, slug)) {
       validPaths.add(filePath);
 
-      let fstat: fs.Stats;
-      try {
-        fstat = fs.statSync(filePath);
-      } catch { continue; }
-
-      if (fstat.size > MAX_FILE_BYTES) continue;
-
-      const cached = cache.files[filePath];
-      let fileData: Record<string, DailyTokens>;
-
-      if (cached && cached.mtime === fstat.mtimeMs && cached.size === fstat.size) {
-        fileData = cached.data;
-      } else {
-        try {
-          fileData = parseJsonlFile(filePath);
-        } catch { continue; }
-        cache.files[filePath] = { mtime: fstat.mtimeMs, size: fstat.size, data: fileData };
-        cacheChanged = true;
-      }
-
-      for (const [date, tokens] of Object.entries(fileData)) {
-        if (date < since || date > until) continue;
-        if (!result.has(slug)) result.set(slug, new Map());
-        const dateMap = result.get(slug)!;
-        if (!dateMap.has(date)) dateMap.set(date, emptyDailyTokens());
-        const target = dateMap.get(date)!;
-        target.turns += tokens.turns;
-        target.input += tokens.input;
-        target.output += tokens.output;
-        target.cache_read += tokens.cache_read;
-        target.cache_create += tokens.cache_create;
-      }
+      const fileData = getCachedSessionFileData(filePath, cache);
+      if (!fileData) continue;
+      cacheChanged = cacheChanged || fileData.changed;
+      addSessionFileData(result, slug, fileData.data, since, until);
     }
   }
 
-  // Prune stale cache entries
-  for (const cachedPath of Object.keys(cache.files)) {
-    if (!validPaths.has(cachedPath)) {
-      delete cache.files[cachedPath];
-      cacheChanged = true;
-    }
-  }
+  cacheChanged = pruneStaleCacheEntries(cache, validPaths) || cacheChanged;
 
   if (cacheChanged) saveCache(cachePath, cache);
   return result;

@@ -502,12 +502,12 @@ const CHECK_KEY_MAP: Record<'typecheck' | 'lint' | 'tests', keyof { typecheck?: 
   tests: 'test',
 };
 
-// eslint-disable-next-line complexity, max-lines-per-function -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
-export async function runGate(opts: RunGateOpts): Promise<GateResult> {
-  const start = Date.now();
-  const emit = (event: string, data: Record<string, unknown>) => opts.onEvent?.(event, data);
+type GateEmit = (event: string, data: Record<string, unknown>) => void;
+type GateCommandMap = { typecheck?: string; lint?: string; test?: string };
+type ProjectType = NonNullable<ReturnType<typeof detectProjectType>>;
 
-  const empty: GateResult = {
+function createEmptyGateResult(): GateResult {
+  return {
     status: 'green',
     failures: [],
     baseline_used: false,
@@ -516,8 +516,13 @@ export async function runGate(opts: RunGateOpts): Promise<GateResult> {
     total_raw_failure_count: 0,
     new_failures_vs_baseline: 0,
   };
+}
 
-  function finalize(result: GateResult): GateResult {
+function createGateFinalizer(
+  opts: RunGateOpts,
+  emit: GateEmit,
+): (result: GateResult) => GateResult {
+  return (result: GateResult): GateResult => {
     emit('gate_run_complete', {
       gate_payload: {
         mode: opts.mode,
@@ -533,118 +538,180 @@ export async function runGate(opts: RunGateOpts): Promise<GateResult> {
       },
     });
     return result;
-  }
+  };
+}
 
-  const projectType = detectProjectType(opts.workingDir);
-  if (!projectType) {
-    emit('gate_skipped', { reason: 'no_project_type_detected' });
-    return { ...empty, elapsed_ms: Date.now() - start };
-  }
-
-  const commands = loadGateCommands();
-  const cmdMap = commands[projectType];
-  if (!cmdMap) {
-    emit('gate_skipped', { reason: 'project_type_low_confidence', detected_signals: [projectType] });
-    return { ...empty, elapsed_ms: Date.now() - start };
-  }
-
-  const workspacePackages = getWorkspacePackages(opts.workingDir);
-  const allowedPathsUsed = Boolean(opts.allowedPaths && opts.allowedPaths.length > 0);
-
-  let targetDirs: string[];
-  if (workspacePackages.length > 0) {
-    let candidates = workspacePackages;
-    let changedFiles: string[] = [];
-
-    if (opts.scope === 'changed' && opts.since) {
-      changedFiles = getChangedSince(opts.workingDir, opts.since);
-      if (!affectsAllWorkspacePackages(changedFiles)) {
-        candidates = workspacePackages.filter(pkgDir =>
-          changedFiles.some(f => {
-            const absFile = path.resolve(opts.workingDir, f);
-            return absFile.startsWith(pkgDir + path.sep) || absFile === pkgDir;
-          })
-        );
-      }
-    }
-
-    if (allowedPathsUsed && !affectsAllWorkspacePackages(opts.allowedPaths ?? [])) {
-      const relCandidates = candidates.map(p => path.relative(opts.workingDir, p));
-      const filtered = filterByScope(relCandidates, { scope: opts.scope, allowedPaths: opts.allowedPaths });
-      candidates = filtered.map(rel => path.resolve(opts.workingDir, rel));
-    }
-
-    targetDirs = candidates;
-  } else {
-    if (opts.scope === 'changed' && opts.since) {
-      const changedFiles = getChangedSince(opts.workingDir, opts.since);
-      if (changedFiles.length === 0) {
-        const result = { ...empty, elapsed_ms: Date.now() - start };
-        emit('gate_diff_scope_fallback', { since: opts.since, reason: 'no_changed_files' });
-        return finalize(result);
-      }
-    }
-    targetDirs = [opts.workingDir];
-  }
-
-  if (opts.workerMode) {
-    const porcelainR = spawnSync('git', ['status', '--porcelain'], {
-      cwd: opts.workingDir, encoding: 'utf-8', timeout: 10_000,
-    });
-    const dirtyLines = ((porcelainR.stdout as string | null) ?? '').split('\n').filter(Boolean);
-    if (dirtyLines.length > 0) {
-      emit('gate_skipped', { reason: 'dirty_worktree_no_rescue' });
-      return { ...empty, elapsed_ms: Date.now() - start };
-    }
-  }
-
-  if (opts.expected_head !== undefined || opts.expected_branch !== undefined) {
-    const headR = spawnSync('git', ['rev-parse', 'HEAD'], {
-      cwd: opts.workingDir, encoding: 'utf-8', timeout: 10_000,
-    });
-    const branchR = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-      cwd: opts.workingDir, encoding: 'utf-8', timeout: 10_000,
-    });
-    const currentHead = ((headR.stdout as string | null) ?? '').trim();
-    const currentBranch = ((branchR.stdout as string | null) ?? '').trim();
-    const headMismatch = opts.expected_head !== undefined && currentHead !== opts.expected_head;
-    const branchMismatch = opts.expected_branch !== undefined && currentBranch !== opts.expected_branch;
-    if (headMismatch || branchMismatch) {
-      const now = new Date().toISOString();
-      const iso = now.replace(/[:.]/g, '-');
-      const gateDir = path.join(opts.workingDir, 'gate');
-      await fs.promises.mkdir(gateDir, { recursive: true });
-      await fs.promises.writeFile(
-        path.join(gateDir, `workingdir_drift_${iso}.md`),
-        `# Working Directory Drift\n\nDetected at: ${now}\n\nExpected HEAD: ${opts.expected_head ?? '(any)'}\nCurrent HEAD: ${currentHead}\nExpected branch: ${opts.expected_branch ?? '(any)'}\nCurrent branch: ${currentBranch}\n`
+function selectWorkspaceTargetDirs(opts: RunGateOpts, workspacePackages: string[]): string[] {
+  let candidates = workspacePackages;
+  if (opts.scope === 'changed' && opts.since) {
+    const changedFiles = getChangedSince(opts.workingDir, opts.since);
+    if (!affectsAllWorkspacePackages(changedFiles)) {
+      candidates = workspacePackages.filter(pkgDir =>
+        changedFiles.some(f => {
+          const absFile = path.resolve(opts.workingDir, f);
+          return absFile.startsWith(pkgDir + path.sep) || absFile === pkgDir;
+        })
       );
-      emit('gate_workingdir_drift_detected', {
-        expected_head: opts.expected_head,
-        current_head: currentHead,
-        expected_branch: opts.expected_branch,
-        current_branch: currentBranch,
-      });
-      const driftResult: GateResult = {
-        status: 'red',
-        failures: [{
-          check: 'tests',
-          file: '<workingdir-drift>',
-          line: 0,
-          ruleOrCode: 'GATE_WORKINGDIR_DRIFT',
-          message: `Working directory drift: expected branch "${opts.expected_branch ?? '(any)'}", got "${currentBranch}"; expected HEAD "${opts.expected_head ?? '(any)'}", got "${currentHead}"`,
-          severity: 'error',
-          occurrence_index: 0,
-        }],
-        baseline_used: false,
-        allowed_paths_used: allowedPathsUsed,
-        elapsed_ms: Date.now() - start,
-        total_raw_failure_count: 1,
-        new_failures_vs_baseline: 0,
-      };
-      return finalize(driftResult);
     }
   }
 
+  if (opts.allowedPaths && opts.allowedPaths.length > 0 && !affectsAllWorkspacePackages(opts.allowedPaths)) {
+    const relCandidates = candidates.map(p => path.relative(opts.workingDir, p));
+    const filtered = filterByScope(relCandidates, { scope: opts.scope, allowedPaths: opts.allowedPaths });
+    candidates = filtered.map(rel => path.resolve(opts.workingDir, rel));
+  }
+  return candidates;
+}
+
+function selectGateTargetDirs(
+  opts: RunGateOpts,
+  emit: GateEmit,
+  empty: GateResult,
+  start: number,
+): { targetDirs: string[]; earlyResult?: GateResult } {
+  const workspacePackages = getWorkspacePackages(opts.workingDir);
+  if (workspacePackages.length > 0) {
+    return { targetDirs: selectWorkspaceTargetDirs(opts, workspacePackages) };
+  }
+  if (opts.scope === 'changed' && opts.since) {
+    const changedFiles = getChangedSince(opts.workingDir, opts.since);
+    if (changedFiles.length === 0) {
+      emit('gate_diff_scope_fallback', { since: opts.since, reason: 'no_changed_files' });
+      return { targetDirs: [], earlyResult: { ...empty, elapsed_ms: Date.now() - start } };
+    }
+  }
+  return { targetDirs: [opts.workingDir] };
+}
+
+function getDirtyWorktreeSkip(opts: RunGateOpts, emit: GateEmit, empty: GateResult, start: number): GateResult | null {
+  if (!opts.workerMode) return null;
+  const porcelainR = spawnSync('git', ['status', '--porcelain'], {
+    cwd: opts.workingDir, encoding: 'utf-8', timeout: 10_000,
+  });
+  const dirtyLines = ((porcelainR.stdout as string | null) ?? '').split('\n').filter(Boolean);
+  if (dirtyLines.length === 0) return null;
+  emit('gate_skipped', { reason: 'dirty_worktree_no_rescue' });
+  return { ...empty, elapsed_ms: Date.now() - start };
+}
+
+async function detectWorkingDirDrift(
+  opts: RunGateOpts,
+  emit: GateEmit,
+  start: number,
+  allowedPathsUsed: boolean,
+): Promise<GateResult | null> {
+  if (opts.expected_head === undefined && opts.expected_branch === undefined) return null;
+
+  const headR = spawnSync('git', ['rev-parse', 'HEAD'], {
+    cwd: opts.workingDir, encoding: 'utf-8', timeout: 10_000,
+  });
+  const branchR = spawnSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+    cwd: opts.workingDir, encoding: 'utf-8', timeout: 10_000,
+  });
+  const currentHead = ((headR.stdout as string | null) ?? '').trim();
+  const currentBranch = ((branchR.stdout as string | null) ?? '').trim();
+  const headMismatch = opts.expected_head !== undefined && currentHead !== opts.expected_head;
+  const branchMismatch = opts.expected_branch !== undefined && currentBranch !== opts.expected_branch;
+  if (!headMismatch && !branchMismatch) return null;
+
+  const now = new Date().toISOString();
+  const iso = now.replace(/[:.]/g, '-');
+  const gateDir = path.join(opts.workingDir, 'gate');
+  await fs.promises.mkdir(gateDir, { recursive: true });
+  await fs.promises.writeFile(
+    path.join(gateDir, `workingdir_drift_${iso}.md`),
+    `# Working Directory Drift\n\nDetected at: ${now}\n\nExpected HEAD: ${opts.expected_head ?? '(any)'}\nCurrent HEAD: ${currentHead}\nExpected branch: ${opts.expected_branch ?? '(any)'}\nCurrent branch: ${currentBranch}\n`
+  );
+  emit('gate_workingdir_drift_detected', {
+    expected_head: opts.expected_head,
+    current_head: currentHead,
+    expected_branch: opts.expected_branch,
+    current_branch: currentBranch,
+  });
+  return {
+    status: 'red',
+    failures: [{
+      check: 'tests',
+      file: '<workingdir-drift>',
+      line: 0,
+      ruleOrCode: 'GATE_WORKINGDIR_DRIFT',
+      message: `Working directory drift: expected branch "${opts.expected_branch ?? '(any)'}", got "${currentBranch}"; expected HEAD "${opts.expected_head ?? '(any)'}", got "${currentHead}"`,
+      severity: 'error',
+      occurrence_index: 0,
+    }],
+    baseline_used: false,
+    allowed_paths_used: allowedPathsUsed,
+    elapsed_ms: Date.now() - start,
+    total_raw_failure_count: 1,
+    new_failures_vs_baseline: 0,
+  };
+}
+
+async function shouldSkipUnsafeTest(
+  check: 'typecheck' | 'lint' | 'tests',
+  projectType: ProjectType,
+  dir: string,
+  emit: GateEmit,
+): Promise<boolean> {
+  if (check !== 'tests' || !['pnpm', 'npm', 'yarn'].includes(projectType)) return false;
+  const pkgJsonPath = path.join(dir, 'package.json');
+  let scriptContent = '';
+  try {
+    const raw = await fs.promises.readFile(pkgJsonPath, 'utf-8');
+    scriptContent = (JSON.parse(raw) as { scripts?: { test?: string } }).scripts?.test ?? '';
+  } catch {
+    // File absent or unreadable; leave scriptContent empty.
+  }
+  if (UNSAFE_TEST_SCRIPT_REGEX.test(scriptContent)) {
+    emit('gate_unsafe_test_command_blocked', { script: scriptContent });
+    return true;
+  }
+  return !SAFE_TEST_RUNNER_REGEX.test(scriptContent);
+}
+
+async function runTimedCheck(
+  cmd: string,
+  dir: string,
+  check: 'typecheck' | 'lint' | 'tests',
+  effectiveMs: number,
+  emit: GateEmit,
+): Promise<GateFailure[]> {
+  const checkPromise = runCheckCommand(cmd, dir, effectiveMs);
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, rej) => {
+    timeoutHandle = setTimeout(() => rej(new GateTimeoutError(check, effectiveMs)), effectiveMs);
+  });
+
+  try {
+    const result = await Promise.race([checkPromise, timeoutPromise]);
+    clearTimeout(timeoutHandle);
+    return buildFailures(result, check, dir);
+  } catch (err) {
+    clearTimeout(timeoutHandle);
+    if (!(err instanceof GateTimeoutError)) throw err;
+    checkPromise.catch((raceErr) => {
+      const msg = raceErr instanceof Error ? raceErr.message : String(raceErr);
+      emit('gate_check_promise_lost', { check, message: msg });
+    });
+    return [{
+      check,
+      file: '<timeout>',
+      line: 0,
+      ruleOrCode: 'GATE_CHECK_TIMEOUT',
+      message: `${check} timed out after ${effectiveMs}ms`,
+      severity: 'error',
+      occurrence_index: 0,
+    }];
+  }
+}
+
+async function runGateChecks(
+  opts: RunGateOpts,
+  projectType: ProjectType,
+  cmdMap: GateCommandMap,
+  targetDirs: string[],
+  emit: GateEmit,
+): Promise<GateFailure[]> {
   const totalDeadline = Date.now() + (opts._timeouts?.total ?? GATE_TOTAL_TIMEOUT_MS);
   const allFailures: GateFailure[] = [];
 
@@ -669,70 +736,31 @@ export async function runGate(opts: RunGateOpts): Promise<GateResult> {
       const cmd = cmdMap[cmdKey];
       if (!cmd) continue;
 
-      if (check === 'tests' && (projectType === 'pnpm' || projectType === 'npm' || projectType === 'yarn')) {
-        const pkgJsonPath = path.join(dir, 'package.json');
-        let scriptContent = '';
-        try {
-          const raw = await fs.promises.readFile(pkgJsonPath, 'utf-8');
-          scriptContent = (JSON.parse(raw) as { scripts?: { test?: string } }).scripts?.test ?? '';
-        } catch { /* file absent or unreadable — leave scriptContent empty */ }
-        if (UNSAFE_TEST_SCRIPT_REGEX.test(scriptContent)) {
-          emit('gate_unsafe_test_command_blocked', { script: scriptContent });
-          continue;
-        }
-        if (!SAFE_TEST_RUNNER_REGEX.test(scriptContent)) {
-          continue;
-        }
-      }
+      if (await shouldSkipUnsafeTest(check, projectType, dir, emit)) continue;
 
       const perCheckMs = opts._timeouts?.perCheck?.[check] ?? PER_CHECK_TIMEOUT_MS[check];
       const effectiveMs = Math.min(perCheckMs, remaining);
-
-      const checkPromise = runCheckCommand(cmd, dir, effectiveMs);
-      let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-      const timeoutPromise = new Promise<never>((_, rej) => {
-        timeoutHandle = setTimeout(() => rej(new GateTimeoutError(check, effectiveMs)), effectiveMs);
-      });
-
-      try {
-        const result = await Promise.race([checkPromise, timeoutPromise]);
-        clearTimeout(timeoutHandle);
-        allFailures.push(...buildFailures(result, check, dir));
-      } catch (err) {
-        clearTimeout(timeoutHandle);
-        if (err instanceof GateTimeoutError) {
-          // Drain the losing race so node doesn't crash on unhandledRejection,
-          // but keep the diagnostic so a wedged child surfaces in the activity log.
-          checkPromise.catch((raceErr) => {
-            const msg = raceErr instanceof Error ? raceErr.message : String(raceErr);
-            emit('gate_check_promise_lost', { check, message: msg });
-          });
-          allFailures.push({
-            check,
-            file: '<timeout>',
-            line: 0,
-            ruleOrCode: 'GATE_CHECK_TIMEOUT',
-            message: `${check} timed out after ${effectiveMs}ms`,
-            severity: 'error',
-            occurrence_index: 0,
-          });
-        } else {
-          throw err;
-        }
-      }
+      allFailures.push(...await runTimedCheck(cmd, dir, check, effectiveMs, emit));
     }
   }
+  return allFailures;
+}
 
-  const flakeGlobs = opts.settings?.convergence_gate?.known_flake_files ?? [];
-  const { real: realFailures, flake: flakeFailures } = applyFlakeFilter(allFailures, opts.workingDir, flakeGlobs);
-
+async function handleBaselineMode(
+  opts: RunGateOpts,
+  projectType: ProjectType,
+  realFailures: GateFailure[],
+  allowedPathsUsed: boolean,
+  start: number,
+  emit: GateEmit,
+): Promise<GateResult | null> {
   if (opts.mode === 'baseline' && opts.baselinePath) {
     const withIndices = assignOccurrenceIndices(realFailures);
     const lockKey = `gate-${createHash('sha256').update(opts.workingDir).digest('hex')}`;
     const lockMs = opts._timeouts?.lockMs ?? GATE_LOCK_TIMEOUT_MS;
 
     try {
-      return finalize(await withLock(lockKey, { timeout_ms: lockMs }, async () => {
+      return await withLock(lockKey, { timeout_ms: lockMs }, async () => {
         emit('gate_lock_acquired', { lock_key: lockKey });
 
         const baselineExists = await fs.promises.access(opts.baselinePath!).then(() => true, () => false);
@@ -771,7 +799,7 @@ export async function runGate(opts: RunGateOpts): Promise<GateResult> {
           total_raw_failure_count: withIndices.length,
           new_failures_vs_baseline: newFailures.length,
         };
-      }));
+      });
     } catch (err) {
       if (err instanceof LockError) {
         emit('gate_lock_timeout', { lock_key: lockKey, waited_ms: err.waited_ms ?? lockMs });
@@ -792,12 +820,23 @@ export async function runGate(opts: RunGateOpts): Promise<GateResult> {
           total_raw_failure_count: 0,
           new_failures_vs_baseline: 0,
         };
-        return finalize(lockTimeoutResult);
+        return lockTimeoutResult;
       }
       throw err;
     }
   }
+  return null;
+}
 
+async function handleKnownFlakes(
+  opts: RunGateOpts,
+  realFailures: GateFailure[],
+  allFailures: GateFailure[],
+  flakeFailures: GateFailure[],
+  allowedPathsUsed: boolean,
+  start: number,
+  emit: GateEmit,
+): Promise<GateResult | null> {
   if (realFailures.length === 0 && flakeFailures.length > 0) {
     const now = new Date().toISOString();
     const iso = now.replace(/[:.]/g, '-');
@@ -808,7 +847,7 @@ export async function runGate(opts: RunGateOpts): Promise<GateResult> {
       `# Known Flake Failures\n\nCaptured: ${now}\n\n${flakeFailures.map(f => `- \`${f.file}\` [${f.check}]: ${f.message.slice(0, 200)}`).join('\n')}\n`
     );
     emit('gate_out_of_scope_failures_present', { flake_count: flakeFailures.length, paths: flakeFailures.map(f => f.file) });
-    return finalize({
+    return {
       status: 'green-with-known-flake-warnings',
       failures: [],
       baseline_used: false,
@@ -816,14 +855,23 @@ export async function runGate(opts: RunGateOpts): Promise<GateResult> {
       elapsed_ms: Date.now() - start,
       total_raw_failure_count: allFailures.length,
       new_failures_vs_baseline: 0,
-    });
+    };
   }
+  return null;
+}
 
+function buildStrictGateResult(
+  realFailures: GateFailure[],
+  allFailures: GateFailure[],
+  allowedPathsUsed: boolean,
+  start: number,
+  emit: GateEmit,
+): GateResult {
   const status = realFailures.length === 0 ? 'green' : 'red';
   if (status === 'red') {
     emit('gate_regression_threshold_warning', { failure_count: realFailures.length });
   }
-  return finalize({
+  return {
     status,
     failures: realFailures,
     baseline_used: false,
@@ -831,5 +879,45 @@ export async function runGate(opts: RunGateOpts): Promise<GateResult> {
     elapsed_ms: Date.now() - start,
     total_raw_failure_count: allFailures.length,
     new_failures_vs_baseline: 0,
-  });
+  };
+}
+
+export async function runGate(opts: RunGateOpts): Promise<GateResult> {
+  const start = Date.now();
+  const emit: GateEmit = (event, data) => opts.onEvent?.(event, data);
+  const finalize = createGateFinalizer(opts, emit);
+  const empty = createEmptyGateResult();
+
+  const projectType = detectProjectType(opts.workingDir);
+  if (!projectType) {
+    emit('gate_skipped', { reason: 'no_project_type_detected' });
+    return { ...empty, elapsed_ms: Date.now() - start };
+  }
+
+  const cmdMap = loadGateCommands()[projectType];
+  if (!cmdMap) {
+    emit('gate_skipped', { reason: 'project_type_low_confidence', detected_signals: [projectType] });
+    return { ...empty, elapsed_ms: Date.now() - start };
+  }
+
+  const allowedPathsUsed = Boolean(opts.allowedPaths && opts.allowedPaths.length > 0);
+  const targetSelection = selectGateTargetDirs(opts, emit, empty, start);
+  if (targetSelection.earlyResult) return finalize(targetSelection.earlyResult);
+
+  const dirtySkip = getDirtyWorktreeSkip(opts, emit, empty, start);
+  if (dirtySkip) return dirtySkip;
+
+  const driftResult = await detectWorkingDirDrift(opts, emit, start, allowedPathsUsed);
+  if (driftResult) return finalize(driftResult);
+
+  const allFailures = await runGateChecks(opts, projectType, cmdMap, targetSelection.targetDirs, emit);
+  const flakeGlobs = opts.settings?.convergence_gate?.known_flake_files ?? [];
+  const { real: realFailures, flake: flakeFailures } = applyFlakeFilter(allFailures, opts.workingDir, flakeGlobs);
+  const baselineResult = await handleBaselineMode(opts, projectType, realFailures, allowedPathsUsed, start, emit);
+  if (baselineResult) return finalize(baselineResult);
+
+  const flakeResult = await handleKnownFlakes(opts, realFailures, allFailures, flakeFailures, allowedPathsUsed, start, emit);
+  if (flakeResult) return finalize(flakeResult);
+
+  return finalize(buildStrictGateResult(realFailures, allFailures, allowedPathsUsed, start, emit));
 }

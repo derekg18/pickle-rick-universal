@@ -28,9 +28,8 @@ export function compareMetric(
   return 'held';
 }
 
-// eslint-disable-next-line complexity -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
-export function createMicroverseState(opts: CreateMicroverseOpts): MicroverseSessionState {
-  const { prdPath, metric, stallLimit, convergenceTarget, convergenceMode = 'metric', convergenceFile, allowedPaths } = opts;
+function validateMicroverseCreateOpts(opts: CreateMicroverseOpts): void {
+  const { metric, stallLimit, convergenceTarget } = opts;
   if (!Number.isInteger(stallLimit) || stallLimit < 1) {
     throw new Error(`stall_limit must be a positive integer, got ${stallLimit}`);
   }
@@ -43,6 +42,10 @@ export function createMicroverseState(opts: CreateMicroverseOpts): MicroverseSes
   if (convergenceTarget != null && !Number.isFinite(convergenceTarget)) {
     throw new Error(`convergence_target must be a finite number, got ${convergenceTarget}`);
   }
+}
+
+function createMicroverseBaseState(opts: CreateMicroverseOpts): MicroverseBaseState {
+  const { prdPath, metric, convergenceTarget, allowedPaths } = opts;
   const base: MicroverseBaseState = {
     status: 'gap_analysis',
     prd_path: prdPath,
@@ -57,15 +60,18 @@ export function createMicroverseState(opts: CreateMicroverseOpts): MicroverseSes
   };
   if (convergenceTarget != null) base.convergence_target = convergenceTarget;
   if (allowedPaths != null && allowedPaths.length > 0) base.allowed_paths = allowedPaths;
+  return base;
+}
 
-  if (convergenceMode === 'worker') {
-    return {
-      ...base,
-      convergence_mode: 'worker',
-      convergence_file: convergenceFile ?? 'phase_state.json', // fallback or throw
-    };
-  }
+function createWorkerModeState(base: MicroverseBaseState, convergenceFile?: string): WorkerModeState {
+  return {
+    ...base,
+    convergence_mode: 'worker',
+    convergence_file: convergenceFile ?? 'phase_state.json',
+  };
+}
 
+function createMetricModeState(base: MicroverseBaseState, stallLimit: number): MetricModeState {
   return {
     ...base,
     convergence_mode: 'metric',
@@ -75,6 +81,15 @@ export function createMicroverseState(opts: CreateMicroverseOpts): MicroverseSes
       history: [],
     },
   };
+}
+
+export function createMicroverseState(opts: CreateMicroverseOpts): MicroverseSessionState {
+  validateMicroverseCreateOpts(opts);
+  const base = createMicroverseBaseState(opts);
+  if ((opts.convergenceMode ?? 'metric') === 'worker') {
+    return createWorkerModeState(base, opts.convergenceFile);
+  }
+  return createMetricModeState(base, opts.stallLimit);
 }
 
 /**
@@ -148,7 +163,33 @@ export function recordFailedApproach(
  * Classify the failure mode of an iteration. Returns null if the iteration
  * succeeded (improved). Priority-ordered — first matching class wins.
  */
-// eslint-disable-next-line complexity -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
+function hasRecentOscillation(history: MicroverseHistoryEntry[]): boolean {
+  if (history.length < 3) return false;
+  const last3 = history.slice(-3).map(h => h.classification);
+  return (
+    (last3[0] === 'improved' && last3[1] === 'regressed' && last3[2] === 'improved') ||
+    (last3[0] === 'regressed' && last3[1] === 'improved' && last3[2] === 'regressed')
+  );
+}
+
+function hasApproachExhaustionRisk(mvState: MicroverseSessionState): boolean {
+  return Boolean(
+    mvState.failed_approaches.length >= 3 &&
+    mvState.convergence &&
+    mvState.convergence.stall_counter >= mvState.convergence.stall_limit / 2
+  );
+}
+
+function hasNoProgress(
+  history: MicroverseHistoryEntry[],
+  preIterSha: string,
+  postIterSha: string,
+): boolean {
+  if (preIterSha === postIterSha) return true;
+  if (history.length < 3) return false;
+  return history.slice(-3).map(h => h.classification).every(c => c === 'held');
+}
+
 export function classifyFailure(
   mvState: MicroverseSessionState,
   metricResult: { raw: string; score: number } | null,
@@ -169,32 +210,16 @@ export function classifyFailure(
   if (classification === 'improved') return null;
 
   // 2. metric_unstable — alternating improve/regress in last 3 entries
-  if (history.length >= 3) {
-    const last3 = history.slice(-3).map(h => h.classification);
-    const isOscillating =
-      (last3[0] === 'improved' && last3[1] === 'regressed' && last3[2] === 'improved') ||
-      (last3[0] === 'regressed' && last3[1] === 'improved' && last3[2] === 'regressed');
-    if (isOscillating) return 'metric_unstable';
-  }
+  if (hasRecentOscillation(history)) return 'metric_unstable';
 
   // 3. regression — score went backwards
   if (classification === 'regressed') return 'regression';
 
   // 4. approach_exhaustion — tried many things, none stick
-  if (
-    mvState.failed_approaches.length >= 3 &&
-    mvState.convergence &&
-    mvState.convergence.stall_counter >= mvState.convergence.stall_limit / 2
-  ) {
-    return 'approach_exhaustion';
-  }
+  if (hasApproachExhaustionRisk(mvState)) return 'approach_exhaustion';
 
   // 5. no_progress — no commits or 3+ consecutive 'held'
-  if (preIterSha === postIterSha) return 'no_progress';
-  if (history.length >= 3) {
-    const last3 = history.slice(-3).map(h => h.classification);
-    if (last3.every(c => c === 'held')) return 'no_progress';
-  }
+  if (hasNoProgress(history, preIterSha, postIterSha)) return 'no_progress';
 
   return null;
 }
@@ -229,7 +254,7 @@ export function readMicroverseState(
 ): MicroverseSessionState | null {
   const filePath = path.join(sessionDir, MICROVERSE_FILE);
   try {
-    const parsed = readRecoverableJsonObject(filePath) as any;
+    const parsed = readRecoverableJsonObject(filePath) as (Partial<MicroverseSessionState> & Record<string, unknown>) | null;
     if (!parsed) return null;
     parsed.failure_history ??= [];
     parsed.approach_exhaustion_fired ??= false;

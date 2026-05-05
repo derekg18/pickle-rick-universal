@@ -3,6 +3,57 @@
 // next delimiter (or EOF) is assistant output. All other blocks are dropped.
 const CODEX_DELIMITER_RE = /^(user|codex|exec|tokens used|reasoning|tool_call)\s*$/;
 
+function isTypedJsonLine(line: string): boolean {
+  if (!line.trim()) return false;
+  try {
+    const parsed = JSON.parse(line);
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) && 'type' in parsed;
+  } catch {
+    return false;
+  }
+}
+
+function extractStreamJsonAssistantContent(lines: string[]): string {
+  const parts: string[] = [];
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    try {
+      const parsed = JSON.parse(line);
+      if (parsed.type === 'assistant') {
+        const content = parsed.message?.content;
+        if (Array.isArray(content)) {
+          for (const block of content) {
+            if (block.type === 'text' && typeof block.text === 'string') {
+              parts.push(block.text);
+            }
+          }
+        } else if (typeof content === 'string') {
+          parts.push(content);
+        }
+      } else if (parsed.type === 'result' && typeof parsed.result === 'string') {
+        parts.push(parsed.result);
+      }
+      // Intentionally skip: user (tool_result), system, tool_use
+    } catch {
+      // Skip non-JSON in stream-json mode.
+    }
+  }
+  return parts.join('\n');
+}
+
+function extractCodexBlockContent(lines: string[]): string {
+  const parts: string[] = [];
+  let inCodexBlock = false;
+  for (const line of lines) {
+    if (CODEX_DELIMITER_RE.test(line)) {
+      inCodexBlock = /^codex\s*$/.test(line);
+      continue;
+    }
+    if (inCodexBlock) parts.push(line);
+  }
+  return parts.join('\n');
+}
+
 /**
  * Extracts text content from assistant messages.
  *
@@ -18,7 +69,6 @@ const CODEX_DELIMITER_RE = /^(user|codex|exec|tokens used|reasoning|tool_call)\s
  * Promise tokens embedded in reviewed source (tool_result, user prompts,
  * codex user blocks) are excluded in all modes.
  */
-// eslint-disable-next-line complexity -- pre-existing parser moved from mux-runner
 export function extractAssistantContent(output: string): string {
   const lines = output.split('\n');
 
@@ -27,61 +77,13 @@ export function extractAssistantContent(output: string): string {
   // a 'type' key) do NOT trigger this mode, so codex logs with a stray null
   // line fall through to codex-mode detection instead of silently eating all
   // content as stream-json with zero extractions.
-  let isStreamJson = false;
-  for (const line of lines) {
-    if (!line.trim()) continue;
-    try {
-      const parsed = JSON.parse(line);
-      if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed) && 'type' in parsed) {
-        isStreamJson = true;
-        break;
-      }
-    } catch { /* not JSON */ }
-  }
-
-  if (isStreamJson) {
-    const parts: string[] = [];
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const parsed = JSON.parse(line);
-        if (parsed.type === 'assistant') {
-          const content = parsed.message?.content;
-          if (Array.isArray(content)) {
-            for (const block of content) {
-              if (block.type === 'text' && typeof block.text === 'string') {
-                parts.push(block.text);
-              }
-            }
-          } else if (typeof content === 'string') {
-            parts.push(content);
-          }
-        } else if (parsed.type === 'result' && typeof parsed.result === 'string') {
-          parts.push(parsed.result);
-        }
-        // Intentionally skip: user (tool_result), system, tool_use
-      } catch { /* skip non-JSON in stream-json mode */ }
-    }
-    return parts.join('\n');
+  if (lines.some(isTypedJsonLine)) {
+    return extractStreamJsonAssistantContent(lines);
   }
 
   // Mode 2: codex plain-text - block-delimiter format.
-  let isCodexMode = false;
-  for (const line of lines) {
-    if (CODEX_DELIMITER_RE.test(line)) { isCodexMode = true; break; }
-  }
-
-  if (isCodexMode) {
-    const parts: string[] = [];
-    let inCodexBlock = false;
-    for (const line of lines) {
-      if (CODEX_DELIMITER_RE.test(line)) {
-        inCodexBlock = /^codex\s*$/.test(line);
-        continue;
-      }
-      if (inCodexBlock) parts.push(line);
-    }
-    return parts.join('\n');
+  if (lines.some(line => CODEX_DELIMITER_RE.test(line))) {
+    return extractCodexBlockContent(lines);
   }
 
   // Mode 3: pure plain-text fallback - return everything.
