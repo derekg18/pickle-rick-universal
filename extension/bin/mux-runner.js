@@ -203,6 +203,21 @@ export function evaluateEpicCompletion(input) {
     }
     return { kind: 'recover_retry', doneCount, totalCount, pendingIds, nextCount };
 }
+export function buildFalseEpicActivityEvent(decision, sessionDir, currentTicket) {
+    const mode = decision.kind === 'recover_advance' ? 'advancing' : 'retrying_same_ticket';
+    return {
+        event: 'manager_false_epic_completed',
+        source: 'pickle',
+        session: path.basename(sessionDir),
+        ticket: currentTicket || undefined,
+        mode,
+        pending_tickets: decision.pendingIds,
+        done_count: decision.doneCount,
+        total_count: decision.totalCount,
+        false_epic_count: decision.nextCount,
+        error: `${PromiseTokens.EPIC_COMPLETED} with ${decision.totalCount - decision.doneCount} pending — ${mode}`,
+    };
+}
 /**
  * Classifies iteration output into a completion result.
  * EPIC_COMPLETED → 'task_completed' (exits the loop — all tickets done)
@@ -1812,13 +1827,7 @@ async function runMuxRunnerMain() {
                 const currentId = curState.current_ticket || '(none)';
                 log(`MANAGER_FALSE_${PromiseTokens.EPIC_COMPLETED}: ${PromiseTokens.EPIC_COMPLETED} claimed but ${decision.doneCount} of ${decision.totalCount} tickets Done (pending: ${decision.pendingIds.join(', ') || '(none)'}). Treating as ${PromiseTokens.TASK_COMPLETED} — ${tag}. count=${decision.nextCount}/${FALSE_EPIC_THRESHOLD}.\n       Iteration log: ${iterLogFile}`);
                 appendPipelineRunnerMarker(sessionDir, `MANAGER_FALSE_${PromiseTokens.EPIC_COMPLETED} ticket=${currentId} mode=${tag} count=${decision.nextCount}/${FALSE_EPIC_THRESHOLD} done=${decision.doneCount}/${decision.totalCount} pending=${decision.pendingIds.join(',')}`);
-                logActivity({
-                    event: 'manager_false_epic_completed',
-                    source: 'pickle',
-                    session: path.basename(sessionDir),
-                    ticket: curState.current_ticket || undefined,
-                    error: `${PromiseTokens.EPIC_COMPLETED} with ${decision.totalCount - decision.doneCount} pending — ${tag}`,
-                });
+                logActivity(buildFalseEpicActivityEvent(decision, sessionDir, curState.current_ticket || null));
                 if (decision.kind === 'recover_advance' && curState.current_ticket) {
                     // current_ticket is already Done — close it out so the next
                     // iteration picks the next non-Done ticket. Counter persists at the

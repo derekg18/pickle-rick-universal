@@ -826,7 +826,7 @@ test('mux-runner: creates mux-runner.log in session directory', () => {
 
 // --- Completion classification (classifyCompletion) ---
 
-import { buildTmuxNotification, classifyCompletion, classifyTicketCompletion, extractAssistantContent, transitionToMeeseeks, loadRateLimitSettings, loadMeeseeksModel, classifyIterationExit, detectRateLimitInLog, detectRateLimitInText, stripSetupSection, detectMultiRepo, writeHandoffAtomic } from '../bin/mux-runner.js';
+import { buildTmuxNotification, classifyCompletion, classifyTicketCompletion, extractAssistantContent, transitionToMeeseeks, loadRateLimitSettings, loadMeeseeksModel, classifyIterationExit, detectRateLimitInLog, detectRateLimitInText, stripSetupSection, detectMultiRepo, writeHandoffAtomic, buildFalseEpicActivityEvent } from '../bin/mux-runner.js';
 
 test('classifyCompletion: TASK_COMPLETED returns continue (single ticket, loop continues)', () => {
     assert.equal(classifyCompletion('<promise>TASK_COMPLETED</promise>'), 'continue');
@@ -834,6 +834,35 @@ test('classifyCompletion: TASK_COMPLETED returns continue (single ticket, loop c
 
 test('classifyCompletion: EPIC_COMPLETED returns task_completed', () => {
     assert.equal(classifyCompletion('<promise>EPIC_COMPLETED</promise>'), 'task_completed');
+});
+
+test('buildFalseEpicActivityEvent: correction activity shape is stable', () => {
+    const cases = [
+        {
+            decision: { kind: 'recover_advance', doneCount: 2, totalCount: 4, pendingIds: ['T3', 'T4'], nextCount: 1 },
+            expectedMode: 'advancing',
+            ticket: 'T2',
+        },
+        {
+            decision: { kind: 'recover_retry', doneCount: 1, totalCount: 4, pendingIds: ['T3'], nextCount: 2 },
+            expectedMode: 'retrying_same_ticket',
+            ticket: null,
+        },
+    ];
+
+    for (const { decision, expectedMode, ticket } of cases) {
+        const event = buildFalseEpicActivityEvent(decision, '/tmp/pickle-session-FR03', ticket);
+        assert.equal(event.event, 'manager_false_epic_completed');
+        assert.equal(event.source, 'pickle');
+        assert.equal(event.session, 'pickle-session-FR03');
+        assert.equal(event.ticket, ticket || undefined);
+        assert.equal(event.mode, expectedMode);
+        assert.deepEqual(event.pending_tickets, decision.pendingIds);
+        assert.equal(event.done_count, decision.doneCount);
+        assert.equal(event.total_count, decision.totalCount);
+        assert.equal(event.false_epic_count, decision.nextCount);
+        assert.match(event.error, /EPIC_COMPLETED/);
+    }
 });
 
 test('classifyCompletion: EXISTENCE_IS_PAIN returns review_clean', () => {
