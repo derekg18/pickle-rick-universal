@@ -24,6 +24,7 @@ import {
 } from '../services/codex-manager-relaunch.js';
 import { extractAssistantContent } from '../services/classifier-utils.js';
 import { assertAdaptersFresh } from '../services/adapter-preflight.js';
+import { getHeadSha, isWorkingTreeDirty } from '../services/git-utils.js';
 export { extractAssistantContent } from '../services/classifier-utils.js';
 
 const sm = new StateManager();
@@ -32,6 +33,33 @@ let currentChildProc: import('child_process').ChildProcess | null = null;
 
 function readRunnerState(statePath: string): State {
   return sm.read(statePath);
+}
+
+function safeGetHeadSha(cwd: string): string | null {
+  try {
+    return getHeadSha(cwd);
+  } catch {
+    return null;
+  }
+}
+
+function safeIsWorkingTreeDirty(cwd: string): boolean | null {
+  try {
+    return isWorkingTreeDirty(cwd);
+  } catch {
+    return null;
+  }
+}
+
+function isWastedIteration(
+  preSha: string | null,
+  postSha: string | null,
+  wasDirty: boolean | null,
+  isDirty: boolean | null,
+  result: IterationOutcome['completion'],
+): boolean {
+  const changed = Boolean((preSha && postSha && preSha !== postSha) || (wasDirty === false && isDirty === true));
+  return changed && result !== 'task_completed' && result !== 'review_clean';
 }
 
 export function killCurrentChild(): void {
@@ -1716,6 +1744,9 @@ async function runMuxRunnerMain() {
       log(`commit-pending probe threw (ignored): ${safeErrorMessage(err)}`);
     }
 
+    const iterationWorkingDir = state.working_dir || process.cwd();
+    const preIterationSha = safeGetHeadSha(iterationWorkingDir);
+    const preIterationDirty = safeIsWorkingTreeDirty(iterationWorkingDir);
     const outcome = await runIteration(sessionDir, iteration, extensionRoot, meeseeksModel);
     const result = outcome.completion;
 
@@ -1760,6 +1791,19 @@ async function runMuxRunnerMain() {
     });
     const exitType = exitResult.type;
     logActivity({ event: 'iteration_end', source: 'pickle', session: path.basename(sessionDir), iteration, exit_type: exitType });
+    const postIterationSha = safeGetHeadSha(iterationWorkingDir);
+    const postIterationDirty = safeIsWorkingTreeDirty(iterationWorkingDir);
+    if (isWastedIteration(preIterationSha, postIterationSha, preIterationDirty, postIterationDirty, result)) {
+      logActivity({
+        event: 'wasted_iter',
+        source: 'pickle',
+        session: path.basename(sessionDir),
+        iteration,
+        wasted: true,
+        action: result,
+        sha: postIterationSha || preIterationSha || '',
+      });
+    }
 
     if (exitType === 'api_limit') {
       consecutiveRateLimits++;

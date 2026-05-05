@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STOP_HOOK = path.resolve(__dirname, '../hooks/handlers/stop-hook.js');
+const TMUX_RUNNER = path.resolve(__dirname, '../bin/mux-runner.js');
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -79,6 +80,81 @@ function runHookWithActivity(opts = {}) {
       state: JSON.parse(fs.readFileSync(stateFile, 'utf-8')),
       activityEvents,
     };
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+function readActivityEvents(activityDir) {
+  const activityEvents = [];
+  if (!fs.existsSync(activityDir)) return activityEvents;
+  for (const f of fs.readdirSync(activityDir)) {
+    if (!f.endsWith('.jsonl')) continue;
+    const lines = fs.readFileSync(path.join(activityDir, f), 'utf-8').trim().split('\n').filter(Boolean);
+    activityEvents.push(...lines.map(l => JSON.parse(l)));
+  }
+  return activityEvents;
+}
+
+function runMuxWithCommittingClaude() {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ai-mux-'));
+  const sessionDir = path.join(tmpDir, 'session');
+  const repoDir = path.join(tmpDir, 'repo');
+  const binDir = path.join(tmpDir, 'bin');
+  const templatesDir = path.join(tmpDir, 'templates');
+  fs.mkdirSync(sessionDir);
+  fs.mkdirSync(repoDir);
+  fs.mkdirSync(binDir);
+  fs.mkdirSync(templatesDir);
+
+  execFileSync('git', ['init'], { cwd: repoDir, stdio: 'ignore' });
+  execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: repoDir });
+  execFileSync('git', ['config', 'user.name', 'Test User'], { cwd: repoDir });
+  fs.writeFileSync(path.join(repoDir, 'README.md'), 'initial\n');
+  execFileSync('git', ['add', 'README.md'], { cwd: repoDir });
+  execFileSync('git', ['commit', '-m', 'initial'], { cwd: repoDir, stdio: 'ignore' });
+
+  fs.writeFileSync(path.join(templatesDir, 'pickle.md'), 'placeholder');
+  const stateFile = path.join(sessionDir, 'state.json');
+  fs.writeFileSync(stateFile, JSON.stringify(baseState({
+    session_dir: sessionDir,
+    working_dir: repoDir,
+    tmux_mode: true,
+    step: 'implement',
+    max_iterations: 100,
+    backend: 'claude',
+  }), null, 2));
+
+  const fakeClaude = path.join(binDir, 'claude');
+  fs.writeFileSync(fakeClaude, [
+    '#!/usr/bin/env node',
+    "const fs = require('fs');",
+    "const path = require('path');",
+    "const { execFileSync } = require('child_process');",
+    "const statePath = process.env.PICKLE_STATE_FILE;",
+    "const state = JSON.parse(fs.readFileSync(statePath, 'utf8'));",
+    "fs.writeFileSync(path.join(state.working_dir, 'work.txt'), 'changed\\n');",
+    "execFileSync('git', ['add', 'work.txt'], { cwd: state.working_dir });",
+    "execFileSync('git', ['commit', '-m', 'wasted iteration'], { cwd: state.working_dir, stdio: 'ignore' });",
+    "state.active = false;",
+    "fs.writeFileSync(statePath, JSON.stringify(state, null, 2));",
+    "process.stdout.write('made a change without a completion promise\\n');",
+  ].join('\n'));
+  fs.chmodSync(fakeClaude, 0o755);
+
+  try {
+    execFileSync(process.execPath, [TMUX_RUNNER, sessionDir], {
+      env: {
+        ...process.env,
+        EXTENSION_DIR: tmpDir,
+        PATH: `${binDir}${path.delimiter}${process.env.PATH || ''}`,
+        PICKLE_BACKEND: 'claude',
+        FORCE_COLOR: '0',
+      },
+      encoding: 'utf-8',
+    });
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoDir, encoding: 'utf-8' }).trim();
+    return { activityEvents: readActivityEvents(path.join(tmpDir, 'activity')), sha };
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
@@ -230,4 +306,16 @@ test('activity: inactive session emits NO events', () => {
     state: baseState({ active: false }),
   });
   assert.equal(activityEvents.length, 0);
+});
+
+test('activity: wasted_iter includes wasted, action, and sha fields', () => {
+  const { activityEvents, sha } = runMuxWithCommittingClaude();
+  const wasted = activityEvents.filter(e => e.event === 'wasted_iter');
+  assert.equal(wasted.length, 1);
+  assert.equal(wasted[0].wasted, true);
+  assert.equal(wasted[0].action, 'continue');
+  assert.equal(wasted[0].sha, sha);
+  assert.equal(wasted[0].source, 'pickle');
+  assert.equal(wasted[0].iteration, 1);
+  assert.ok(wasted[0].session, 'should have session ID');
 });

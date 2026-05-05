@@ -315,7 +315,7 @@ export const VALID_ACTIVITY_EVENTS = [
   'meeseeks_pass', 'commit', 'research', 'bug_fix', 'feature',
   'refactor', 'review', 'jar_start', 'jar_end',
   'circuit_open', 'circuit_recovery',
-  'iteration_start', 'iteration_end',
+  'iteration_start', 'iteration_end', 'wasted_iter',
   'rate_limit_wait', 'rate_limit_resume', 'rate_limit_exhausted',
   'multi_repo_warning',
   'meeseeks_model_select',
@@ -402,6 +402,9 @@ export interface ActivityEvent {
   error?: string;
   iteration?: number;
   exit_type?: IterationExitType;
+  wasted?: boolean;
+  action?: string;
+  sha?: string;
   original_prompt?: string;
   model?: string;
   backend?: Backend;

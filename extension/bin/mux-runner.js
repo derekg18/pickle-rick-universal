@@ -13,11 +13,32 @@ import { readRecoverableJsonObject } from '../services/microverse-state.js';
 import { evaluateCodexManagerRelaunch, recordCodexManagerRelaunch, } from '../services/codex-manager-relaunch.js';
 import { extractAssistantContent } from '../services/classifier-utils.js';
 import { assertAdaptersFresh } from '../services/adapter-preflight.js';
+import { getHeadSha, isWorkingTreeDirty } from '../services/git-utils.js';
 export { extractAssistantContent } from '../services/classifier-utils.js';
 const sm = new StateManager();
 let currentChildProc = null;
 function readRunnerState(statePath) {
     return sm.read(statePath);
+}
+function safeGetHeadSha(cwd) {
+    try {
+        return getHeadSha(cwd);
+    }
+    catch {
+        return null;
+    }
+}
+function safeIsWorkingTreeDirty(cwd) {
+    try {
+        return isWorkingTreeDirty(cwd);
+    }
+    catch {
+        return null;
+    }
+}
+function isWastedIteration(preSha, postSha, wasDirty, isDirty, result) {
+    const changed = Boolean((preSha && postSha && preSha !== postSha) || (wasDirty === false && isDirty === true));
+    return changed && result !== 'task_completed' && result !== 'review_clean';
 }
 export function killCurrentChild() {
     if (currentChildProc && !currentChildProc.killed) {
@@ -1509,6 +1530,9 @@ async function runMuxRunnerMain() {
             // Probe is best-effort — never block the iteration on probe failure.
             log(`commit-pending probe threw (ignored): ${safeErrorMessage(err)}`);
         }
+        const iterationWorkingDir = state.working_dir || process.cwd();
+        const preIterationSha = safeGetHeadSha(iterationWorkingDir);
+        const preIterationDirty = safeIsWorkingTreeDirty(iterationWorkingDir);
         const outcome = await runIteration(sessionDir, iteration, extensionRoot, meeseeksModel);
         const result = outcome.completion;
         // Move iterLogFile computation BEFORE transition block (needed by classifyTicketCompletion)
@@ -1553,6 +1577,19 @@ async function runMuxRunnerMain() {
         });
         const exitType = exitResult.type;
         logActivity({ event: 'iteration_end', source: 'pickle', session: path.basename(sessionDir), iteration, exit_type: exitType });
+        const postIterationSha = safeGetHeadSha(iterationWorkingDir);
+        const postIterationDirty = safeIsWorkingTreeDirty(iterationWorkingDir);
+        if (isWastedIteration(preIterationSha, postIterationSha, preIterationDirty, postIterationDirty, result)) {
+            logActivity({
+                event: 'wasted_iter',
+                source: 'pickle',
+                session: path.basename(sessionDir),
+                iteration,
+                wasted: true,
+                action: result,
+                sha: postIterationSha || preIterationSha || '',
+            });
+        }
         if (exitType === 'api_limit') {
             consecutiveRateLimits++;
             log(`API rate limit detected (consecutive: ${consecutiveRateLimits}/${maxRateLimitRetries})`);
