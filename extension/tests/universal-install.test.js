@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -80,6 +80,13 @@ describe('universal install.sh host adapters', () => {
       assert.ok(manifest.hosts.claude.files_written.includes(LEGACY_CLAUDE_RUNTIME_ROOT));
       assert.equal(existsSync(path.join(fixture.home, '.codex', 'prompts', 'pickle-rick', 'pickle.md')), true);
       assert.equal(existsSync(path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'commands', 'pickle.toml')), true);
+      const geminiTmuxRunner = path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'extension', 'bin', 'tmux-runner.js');
+      assert.equal(existsSync(geminiTmuxRunner), true);
+      assert.equal(lstatSync(geminiTmuxRunner).isSymbolicLink(), true);
+      assert.equal(
+        readlinkSync(geminiTmuxRunner),
+        path.join(fixture.xdg, 'pickle-rick', 'runtime', 'extension', 'bin', 'mux-runner.js'),
+      );
 
       const claudeSettings = JSON.parse(readFileSync(settingsPath(fixture, 'claude'), 'utf8'));
       const stopCommands = claudeSettings.hooks.Stop.flatMap((group) => group.hooks.map((hook) => hook.command));

@@ -511,6 +511,7 @@ install_gemini_adapter() {
   mkdir -p "$adapter_root" "$command_md_dir" "$command_toml_dir"
   cp "$RUNTIME_ROOT/persona.md" "$adapter_root/persona.md"
   printf '%s\n' "$RUNTIME_ROOT" > "$adapter_root/runtime_root"
+  rsync -a --delete "$RUNTIME_ROOT/extension/" "$adapter_root/extension/"
   rsync -a "$COMMANDS_SOURCE_DIR/" "$command_md_dir/"
 
   for command_md in "$COMMANDS_SOURCE_DIR"/*.md; do
