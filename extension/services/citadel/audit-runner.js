@@ -49,7 +49,6 @@ export function buildCitadelAuditReport(options) {
         ...divergenceReconciliation.decisionsRequired,
     ];
     const findings = uniqueFindings([
-        ...acCoverage.findings.map((finding) => withFindingSource(finding, 'ac_coverage')),
         ...siblingAuth.findings.map((finding) => withFindingSource(finding, 'sibling_auth_preconditions')),
         ...frontendPropDrift.findings.map((finding) => withFindingSource(finding, 'frontend_prop_drift')),
         ...acShape.findings.map((finding) => withFindingSource(finding, 'ac_shape')),

@@ -24,7 +24,7 @@ function makeRepo() {
   git(repoRoot, ['init', '-q']);
   git(repoRoot, ['config', 'user.email', 'test@example.com']);
   git(repoRoot, ['config', 'user.name', 'Test User']);
-  writeFile(repoRoot, 'prd.md', '# PRD\n\n## Acceptance Criteria\n\n**AC-TEST-01**: Stable.\n');
+  writeFile(repoRoot, 'prd.md', '# PRD\n');
   writeFile(repoRoot, 'src/index.ts', 'export const before = true;\n');
   git(repoRoot, ['add', '.']);
   git(repoRoot, ['commit', '-qm', 'base']);
