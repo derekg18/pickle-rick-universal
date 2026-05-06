@@ -10,7 +10,6 @@ import { REQUIRED_PICKLE_COMMANDS } from '../services/host-command-registry.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const INSTALL_SH = path.join(REPO_ROOT, 'install.sh');
-const LEGACY_CLAUDE_RUNTIME_ROOT = '/Users/derekgreene/.gemini/extensions/pickle-rick';
 const CODEX_VERSION = resolveCodexVersion();
 const P0_P1_CONFORMANCE_MAP = [
   {
@@ -133,6 +132,10 @@ function runtimeRoot(fixture) {
   return path.join(fixture.dataRoot, 'runtime');
 }
 
+function legacyClaudeRuntimeRoot(fixture) {
+  return path.join(fixture.home, '.claude', 'pickle-rick');
+}
+
 function installedRuntimeSetup(fixture) {
   return path.join(runtimeRoot(fixture), 'extension', 'bin', 'setup.js');
 }
@@ -188,7 +191,7 @@ function assertRuntimeMarkers(fixture) {
   const expected = runtimeRoot(fixture);
   assert.equal(readFileSync(path.join(fixture.home, '.codex', 'pickle-rick', 'runtime_root'), 'utf8').trim(), expected);
   assert.equal(readFileSync(path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'runtime_root'), 'utf8').trim(), expected);
-  assert.equal(readFileSync(path.join(LEGACY_CLAUDE_RUNTIME_ROOT, 'runtime_root'), 'utf8').trim(), expected);
+  assert.equal(readFileSync(path.join(legacyClaudeRuntimeRoot(fixture), 'runtime_root'), 'utf8').trim(), expected);
 }
 
 function assertCodexState(state, fixture, sessionRoot, expectedCommandTemplate) {
@@ -268,7 +271,7 @@ describe('system extension cross-host smoke', () => {
       const launchState = readJson(path.join(sessionRoot, 'state.json'));
       assertCodexState(launchState, fixture, sessionRoot, launchState.command_template);
 
-      const claudeResume = runSetup(fixture, path.join(LEGACY_CLAUDE_RUNTIME_ROOT, 'extension', 'bin', 'setup.js'), [
+      const claudeResume = runSetup(fixture, path.join(legacyClaudeRuntimeRoot(fixture), 'extension', 'bin', 'setup.js'), [
         '--resume',
         sessionRoot,
       ]);

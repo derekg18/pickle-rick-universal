@@ -10,14 +10,26 @@ import { canonicalCommandNames } from '../services/host-command-registry.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const INSTALL_SH = path.join(REPO_ROOT, 'install.sh');
-const LEGACY_CLAUDE_RUNTIME_ROOT = '/Users/derekgreene/.gemini/extensions/pickle-rick';
-const LEGACY_RUNTIME_ROOT_MARKER = path.join(LEGACY_CLAUDE_RUNTIME_ROOT, 'runtime_root');
-const CLAUDE_STOP_HOOK = `sh -c 'exec node "$(cat ${LEGACY_RUNTIME_ROOT_MARKER})/extension/hooks/dispatch.js" stop-hook'`;
-const CLAUDE_COMMIT_HOOK = `sh -c 'exec node "$(cat ${LEGACY_RUNTIME_ROOT_MARKER})/extension/bin/log-commit.js"'`;
 const OLD_CLAUDE_STOP_HOOK = 'node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/hooks/dispatch.js stop-hook';
 const OLD_CLAUDE_COMMIT_HOOK = 'node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/log-commit.js';
 const COMMAND_NAMES = canonicalCommandNames();
 const COMMAND_COUNT = COMMAND_NAMES.length;
+
+function legacyClaudeRuntimeRoot(fixture) {
+  return path.join(fixture.home, '.claude', 'pickle-rick');
+}
+
+function legacyRuntimeRootMarker(fixture) {
+  return path.join(legacyClaudeRuntimeRoot(fixture), 'runtime_root');
+}
+
+function claudeStopHook(fixture) {
+  return `sh -c 'exec node "$(cat ${legacyRuntimeRootMarker(fixture)})/extension/hooks/dispatch.js" stop-hook'`;
+}
+
+function claudeCommitHook(fixture) {
+  return `sh -c 'exec node "$(cat ${legacyRuntimeRootMarker(fixture)})/extension/bin/log-commit.js"'`;
+}
 
 function makeFixture() {
   const dir = mkdtempSync(path.join(tmpdir(), 'pickle-universal-install-'));
@@ -84,6 +96,11 @@ function assertNoStaleRuntimeReference(content, fixture, runtimeRoot) {
   assert.equal(content.includes(fixture.dir) && !content.includes(runtimeRoot), false, 'adapter content must not point at fixture temp paths outside runtime_root');
 }
 
+function assertFixtureOwnedClaudeHook(content, fixture) {
+  assert.equal(content.includes('/Users/derekgreene/.gemini/extensions/pickle-rick'), false, 'Claude hook must not point at the old hardcoded Gemini runtime');
+  assert.equal(content.includes(legacyRuntimeRootMarker(fixture)), true, 'Claude hook must read the fixture-owned runtime marker');
+}
+
 function assertInstalledCommandSurfaces(fixture, runtimeRoot) {
   for (const command of COMMAND_NAMES) {
     assert.equal(existsSync(path.join(fixture.home, '.claude', 'commands', `${command}.md`)), true, `Claude must install /${command}`);
@@ -130,10 +147,10 @@ describe('universal install.sh host adapters', () => {
       assert.equal(manifest.hosts.gemini.command_count, COMMAND_COUNT);
 
       assert.equal(existsSync(path.join(fixture.xdg, 'pickle-rick', 'runtime', 'extension', 'bin', 'setup.js')), true);
-      assert.ok(manifest.hosts.claude.files_written.includes(LEGACY_CLAUDE_RUNTIME_ROOT));
-      assert.ok(manifest.hosts.claude.files_written.includes(LEGACY_RUNTIME_ROOT_MARKER));
-      assert.equal(runtimeMarker(LEGACY_RUNTIME_ROOT_MARKER), runtimeRoot);
-      assert.equal(manifest.hosts.claude.file_checksums[LEGACY_RUNTIME_ROOT_MARKER].length, 64);
+      assert.ok(manifest.hosts.claude.files_written.includes(legacyClaudeRuntimeRoot(fixture)));
+      assert.ok(manifest.hosts.claude.files_written.includes(legacyRuntimeRootMarker(fixture)));
+      assert.equal(runtimeMarker(legacyRuntimeRootMarker(fixture)), runtimeRoot);
+      assert.equal(manifest.hosts.claude.file_checksums[legacyRuntimeRootMarker(fixture)].length, 64);
       const codexRuntimeMarker = path.join(fixture.home, '.codex', 'pickle-rick', 'runtime_root');
       const geminiRuntimeMarker = path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'runtime_root');
       assert.equal(runtimeMarker(codexRuntimeMarker), runtimeRoot);
@@ -152,11 +169,11 @@ describe('universal install.sh host adapters', () => {
       const claudeSettings = JSON.parse(readFileSync(settingsPath(fixture, 'claude'), 'utf8'));
       const stopCommands = claudeSettings.hooks.Stop.flatMap((group) => group.hooks.map((hook) => hook.command));
       assert.ok(stopCommands.includes('third-party'));
-      assert.ok(stopCommands.includes(CLAUDE_STOP_HOOK));
+      assert.ok(stopCommands.includes(claudeStopHook(fixture)));
       assert.equal(stopCommands.includes(OLD_CLAUDE_STOP_HOOK), false);
-      assertNoStaleRuntimeReference(CLAUDE_STOP_HOOK, fixture, runtimeRoot);
+      assertFixtureOwnedClaudeHook(claudeStopHook(fixture), fixture);
       const postCommands = claudeSettings.hooks.PostToolUse.flatMap((group) => group.hooks.map((hook) => hook.command));
-      assert.ok(postCommands.includes(CLAUDE_COMMIT_HOOK));
+      assert.ok(postCommands.includes(claudeCommitHook(fixture)));
       assert.equal(postCommands.includes(OLD_CLAUDE_COMMIT_HOOK), false);
       assert.equal(readdirSync(path.join(fixture.home, '.claude', 'backups')).length, 1);
     } finally {
@@ -226,10 +243,10 @@ describe('universal install.sh host adapters', () => {
       });
       const claudeSettings = JSON.parse(readFileSync(settingsPath(fixture, 'claude'), 'utf8'));
       const stopCommands = claudeSettings.hooks.Stop.flatMap((group) => group.hooks.map((hook) => hook.command));
-      const pickleStops = stopCommands.filter((command) => command === CLAUDE_STOP_HOOK);
+      const pickleStops = stopCommands.filter((command) => command === claudeStopHook(fixture));
       assert.equal(pickleStops.length, 1);
       const postCommands = claudeSettings.hooks.PostToolUse.flatMap((group) => group.hooks.map((hook) => hook.command));
-      assert.equal(postCommands.filter((command) => command === CLAUDE_COMMIT_HOOK).length, 1);
+      assert.equal(postCommands.filter((command) => command === claudeCommitHook(fixture)).length, 1);
       assert.ok(readdirSync(path.join(fixture.home, '.claude', 'backups')).length >= 2);
       assert.equal(readManifest(fixture).hosts.claude.status, 'installed');
     } finally {

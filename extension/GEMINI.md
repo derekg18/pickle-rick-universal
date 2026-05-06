@@ -4,6 +4,7 @@ Compiled TS → JS lives in `extension/services/`, `extension/bin/`, `extension/
 
 ## Trap Doors
 
+- `install.sh` — INVARIANT: Claude legacy shim root derives from `$HOME/.claude/pickle-rick`, not Gemini or absolute user paths. BREAKS: fixture/user installs overwrite another host runtime. ENFORCE: extension/tests/universal-install.test.js, extension/tests/system-extension-smoke.test.js. PATTERN_SHAPE: `LEGACY_CLAUDE_RUNTIME_ROOT=.*\.gemini|/Users/.*/\.gemini/extensions/pickle-rick`.
 - `src/bin/council-publish.ts` — INVARIANT: `execFileSync('gh', …)` passes `timeout` from `ghTimeoutMs`. BREAKS: network hangs stall publish. ENFORCE: extension/tests/council-publish.test.js, extension/tests/council-publish-cli.test.js.
 - `src/services/scope-resolver.ts` — INVARIANT: walks timeout, diffs clamp, refresh promotes dead tmp without base. BREAKS: hangs or wrong scope. ENFORCE: extension/tests/scope-one-hop-hang-guard.test.js, extension/tests/scope-pipeline.test.js, extension/tests/scope-refresh.test.js.
 - `src/bin/init-microverse.ts` — INVARIANT: convergence mode/flags runtime-validated; scope reads promote dead tmp. BREAKS: typo fallback or stale scope. ENFORCE: extension/tests/init-microverse.test.js, extension/tests/scope-refresh.test.js.
