@@ -24,15 +24,16 @@ function legacyRuntimeRootMarker(fixture) {
 }
 
 function claudeStopHook(fixture) {
-  return `sh -c 'exec node "$(cat ${legacyRuntimeRootMarker(fixture)})/extension/hooks/dispatch.js" stop-hook'`;
+  return `sh -c 'exec node "$(cat "${legacyRuntimeRootMarker(fixture)}")/extension/hooks/dispatch.js" stop-hook'`;
 }
 
 function claudeCommitHook(fixture) {
-  return `sh -c 'exec node "$(cat ${legacyRuntimeRootMarker(fixture)})/extension/bin/log-commit.js"'`;
+  return `sh -c 'exec node "$(cat "${legacyRuntimeRootMarker(fixture)}")/extension/bin/log-commit.js"'`;
 }
 
-function makeFixture() {
-  const dir = mkdtempSync(path.join(tmpdir(), 'pickle-universal-install-'));
+function makeFixture(options = {}) {
+  const prefix = options.withSpaces ? 'pickle universal install ' : 'pickle-universal-install-';
+  const dir = mkdtempSync(path.join(tmpdir(), prefix));
   const home = path.join(dir, 'home');
   const xdg = path.join(dir, 'xdg');
   const bin = path.join(dir, 'bin');
@@ -176,6 +177,42 @@ describe('universal install.sh host adapters', () => {
       assert.ok(postCommands.includes(claudeCommitHook(fixture)));
       assert.equal(postCommands.includes(OLD_CLAUDE_COMMIT_HOOK), false);
       assert.equal(readdirSync(path.join(fixture.home, '.claude', 'backups')).length, 1);
+    } finally {
+      rmSync(fixture.dir, { recursive: true, force: true });
+    }
+  });
+
+  test('Claude hooks read runtime marker paths containing spaces', () => {
+    const fixture = makeFixture({ withSpaces: true });
+    try {
+      writeJson(settingsPath(fixture, 'claude'), {});
+
+      const result = runInstall(fixture);
+      assert.equal(result.status, 0, result.stderr);
+
+      const claudeSettings = JSON.parse(readFileSync(settingsPath(fixture, 'claude'), 'utf8'));
+      const stopCommand = claudeSettings.hooks.Stop
+        .flatMap((group) => group.hooks.map((hook) => hook.command))
+        .find((command) => command.includes('dispatch.js'));
+      assert.ok(stopCommand, 'installed Claude Stop hook command missing');
+
+      const hookResult = spawnSync('sh', ['-c', stopCommand], {
+        cwd: REPO_ROOT,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          HOME: fixture.home,
+          XDG_DATA_HOME: fixture.xdg,
+          PATH: `${fixture.bin}${path.delimiter}${process.env.PATH}`,
+          PICKLE_DISPATCH_TIMEOUT_MS: '1000',
+          FORCE_COLOR: '0',
+        },
+        input: '',
+      });
+
+      assert.equal(hookResult.status, 0, hookResult.stderr);
+      assert.doesNotMatch(hookResult.stderr, /cat: .*No such file or directory/);
+      assert.match(hookResult.stdout, /"decision":"approve"/);
     } finally {
       rmSync(fixture.dir, { recursive: true, force: true });
     }

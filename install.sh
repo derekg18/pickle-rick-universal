@@ -12,8 +12,8 @@ COMMANDS_SOURCE_DIR="$SCRIPT_DIR/.claude/commands"
 AGENTS_SOURCE_DIR="$SCRIPT_DIR/.claude/agents"
 SOURCE_SETTINGS="$SCRIPT_DIR/.claude/settings.json"
 LEGACY_RUNTIME_ROOT_MARKER="$LEGACY_CLAUDE_RUNTIME_ROOT/runtime_root"
-CLAUDE_STOP_HOOK_CMD="sh -c 'exec node \"\$(cat $LEGACY_RUNTIME_ROOT_MARKER)/extension/hooks/dispatch.js\" stop-hook'"
-CLAUDE_COMMIT_HOOK_CMD="sh -c 'exec node \"\$(cat $LEGACY_RUNTIME_ROOT_MARKER)/extension/bin/log-commit.js\"'"
+CLAUDE_STOP_HOOK_CMD="sh -c 'exec node \"\$(cat \"$LEGACY_RUNTIME_ROOT_MARKER\")/extension/hooks/dispatch.js\" stop-hook'"
+CLAUDE_COMMIT_HOOK_CMD="sh -c 'exec node \"\$(cat \"$LEGACY_RUNTIME_ROOT_MARKER\")/extension/bin/log-commit.js\"'"
 OLD_CLAUDE_STOP_HOOK_CMD='node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/hooks/dispatch.js stop-hook'
 OLD_CLAUDE_COMMIT_HOOK_CMD='node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/log-commit.js'
 
