@@ -111,18 +111,64 @@ function toRoute(file, controller, methodDecorators, httpDecorator, methodName, 
 }
 function methodBody(lines, startLine) {
     const body = [];
+    const scanState = { quote: null, blockComment: false, escaped: false };
     let depth = 0;
     let opened = false;
     for (let index = startLine - 1; index < lines.length; index += 1) {
         const line = lines[index];
         body.push(line);
-        depth += countChar(line, '{') - countChar(line, '}');
-        if (line.includes('{'))
+        const braces = countStructuralBraces(line, scanState);
+        depth += braces.open - braces.close;
+        if (braces.open > 0)
             opened = true;
         if (opened && depth <= 0)
             break;
     }
     return body;
+}
+function countStructuralBraces(line, state) {
+    let open = 0;
+    let close = 0;
+    for (let index = 0; index < line.length; index += 1) {
+        const char = line[index];
+        const next = line[index + 1];
+        if (state.blockComment) {
+            if (char === '*' && next === '/') {
+                state.blockComment = false;
+                index += 1;
+            }
+            continue;
+        }
+        if (state.quote) {
+            if (state.escaped) {
+                state.escaped = false;
+            }
+            else if (char === '\\') {
+                state.escaped = true;
+            }
+            else if (char === state.quote) {
+                state.quote = null;
+            }
+            continue;
+        }
+        if (char === '/' && next === '/')
+            break;
+        if (char === '/' && next === '*') {
+            state.blockComment = true;
+            index += 1;
+            continue;
+        }
+        if (char === '"' || char === "'" || char === '`') {
+            state.quote = char;
+            continue;
+        }
+        if (char === '{')
+            open += 1;
+        if (char === '}')
+            close += 1;
+    }
+    state.escaped = false;
+    return { open, close };
 }
 function guardPrefix(decorators, body) {
     const tokens = decorators.flatMap(decoratorGuardTokens);
@@ -287,9 +333,6 @@ function escapeTableCell(value) {
 }
 function uniqueSortedStrings(values) {
     return [...new Set(values)].sort((a, b) => a.localeCompare(b));
-}
-function countChar(value, char) {
-    return value.split(char).length - 1;
 }
 function slug(value) {
     return value

@@ -209,16 +209,69 @@ function toRoute(
 
 function methodBody(lines: string[], startLine: number): string[] {
   const body: string[] = [];
+  const scanState: BraceScanState = { quote: null, blockComment: false, escaped: false };
   let depth = 0;
   let opened = false;
   for (let index = startLine - 1; index < lines.length; index += 1) {
     const line = lines[index];
     body.push(line);
-    depth += countChar(line, '{') - countChar(line, '}');
-    if (line.includes('{')) opened = true;
+    const braces = countStructuralBraces(line, scanState);
+    depth += braces.open - braces.close;
+    if (braces.open > 0) opened = true;
     if (opened && depth <= 0) break;
   }
   return body;
+}
+
+interface BraceScanState {
+  quote: '"' | "'" | '`' | null;
+  blockComment: boolean;
+  escaped: boolean;
+}
+
+function countStructuralBraces(line: string, state: BraceScanState): { open: number; close: number } {
+  let open = 0;
+  let close = 0;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+    const next = line[index + 1];
+
+    if (state.blockComment) {
+      if (char === '*' && next === '/') {
+        state.blockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+
+    if (state.quote) {
+      if (state.escaped) {
+        state.escaped = false;
+      } else if (char === '\\') {
+        state.escaped = true;
+      } else if (char === state.quote) {
+        state.quote = null;
+      }
+      continue;
+    }
+
+    if (char === '/' && next === '/') break;
+    if (char === '/' && next === '*') {
+      state.blockComment = true;
+      index += 1;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === '`') {
+      state.quote = char;
+      continue;
+    }
+    if (char === '{') open += 1;
+    if (char === '}') close += 1;
+  }
+
+  state.escaped = false;
+  return { open, close };
 }
 
 function guardPrefix(decorators: DecoratorEvidence[], body: string[]): string[] {
@@ -398,10 +451,6 @@ function escapeTableCell(value: string): string {
 
 function uniqueSortedStrings(values: string[]): string[] {
   return [...new Set(values)].sort((a, b) => a.localeCompare(b));
-}
-
-function countChar(value: string, char: string): number {
-  return value.split(char).length - 1;
 }
 
 function slug(value: string): string {

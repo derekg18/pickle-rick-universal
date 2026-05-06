@@ -98,6 +98,46 @@ describe('auditSiblingAuthPreconditions', () => {
     }
   });
 
+  test('does not stop method body scanning at braces inside string literals', () => {
+    const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'citadel-sibling-braces-'));
+    try {
+      writeFile(
+        repoRoot,
+        'src/runs.controller.ts',
+        [
+          '@Controller("runs/:id")',
+          'export class RunsController {',
+          '  @Roles("admin")',
+          '  @Get("comparison")',
+          '  getComparison() {',
+          '    const message = "literal } brace before guards";',
+          '    requireFeature("compare");',
+          '    assertOwner();',
+          '    return message;',
+          '  }',
+          '',
+          '  @Roles("admin")',
+          '  @Get("summary")',
+          '  getSummary() {',
+          '    return true;',
+          '  }',
+          '}',
+          '',
+        ].join('\n'),
+      );
+
+      const report = auditSiblingAuthPreconditions(diffSummary(repoRoot, [changedFile('src/runs.controller.ts')]));
+
+      assert.equal(report.guardParityFindings.length, 1);
+      assert.deepEqual(report.guardParityFindings[0].missingGuards, [
+        'flag-check',
+        'ownership-lookup',
+      ]);
+    } finally {
+      fs.rmSync(repoRoot, { recursive: true, force: true });
+    }
+  });
+
   test('reports destructive missing roles and destructive-role drift', () => {
     const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'citadel-destructive-role-'));
     try {
