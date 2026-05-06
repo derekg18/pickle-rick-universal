@@ -6,6 +6,67 @@ import { StateManager } from '../services/state-manager.js';
 import { LockError } from '../types/index.js';
 import { readRecoverableJsonObject } from '../services/recoverable-json.js';
 const sm = new StateManager();
+function deactivateSessionState(statePath) {
+    try {
+        sm.update(statePath, s => { s.active = false; });
+        return true;
+    }
+    catch {
+        console.log('State file is unreadable.');
+        return false;
+    }
+}
+function removeSessionMapEntry(sessionsMapPath, cwd) {
+    let freshMap = {};
+    try {
+        freshMap = (readRecoverableJsonObject(sessionsMapPath) || {});
+    }
+    catch { /* ignore */ }
+    delete freshMap[cwd];
+    const tmpMap = sessionsMapPath + `.tmp.${process.pid}`;
+    try {
+        fs.writeFileSync(tmpMap, JSON.stringify(freshMap, null, 2));
+        fs.renameSync(tmpMap, sessionsMapPath);
+    }
+    catch (writeErr) {
+        try {
+            fs.unlinkSync(tmpMap);
+        }
+        catch { /* ignore cleanup failure */ }
+        throw writeErr;
+    }
+}
+function cancelWithSessionMapLock(sessionsMapPath, statePath, cwd) {
+    let cancelled = false;
+    withRetryLock(sessionsMapPath + '.lock', () => {
+        cancelled = deactivateSessionState(statePath);
+        if (!cancelled)
+            return;
+        removeSessionMapEntry(sessionsMapPath, cwd);
+    });
+    return cancelled;
+}
+function cancelWithoutSessionMapConsistency(statePath, err) {
+    console.error(`[pickle] WARNING: session map not updated — ${safeErrorMessage(err)}`);
+    try {
+        sm.update(statePath, s => { s.active = false; });
+        return true;
+    }
+    catch {
+        return false;
+    }
+}
+function printCancelOutcome(cancelled, sessionPath) {
+    if (cancelled) {
+        printMinimalPanel('Loop Cancelled', {
+            Session: path.basename(sessionPath),
+            Status: 'Inactive',
+        }, 'RED', '🛑');
+    }
+    else {
+        console.log('Failed to cancel session — state file unreadable.');
+    }
+}
 export function cancelSession(cwd) {
     const SESSIONS_MAP = path.join(getDataRoot(), 'current_sessions.json');
     const sessionPath = findSessionPathForCwd(cwd);
@@ -28,64 +89,19 @@ export function cancelSession(cwd) {
         console.log('State file is unreadable.');
         return;
     }
-    // Deactivate state AND remove map entry inside one lock to prevent inconsistent state
-    // if the process crashes between the two operations.
     let cancelled = false;
     try {
-        withRetryLock(SESSIONS_MAP + '.lock', () => {
-            // Deactivate state.json
-            try {
-                sm.update(statePath, s => { s.active = false; });
-            }
-            catch {
-                console.log('State file is unreadable.');
-                return;
-            }
-            cancelled = true;
-            // Remove stale entry from the sessions map
-            let freshMap = {};
-            try {
-                freshMap = (readRecoverableJsonObject(SESSIONS_MAP) || {});
-            }
-            catch { /* ignore */ }
-            delete freshMap[cwd];
-            const tmpMap = SESSIONS_MAP + `.tmp.${process.pid}`;
-            try {
-                fs.writeFileSync(tmpMap, JSON.stringify(freshMap, null, 2));
-                fs.renameSync(tmpMap, SESSIONS_MAP);
-            }
-            catch (writeErr) {
-                try {
-                    fs.unlinkSync(tmpMap);
-                }
-                catch { /* ignore cleanup failure */ }
-                throw writeErr;
-            }
-        });
+        cancelled = cancelWithSessionMapLock(SESSIONS_MAP, statePath, cwd);
     }
     catch (err) {
         if (err instanceof LockError) {
-            // Lock exhausted — deactivate state without map consistency guarantee
-            console.error(`[pickle] WARNING: session map not updated — ${safeErrorMessage(err)}`);
-            try {
-                sm.update(statePath, s => { s.active = false; });
-                cancelled = true;
-            }
-            catch { /* session already deactivated or unreadable */ }
+            cancelled = cancelWithoutSessionMapConsistency(statePath, err);
         }
         else {
             throw err;
         }
     }
-    if (cancelled) {
-        printMinimalPanel('Loop Cancelled', {
-            Session: path.basename(sessionPath),
-            Status: 'Inactive',
-        }, 'RED', '🛑');
-    }
-    else {
-        console.log('Failed to cancel session — state file unreadable.');
-    }
+    printCancelOutcome(cancelled, sessionPath);
 }
 if (process.argv[1] && path.basename(process.argv[1]) === 'cancel.js') {
     cancelSession(process.cwd());
