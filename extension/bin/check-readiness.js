@@ -343,7 +343,7 @@ function readState(sessionDir) {
     if (!fs.existsSync(statePath))
         return {};
     try {
-        return JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+        return new StateManager().read(statePath);
     }
     catch {
         return {};

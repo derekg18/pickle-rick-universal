@@ -129,6 +129,41 @@ test('check-readiness: fourth failed cycle writes escalation report', () => {
     }
 });
 
+test('check-readiness: recovers orphan tmp state before readiness escalation decision', () => {
+    const sessionDir = tmpDir();
+    try {
+        writeTicket(sessionDir, 'tmp999', ['The workflow should feel intuitive.']);
+        const statePath = path.join(sessionDir, 'state.json');
+        fs.writeFileSync(statePath, JSON.stringify({
+            active: true,
+            iteration: 1,
+            readiness: {
+                cycle_history: [],
+            },
+        }));
+        const tmpPath = `${statePath}.tmp.99999999`;
+        fs.writeFileSync(tmpPath, JSON.stringify({
+            active: true,
+            iteration: 2,
+            readiness: {
+                cycle_history: [{}, {}, {}],
+            },
+        }));
+        const newer = new Date(Date.now() + 1000);
+        fs.utimesSync(tmpPath, newer, newer);
+
+        const result = runReadiness(sessionDir, process.cwd());
+        assert.equal(result.status, 2);
+        assert.ok(readinessFiles(sessionDir).some((file) => file.startsWith('readiness_escalation_')));
+        const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+        assert.equal(state.iteration, 2);
+        assert.equal(state.readiness.cycle_history.length, 3);
+        assert.equal(fs.existsSync(tmpPath), false);
+    } finally {
+        fs.rmSync(sessionDir, { recursive: true, force: true });
+    }
+});
+
 test('check-readiness: --history prints readiness cycle table', () => {
     const sessionDir = tmpDir();
     try {

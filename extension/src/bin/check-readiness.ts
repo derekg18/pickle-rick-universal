@@ -382,7 +382,7 @@ function readState(sessionDir: string): ReadinessStateShape {
   const statePath = path.join(sessionDir, 'state.json');
   if (!fs.existsSync(statePath)) return {};
   try {
-    return JSON.parse(fs.readFileSync(statePath, 'utf-8')) as ReadinessStateShape;
+    return new StateManager().read(statePath) as ReadinessStateShape;
   } catch {
     return {};
   }
