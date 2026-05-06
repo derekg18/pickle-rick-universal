@@ -1600,20 +1600,7 @@ async function runMuxRunnerMain() {
     log(`ensureMonitorWindow: threw (ignored): ${safeErrorMessage(err)}`);
   }
 
-  // Graceful shutdown: deactivate session on SIGTERM/SIGINT so it doesn't
-  // remain orphaned with active: true when the tmux pane is closed.
-  const handleShutdownSignal = (signal: string) => {
-    log(`Received ${signal} — deactivating session`);
-    safeDeactivate(statePath);
-    if (currentChildProc && !currentChildProc.killed) {
-      currentChildProc.kill('SIGTERM');
-    }
-    logActivity({ event: 'session_end', source: 'pickle', session: path.basename(sessionDir), mode: 'tmux', backend: resolveBackendFromStateFile(statePath) });
-    process.exit(0);
-  };
-  process.on('SIGTERM', () => handleShutdownSignal('SIGTERM'));
-  process.on('SIGINT', () => handleShutdownSignal('SIGINT'));
-  process.on('SIGHUP', () => handleShutdownSignal('SIGHUP'));
+  setupSignalHandlers(statePath, log);
 
   // Take ownership: setup.js writes active: false in tmux mode so the main
   // Claude window's stop hook is released immediately. We set active: true here
@@ -1625,39 +1612,11 @@ async function runMuxRunnerMain() {
     const msg = safeErrorMessage(err);
     throw new Error(`Cannot read initial state.json: ${msg}`);
   }
-  // Startup validation — mux-runner only. microverse-runner owns its own sentinels
-  // (worker_timeout_seconds=0 disables per-iteration timeout there; max_iterations=0
-  // means unlimited iterations there). These rules must NOT be shared.
-  {
-    // Use raw object to detect null (JSON-serialized NaN) vs absent vs zero
-    const rawObj = ownerState as unknown as Record<string, unknown>;
-    const issues: string[] = [];
-
-    const maxIterField = rawObj.max_iterations;
-    const rawMaxIter = Number(maxIterField);
-    if (maxIterField == null || !Number.isFinite(rawMaxIter) || rawMaxIter < 0) {
-      issues.push(`max_iterations must be >= 0 (got ${maxIterField})`);
-    }
-
-    const rawTimeout = Number(rawObj.worker_timeout_seconds);
-    if (!Number.isFinite(rawTimeout) || rawTimeout <= 0) {
-      issues.push(`worker_timeout_seconds must be > 0 (got ${rawObj.worker_timeout_seconds})`);
-    } else if (rawTimeout > 86400) {
-      issues.push(`worker_timeout_seconds > 86400s implausible (got ${rawTimeout}); edit state.json`);
-    }
-
-    // iteration=0 is valid (fresh session); null/undefined are not — check explicitly
-    // before numeric coercion since Number(null)=0 would otherwise pass.
-    const iterField = rawObj.iteration;
-    const rawIter = Number(iterField);
-    if (iterField == null || !Number.isFinite(rawIter) || rawIter < 0) {
-      issues.push(`iteration must be >= 0 (got ${iterField})`);
-    }
-
-    if (issues.length > 0) {
-      console.error(`Invalid state at ${statePath}:\n  - ${issues.join('\n  - ')}`);
-      process.exit(2);
-    }
+  try {
+    validateStartupState(ownerState, statePath);
+  } catch (err) {
+    console.error(safeErrorMessage(err));
+    process.exit(2);
   }
 
   if (
