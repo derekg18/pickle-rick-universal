@@ -18,11 +18,47 @@ import type { GateResult, GateFailure, Backend, ActivityEventType } from '../typ
 const VALID_SKILLS = new Set(['szechuan', 'anatomy-park']);
 const sm = new StateManager();
 
+type FinalizeSkill = 'szechuan' | 'anatomy-park';
+
 interface FinalizeGateSettings {
   szechuan_max_remediation_cycles: number;
   anatomy_park_max_remediation_cycles: number;
   remediator_timeout_s: number;
 }
+
+interface FinalizeGateArgs {
+  sessionRoot: string;
+  skill: FinalizeSkill;
+}
+
+interface FinalizeGateRuntime extends FinalizeGateArgs {
+  allowedPaths: string[] | undefined;
+  workingDir: string;
+  backend: string;
+  cap: number;
+  remediatorTimeoutMs: number;
+  gateDir: string;
+  runGateFn: (opts: RunGateOpts) => Promise<GateResult>;
+  spawnBriefPrep: typeof spawnGateRemediatorMain;
+  spawnRemediator: (cmd: string, args: string[], opts: { cwd: string; timeout: number; env: NodeJS.ProcessEnv }) => void;
+  writeFile: (p: string, data: string) => void;
+  doLogActivity: typeof logActivity;
+  iso: () => string;
+  out: (msg: string) => void;
+  err: (msg: string) => void;
+}
+
+interface FinalizeGateState {
+  allowedPaths: string[] | undefined;
+  workingDir: string;
+  backend: string;
+}
+
+type FinalizeGateBootstrap = { runtime: FinalizeGateRuntime } | { exitCode: number };
+type StrictGateCycleResult = { exitCode: number; lastResult?: GateResult };
+type SingleCycleResult =
+  | { action: 'continue'; lastResult: GateResult }
+  | { action: 'exit'; exitCode: number; lastResult?: GateResult };
 
 function positiveIntegerOrDefault(value: unknown, fallback: number): number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : fallback;
@@ -130,18 +166,8 @@ export async function finalizeGateMain(opts: FinalizeGateOpts): Promise<number> 
   const doLogActivity = opts.logActivityFn ?? logActivity;
   const iso = opts.isoFn ?? isoCompactStamp;
 
-  const [sessionRoot, skill] = opts.argv;
-
-  if (!sessionRoot || !skill) {
-    err('Usage: finalize-gate <session-root> <skill>');
-    err('  skill: szechuan | anatomy-park');
-    return 1;
-  }
-
-  if (!VALID_SKILLS.has(skill)) {
-    err(`Invalid skill "${skill}". Must be: ${[...VALID_SKILLS].join(' | ')}`);
-    return 1;
-  }
+  const args = parseFinalizeGateArgs(opts.argv, err);
+  if (!args) return 1;
 
   if (env.PICKLE_GATE_DISABLED === '1') {
     doLogActivity({ event: 'gate_skipped', source: 'pickle', gate_payload: { reason: 'kill_switch' } });
@@ -149,28 +175,59 @@ export async function finalizeGateMain(opts: FinalizeGateOpts): Promise<number> 
     return 0;
   }
 
-  const mvState = (opts.readMicroverseStateFn ?? readMicroverseState)(sessionRoot);
-  if (!mvState) {
-    err(`[finalize-gate] microverse.json not found in ${sessionRoot}`);
-    return 1;
-  }
-  const allowedPaths = mvState.allowed_paths;
+  const bootstrap = buildFinalizeGateRuntime(opts, args, doLogActivity, iso, out, err);
+  if ('exitCode' in bootstrap) return bootstrap.exitCode;
 
-  const stateInfo = (opts.readStateForWorkingDirFn ?? defaultReadStateForWorkingDir)(sessionRoot);
-  if (!stateInfo) {
-    err(`[finalize-gate] state.json not found or unreadable in ${sessionRoot}`);
-    return 1;
+  const bundleEndGate = runAcPhaseGate({
+    sessionDir: args.sessionRoot,
+    evaluationPhase: 'bundle-end',
+    cwd: bootstrap.runtime.workingDir,
+    stdout: out,
+    stderr: err,
+  });
+  if (bundleEndGate.status !== 'pass') return 2;
+
+  const cycleResult = await runStrictGateCycles(bootstrap.runtime);
+  if (cycleResult.exitCode !== 2) return cycleResult.exitCode;
+
+  writeEscalation(bootstrap.runtime, cycleResult.lastResult);
+  return 2;
+}
+
+function parseFinalizeGateArgs(argv: string[], err: (msg: string) => void): FinalizeGateArgs | null {
+  const [sessionRoot, skill] = argv;
+
+  if (!sessionRoot || !skill) {
+    err('Usage: finalize-gate <session-root> <skill>');
+    err('  skill: szechuan | anatomy-park');
+    return null;
   }
-  const { workingDir, backend } = stateInfo;
+
+  if (!VALID_SKILLS.has(skill)) {
+    err(`Invalid skill "${skill}". Must be: ${[...VALID_SKILLS].join(' | ')}`);
+    return null;
+  }
+
+  return { sessionRoot, skill: skill as FinalizeSkill };
+}
+
+function buildFinalizeGateRuntime(
+  opts: FinalizeGateOpts,
+  args: FinalizeGateArgs,
+  doLogActivity: typeof logActivity,
+  iso: () => string,
+  out: (msg: string) => void,
+  err: (msg: string) => void
+): FinalizeGateBootstrap {
+  const { sessionRoot, skill } = args;
+  const state = readFinalizeGateState(opts, sessionRoot, err);
+  if ('exitCode' in state) return state;
 
   const settings = normalizeFinalizeGateSettings(opts.loadSettingsFn
     ? opts.loadSettingsFn()
-    : loadFinalizeGateSettings(getExtensionRoot()));
+    : loadFinalizeGateSettings(finalizeGateSettingsRoot()));
 
-  const skillKey = skill.replace(/-/g, '_') as 'szechuan' | 'anatomy_park';
-  const cap = skillKey === 'szechuan'
-    ? settings.szechuan_max_remediation_cycles
-    : settings.anatomy_park_max_remediation_cycles;
+  const cap = remediationCycleCap(skill, settings);
   const remediatorTimeoutMs = settings.remediator_timeout_s * 1000;
 
   const gateDir = path.join(sessionRoot, 'gate');
@@ -183,132 +240,207 @@ export async function finalizeGateMain(opts: FinalizeGateOpts): Promise<number> 
   const spawnBriefPrep = opts.spawnGateRemediatorMainFn ?? spawnGateRemediatorMain;
   const spawnRemediator = opts.spawnRemediatorFn ?? defaultSpawnRemediator;
 
-  const bundleEndGate = runAcPhaseGate({
-    sessionDir: sessionRoot,
-    evaluationPhase: 'bundle-end',
-    cwd: workingDir,
-    stdout: out,
-    stderr: err,
-  });
-  if (bundleEndGate.status !== 'pass') return 2;
+  return {
+    runtime: {
+      sessionRoot,
+      skill,
+      allowedPaths: state.allowedPaths,
+      workingDir: state.workingDir,
+      backend: state.backend,
+      cap,
+      remediatorTimeoutMs,
+      gateDir,
+      runGateFn,
+      spawnBriefPrep,
+      spawnRemediator,
+      writeFile,
+      doLogActivity,
+      iso,
+      out,
+      err,
+    },
+  };
+}
 
-  let lastResult: GateResult | undefined;
+function remediationCycleCap(skill: FinalizeSkill, settings: FinalizeGateSettings): number {
+  return skill === 'szechuan'
+    ? settings.szechuan_max_remediation_cycles
+    : settings.anatomy_park_max_remediation_cycles;
+}
 
-  for (let cycle = 0; cycle < cap; cycle++) {
-    out(`[finalize-gate] cycle ${cycle + 1}/${cap} — running strict gate`);
+function finalizeGateSettingsRoot(): string {
+  return process.env.EXTENSION_DIR || getExtensionRoot();
+}
 
-    let result: GateResult;
-    try {
-      result = await runGateFn({
-        workingDir,
-        mode: 'strict',
-        scope: 'full',
-        checks: ['typecheck', 'lint', 'tests'],
-        allowedPaths,
-        onEvent: (event, data) => doLogActivity({ event: event as ActivityEventType, source: 'pickle', gate_payload: data }),
-      });
-    } catch (e) {
-      err(`[finalize-gate] gate threw on cycle ${cycle + 1}: ${safeErrorMessage(e)}`);
-      return 1;
-    }
-
-    lastResult = result;
-
-    if (result.status === 'green' || result.status === 'green-with-known-flake-warnings') {
-      out(`[finalize-gate] gate green on cycle ${cycle + 1} — exit 0`);
-      return 0;
-    }
-
-    const { inScope, outOfScope } = splitByScope(result.failures, allowedPaths, workingDir);
-
-    if (outOfScope.length > 0) {
-      const oosPath = path.join(gateDir, `out_of_scope_failures_${iso()}.md`);
-      const oosLines = outOfScope.map(
-        f => `- \`${f.file}\` [${f.check}] ${f.ruleOrCode}: ${f.message.slice(0, 200)}`
-      );
-      writeFile(
-        oosPath,
-        `# Out-of-Scope Gate Failures\n\nCycle: ${cycle + 1}\nSkill: ${skill}\nTimestamp: ${new Date().toISOString()}\n\n${oosLines.join('\n')}\n`
-      );
-      doLogActivity({
-        event: 'gate_out_of_scope_failures_present',
-        source: 'pickle',
-        gate_payload: { count: outOfScope.length, cycle: cycle + 1 },
-      });
-      out(`[finalize-gate] ${outOfScope.length} out-of-scope failure(s) — written to ${oosPath}`);
-    }
-
-    if (inScope.length === 0) {
-      out('[finalize-gate] all failures are out-of-scope — exit 0 (closed within scope)');
-      return 0;
-    }
-
-    const gateResultPath = path.join(gateDir, `gate_result_cycle_${iso()}.json`);
-    const inScopeResult: GateResult = { ...result, failures: inScope };
-    writeStateFile(gateResultPath, inScopeResult);
-
-    const briefLines: string[] = [];
-    let briefCode: number;
-    try {
-      briefCode = await spawnBriefPrep({
-        argv: ['--gate-result', gateResultPath, '--session-root', sessionRoot, '--reason', 'strict'],
-        stdout: (msg: string) => briefLines.push(msg),
-        stderr: (msg: string) => err(`[gate-remediator] ${msg}`),
-      });
-    } catch (e) {
-      err(`[finalize-gate] brief-prep threw on cycle ${cycle + 1}: ${safeErrorMessage(e)}`);
-      continue;
-    }
-
-    if (briefCode !== 0) {
-      err(`[finalize-gate] brief-prep exited ${briefCode} on cycle ${cycle + 1} — skipping remediator`);
-      continue;
-    }
-
-    const briefPathLine = briefLines.find(l => l.startsWith('BRIEF_PATH='));
-    if (!briefPathLine) {
-      err(`[finalize-gate] no BRIEF_PATH from brief-prep on cycle ${cycle + 1}`);
-      continue;
-    }
-    const briefPath = briefPathLine.slice('BRIEF_PATH='.length);
-
-    let briefContent: string;
-    try {
-      // eslint-disable-next-line pickle/no-sync-in-async -- intentional blocking call
-      briefContent = fs.readFileSync(briefPath, 'utf-8');
-    } catch (e) {
-      err(`[finalize-gate] cannot read brief at ${briefPath}: ${safeErrorMessage(e)}`);
-      continue;
-    }
-
-    const invocation = buildWorkerInvocation(backend as Backend, {
-      prompt: briefContent,
-      addDirs: [workingDir],
-    });
-
-    out(`[finalize-gate] spawning remediator (cycle ${cycle + 1})`);
-    try {
-      spawnRemediator(invocation.cmd, invocation.args, {
-        cwd: workingDir,
-        timeout: remediatorTimeoutMs,
-        env: { ...process.env, ...backendEnvOverrides(invocation.backend) },
-      });
-    } catch (e) {
-      err(`[finalize-gate] remediator exited non-zero or timed out: ${safeErrorMessage(e)}`);
-    }
+function readFinalizeGateState(
+  opts: FinalizeGateOpts,
+  sessionRoot: string,
+  err: (msg: string) => void
+): FinalizeGateState | { exitCode: number } {
+  const mvState = (opts.readMicroverseStateFn ?? readMicroverseState)(sessionRoot);
+  if (!mvState) {
+    err(`[finalize-gate] microverse.json not found in ${sessionRoot}`);
+    return { exitCode: 1 };
   }
 
-  const escalationPath = path.join(gateDir, `escalation_${iso()}.md`);
+  const stateInfo = (opts.readStateForWorkingDirFn ?? defaultReadStateForWorkingDir)(sessionRoot);
+  if (!stateInfo) {
+    err(`[finalize-gate] state.json not found or unreadable in ${sessionRoot}`);
+    return { exitCode: 1 };
+  }
+
+  return {
+    allowedPaths: mvState.allowed_paths,
+    workingDir: stateInfo.workingDir,
+    backend: stateInfo.backend,
+  };
+}
+
+async function runStrictGateCycles(runtime: FinalizeGateRuntime): Promise<StrictGateCycleResult> {
+  let lastResult: GateResult | undefined;
+
+  for (let cycle = 0; cycle < runtime.cap; cycle++) {
+    const cycleResult = await runStrictGateCycle(runtime, cycle);
+    lastResult = cycleResult.lastResult ?? lastResult;
+    if (cycleResult.action === 'exit') return { exitCode: cycleResult.exitCode, lastResult };
+  }
+
+  return { exitCode: 2, lastResult };
+}
+
+async function runStrictGateCycle(runtime: FinalizeGateRuntime, cycle: number): Promise<SingleCycleResult> {
+  runtime.out(`[finalize-gate] cycle ${cycle + 1}/${runtime.cap} — running strict gate`);
+
+  const gateResult = await runStrictGateCheck(runtime, cycle);
+  if (!gateResult) return { action: 'exit', exitCode: 1 };
+
+  if (gateResult.status === 'green' || gateResult.status === 'green-with-known-flake-warnings') {
+    runtime.out(`[finalize-gate] gate green on cycle ${cycle + 1} — exit 0`);
+    return { action: 'exit', exitCode: 0, lastResult: gateResult };
+  }
+
+  const { inScope, outOfScope } = splitByScope(gateResult.failures, runtime.allowedPaths, runtime.workingDir);
+  writeOutOfScopeFailures(runtime, outOfScope, cycle);
+
+  if (inScope.length === 0) {
+    runtime.out('[finalize-gate] all failures are out-of-scope — exit 0 (closed within scope)');
+    return { action: 'exit', exitCode: 0, lastResult: gateResult };
+  }
+
+  const gateResultPath = path.join(runtime.gateDir, `gate_result_cycle_${runtime.iso()}.json`);
+  writeStateFile(gateResultPath, { ...gateResult, failures: inScope });
+
+  const briefContent = await readRemediatorBrief(runtime, gateResultPath, cycle);
+  if (briefContent) spawnRemediatorForBrief(runtime, briefContent, cycle);
+
+  return { action: 'continue', lastResult: gateResult };
+}
+
+async function runStrictGateCheck(runtime: FinalizeGateRuntime, cycle: number): Promise<GateResult | null> {
+  try {
+    return await runtime.runGateFn({
+      workingDir: runtime.workingDir,
+      mode: 'strict',
+      scope: 'full',
+      checks: ['typecheck', 'lint', 'tests'],
+      allowedPaths: runtime.allowedPaths,
+      onEvent: (event, data) => runtime.doLogActivity({ event: event as ActivityEventType, source: 'pickle', gate_payload: data }),
+    });
+  } catch (e) {
+    runtime.err(`[finalize-gate] gate threw on cycle ${cycle + 1}: ${safeErrorMessage(e)}`);
+    return null;
+  }
+}
+
+function writeOutOfScopeFailures(runtime: FinalizeGateRuntime, outOfScope: GateFailure[], cycle: number): void {
+  if (outOfScope.length === 0) return;
+
+  const oosPath = path.join(runtime.gateDir, `out_of_scope_failures_${runtime.iso()}.md`);
+  const oosLines = outOfScope.map(
+    f => `- \`${f.file}\` [${f.check}] ${f.ruleOrCode}: ${f.message.slice(0, 200)}`
+  );
+  runtime.writeFile(
+    oosPath,
+    `# Out-of-Scope Gate Failures\n\nCycle: ${cycle + 1}\nSkill: ${runtime.skill}\nTimestamp: ${new Date().toISOString()}\n\n${oosLines.join('\n')}\n`
+  );
+  runtime.doLogActivity({
+    event: 'gate_out_of_scope_failures_present',
+    source: 'pickle',
+    gate_payload: { count: outOfScope.length, cycle: cycle + 1 },
+  });
+  runtime.out(`[finalize-gate] ${outOfScope.length} out-of-scope failure(s) — written to ${oosPath}`);
+}
+
+async function readRemediatorBrief(runtime: FinalizeGateRuntime, gateResultPath: string, cycle: number): Promise<string | null> {
+  const briefPath = await prepareRemediatorBrief(runtime, gateResultPath, cycle);
+  if (!briefPath) return null;
+
+  try {
+    // eslint-disable-next-line pickle/no-sync-in-async -- intentional blocking call
+    return fs.readFileSync(briefPath, 'utf-8');
+  } catch (e) {
+    runtime.err(`[finalize-gate] cannot read brief at ${briefPath}: ${safeErrorMessage(e)}`);
+    return null;
+  }
+}
+
+async function prepareRemediatorBrief(runtime: FinalizeGateRuntime, gateResultPath: string, cycle: number): Promise<string | null> {
+  const briefLines: string[] = [];
+  let briefCode: number;
+  try {
+    briefCode = await runtime.spawnBriefPrep({
+      argv: ['--gate-result', gateResultPath, '--session-root', runtime.sessionRoot, '--reason', 'strict'],
+      stdout: (msg: string) => briefLines.push(msg),
+      stderr: (msg: string) => runtime.err(`[gate-remediator] ${msg}`),
+    });
+  } catch (e) {
+    runtime.err(`[finalize-gate] brief-prep threw on cycle ${cycle + 1}: ${safeErrorMessage(e)}`);
+    return null;
+  }
+
+  if (briefCode !== 0) {
+    runtime.err(`[finalize-gate] brief-prep exited ${briefCode} on cycle ${cycle + 1} — skipping remediator`);
+    return null;
+  }
+
+  const briefPathLine = briefLines.find(l => l.startsWith('BRIEF_PATH='));
+  if (!briefPathLine) {
+    runtime.err(`[finalize-gate] no BRIEF_PATH from brief-prep on cycle ${cycle + 1}`);
+    return null;
+  }
+  return briefPathLine.slice('BRIEF_PATH='.length);
+}
+
+function spawnRemediatorForBrief(runtime: FinalizeGateRuntime, briefContent: string, cycle: number): void {
+  const invocation = buildWorkerInvocation(runtime.backend as Backend, {
+    prompt: briefContent,
+    addDirs: [runtime.workingDir],
+  });
+
+  runtime.out(`[finalize-gate] spawning remediator (cycle ${cycle + 1})`);
+  try {
+    runtime.spawnRemediator(invocation.cmd, invocation.args, {
+      cwd: runtime.workingDir,
+      timeout: runtime.remediatorTimeoutMs,
+      env: { ...process.env, ...backendEnvOverrides(invocation.backend) },
+    });
+  } catch (e) {
+    runtime.err(`[finalize-gate] remediator exited non-zero or timed out: ${safeErrorMessage(e)}`);
+  }
+}
+
+function writeEscalation(runtime: FinalizeGateRuntime, lastResult: GateResult | undefined): void {
+  const escalationPath = path.join(runtime.gateDir, `escalation_${runtime.iso()}.md`);
   const failureLines = (lastResult?.failures ?? []).map(
     f => `- \`${f.file}\` [${f.check}] ${f.ruleOrCode}: ${f.message.slice(0, 200)}`
   );
-  writeFile(
+  runtime.writeFile(
     escalationPath,
     [
       `# Gate Escalation: Cap Exhausted`,
       ``,
-      `Skill: ${skill}`,
-      `Cap: ${cap} cycles`,
+      `Skill: ${runtime.skill}`,
+      `Cap: ${runtime.cap} cycles`,
       `Timestamp: ${new Date().toISOString()}`,
       `Remaining failures: ${lastResult?.failures.length ?? 0}`,
       ``,
@@ -320,8 +452,7 @@ export async function finalizeGateMain(opts: FinalizeGateOpts): Promise<number> 
     ].join('\n')
   );
 
-  err(`[finalize-gate] cap exhausted after ${cap} cycles — exit 2 (escalation: ${escalationPath})`);
-  return 2;
+  runtime.err(`[finalize-gate] cap exhausted after ${runtime.cap} cycles — exit 2 (escalation: ${escalationPath})`);
 }
 
 function defaultSpawnRemediator(
