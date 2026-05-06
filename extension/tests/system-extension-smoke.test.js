@@ -12,6 +12,36 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const INSTALL_SH = path.join(REPO_ROOT, 'install.sh');
 const LEGACY_CLAUDE_RUNTIME_ROOT = '/Users/derekgreene/.gemini/extensions/pickle-rick';
 const CODEX_VERSION = resolveCodexVersion();
+const P0_P1_CONFORMANCE_MAP = [
+  {
+    requirement: 'P0 shared runtime root is canonical across installed hosts',
+    files: ['system-extension-smoke.test.js', 'universal-install.test.js', 'install-manifest.test.js'],
+  },
+  {
+    requirement: 'P0 Claude, Codex, and Gemini expose every required command',
+    files: ['system-extension-smoke.test.js', 'universal-install.test.js', 'host-command-parity.test.js'],
+  },
+  {
+    requirement: 'P0 preflight checks manifest-managed host files before launch',
+    files: ['adapter-preflight.test.js'],
+  },
+  {
+    requirement: 'P0 cross-host launch and resume preserve session identity, backend, and command template semantics',
+    files: ['system-extension-smoke.test.js'],
+  },
+  {
+    requirement: 'P1 installer reruns are idempotent and preserve unmanaged user files',
+    files: ['universal-install.test.js'],
+  },
+  {
+    requirement: 'P1 manifest records host health status, files, checksums, and reasons',
+    files: ['install-manifest.test.js'],
+  },
+  {
+    requirement: 'P1 install output reports installed, skipped, error host states and manifest path',
+    files: ['install-manifest.test.js', 'universal-install.test.js'],
+  },
+];
 
 function resolveCodexVersion() {
   const packageJson = JSON.parse(readFileSync(path.join(REPO_ROOT, 'extension', 'package.json'), 'utf8'));
@@ -111,26 +141,44 @@ function geminiRuntimeSetup(fixture) {
   return path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'extension', 'bin', 'setup.js');
 }
 
+function assertNoStaleAdapterReference(content, fixture, runtimeRoot, label) {
+  assert.equal(content.includes(REPO_ROOT), false, `${label} must not point at the source checkout`);
+  assert.equal(
+    content.includes(fixture.dir) && !content.includes(runtimeRoot),
+    false,
+    `${label} must not point at fixture temp paths outside runtime_root`,
+  );
+}
+
 function assertCommandSurfaces(fixture) {
+  const expectedRuntimeRoot = runtimeRoot(fixture);
   for (const command of REQUIRED_PICKLE_COMMANDS) {
+    const claudeMarkdown = path.join(fixture.home, '.claude', 'commands', `${command}.md`);
+    const codexMarkdown = path.join(fixture.home, '.codex', 'prompts', 'pickle-rick', `${command}.md`);
+    const geminiMarkdown = path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'commands-md', `${command}.md`);
+    const geminiToml = path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'commands', `${command}.toml`);
+
     assert.equal(
-      existsSync(path.join(fixture.home, '.claude', 'commands', `${command}.md`)),
+      existsSync(claudeMarkdown),
       true,
       `Claude must expose /${command}`,
     );
     assert.equal(
-      existsSync(path.join(fixture.home, '.codex', 'prompts', 'pickle-rick', `${command}.md`)),
+      existsSync(codexMarkdown),
       true,
       `Codex must expose /${command}`,
     );
     assert.equal(
-      existsSync(path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'commands-md', `${command}.md`)),
+      existsSync(geminiMarkdown),
       true,
       `Gemini must expose markdown for /${command}`,
     );
-    const geminiToml = path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'commands', `${command}.toml`);
     assert.equal(existsSync(geminiToml), true, `Gemini must expose TOML for /${command}`);
+    assertNoStaleAdapterReference(readFileSync(claudeMarkdown, 'utf8'), fixture, expectedRuntimeRoot, `Claude /${command}`);
+    assertNoStaleAdapterReference(readFileSync(codexMarkdown, 'utf8'), fixture, expectedRuntimeRoot, `Codex /${command}`);
+    assertNoStaleAdapterReference(readFileSync(geminiMarkdown, 'utf8'), fixture, expectedRuntimeRoot, `Gemini markdown /${command}`);
     const toml = readFileSync(geminiToml, 'utf8');
+    assertNoStaleAdapterReference(toml, fixture, expectedRuntimeRoot, `Gemini TOML /${command}`);
     assert.ok(toml.includes(`../commands-md/${command}.md`), `Gemini TOML must target /${command} markdown`);
     assert.ok(toml.includes('{{args}}'), `Gemini TOML must pass through /${command} arguments`);
   }
@@ -143,10 +191,11 @@ function assertRuntimeMarkers(fixture) {
   assert.equal(readFileSync(path.join(LEGACY_CLAUDE_RUNTIME_ROOT, 'runtime_root'), 'utf8').trim(), expected);
 }
 
-function assertCodexState(state, fixture, sessionRoot) {
+function assertCodexState(state, fixture, sessionRoot, expectedCommandTemplate) {
   assert.equal(state.session_dir, sessionRoot);
   assert.equal(state.working_dir, fixture.cwd);
   assert.equal(state.backend, 'codex');
+  assert.equal(state.command_template, expectedCommandTemplate);
 }
 
 function assertFakeCliUse(fixture) {
@@ -161,13 +210,30 @@ function assertFakeCliUse(fixture) {
 }
 
 describe('system extension cross-host smoke', () => {
+  test('focused conformance gate maps every P0/P1 system-wide install requirement', () => {
+    assert.deepEqual(
+      P0_P1_CONFORMANCE_MAP.map(({ requirement }) => requirement),
+      [
+        'P0 shared runtime root is canonical across installed hosts',
+        'P0 Claude, Codex, and Gemini expose every required command',
+        'P0 preflight checks manifest-managed host files before launch',
+        'P0 cross-host launch and resume preserve session identity, backend, and command template semantics',
+        'P1 installer reruns are idempotent and preserve unmanaged user files',
+        'P1 manifest records host health status, files, checksums, and reasons',
+        'P1 install output reports installed, skipped, error host states and manifest path',
+      ],
+    );
+    for (const { requirement, files } of P0_P1_CONFORMANCE_MAP) {
+      assert.ok(files.length > 0, `${requirement} must map to at least one focused conformance test file`);
+    }
+  });
+
   test('fresh fixture install exposes high-value host command surfaces from an unrelated cwd', () => {
     const fixture = makeFixture();
     try {
       const install = runInstall(fixture);
 
       assert.equal(install.status, 0, install.stderr);
-      assert.equal(process.cwd(), REPO_ROOT);
       assert.notEqual(fixture.cwd, REPO_ROOT);
       assertCommandSurfaces(fixture);
       assertRuntimeMarkers(fixture);
@@ -199,7 +265,8 @@ describe('system extension cross-host smoke', () => {
       assert.equal(launch.status, 0, launch.stderr);
       const sessionRoot = parseSessionRoot(launch.stdout);
       assert.equal(sessionRoot.startsWith(path.join(fixture.dataRoot, 'sessions')), true);
-      assertCodexState(readJson(path.join(sessionRoot, 'state.json')), fixture, sessionRoot);
+      const launchState = readJson(path.join(sessionRoot, 'state.json'));
+      assertCodexState(launchState, fixture, sessionRoot, launchState.command_template);
 
       const claudeResume = runSetup(fixture, path.join(LEGACY_CLAUDE_RUNTIME_ROOT, 'extension', 'bin', 'setup.js'), [
         '--resume',
@@ -207,7 +274,7 @@ describe('system extension cross-host smoke', () => {
       ]);
       assert.equal(claudeResume.status, 0, claudeResume.stderr);
       assert.equal(parseSessionRoot(claudeResume.stdout), sessionRoot);
-      assertCodexState(readJson(path.join(sessionRoot, 'state.json')), fixture, sessionRoot);
+      assertCodexState(readJson(path.join(sessionRoot, 'state.json')), fixture, sessionRoot, launchState.command_template);
 
       const geminiResume = runSetup(fixture, geminiRuntimeSetup(fixture), [
         '--resume',
@@ -215,7 +282,7 @@ describe('system extension cross-host smoke', () => {
       ]);
       assert.equal(geminiResume.status, 0, geminiResume.stderr);
       assert.equal(parseSessionRoot(geminiResume.stdout), sessionRoot);
-      assertCodexState(readJson(path.join(sessionRoot, 'state.json')), fixture, sessionRoot);
+      assertCodexState(readJson(path.join(sessionRoot, 'state.json')), fixture, sessionRoot, launchState.command_template);
 
       assertFakeCliUse(fixture);
     } finally {

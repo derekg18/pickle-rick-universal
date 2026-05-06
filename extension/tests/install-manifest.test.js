@@ -12,6 +12,8 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const INSTALL_SH = path.join(REPO_ROOT, 'install.sh');
 const COMMAND_NAMES = canonicalCommandNames();
 const COMMAND_COUNT = COMMAND_NAMES.length;
+const HOST_NAMES = ['claude', 'codex', 'gemini'];
+const VALID_HOST_STATUSES = new Set(['installed', 'skipped', 'error']);
 
 function makeFixture() {
   const dir = mkdtempSync(path.join(tmpdir(), 'pickle-install-manifest-'));
@@ -35,6 +37,36 @@ function assertManifestIncludesCommands(files, suffixPrefix, host) {
       files.some((file) => file.endsWith(`${suffixPrefix}${command}.md`)),
       `${host} manifest must include /${command}`,
     );
+  }
+}
+
+function assertHostManifestContract(hostName, host) {
+  assert.equal(host.host, hostName, `${hostName} manifest host field must match`);
+  assert.equal(VALID_HOST_STATUSES.has(host.status), true, `${hostName} manifest status must be valid`);
+  assert.equal(Array.isArray(host.files_written), true, `${hostName} manifest files_written must be an array`);
+  assert.equal(Array.isArray(host.backups), true, `${hostName} manifest backups must be an array`);
+  assert.equal(typeof host.file_checksums, 'object', `${hostName} manifest file_checksums must be an object`);
+  assert.notEqual(host.file_checksums, null, `${hostName} manifest file_checksums must be present`);
+  assert.equal(typeof host.command_count, 'number', `${hostName} manifest command_count must be numeric`);
+  assert.equal(typeof host.agent_count, 'number', `${hostName} manifest agent_count must be numeric`);
+  assert.equal(host.root === null || typeof host.root === 'string', true, `${hostName} manifest root must be string or null`);
+  assert.equal(
+    host.settings_file === null || typeof host.settings_file === 'string',
+    true,
+    `${hostName} manifest settings_file must be string or null`,
+  );
+
+  if (host.status === 'installed') {
+    const checksums = Object.values(host.file_checksums);
+    assert.equal(host.reason, null, `${hostName} installed host reason must be null`);
+    assert.ok(host.files_written.length > 0, `${hostName} installed host must record managed files`);
+    assert.ok(checksums.length > 0, `${hostName} installed host must record managed file checksums`);
+    for (const checksum of checksums) {
+      assert.match(checksum, /^[a-f0-9]{64}$/, `${hostName} managed file checksum must be sha256`);
+    }
+  } else {
+    assert.equal(typeof host.reason, 'string', `${hostName} ${host.status} host reason must be a string`);
+    assert.ok(host.reason.length > 0, `${hostName} ${host.status} host reason must be nonempty`);
   }
 }
 
@@ -78,6 +110,9 @@ test('install manifest records package, roots, checksums, host status, counts, f
     assert.match(manifest.checksums['extension/package.json'], /^[a-f0-9]{64}$/);
     assert.match(manifest.checksums['pickle_settings.json'], /^[a-f0-9]{64}$/);
     assert.ok(manifest.runtime.files_written.some((file) => file.endsWith('/extension/package.json')));
+    for (const hostName of HOST_NAMES) {
+      assertHostManifestContract(hostName, manifest.hosts[hostName]);
+    }
 
     assert.equal(manifest.hosts.claude.status, 'installed');
     assert.equal(manifest.hosts.claude.command_count, COMMAND_COUNT);
