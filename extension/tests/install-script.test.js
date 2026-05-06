@@ -61,6 +61,38 @@ function makeFixture({ sourceVersion, compiledVersion }) {
   return { dir, scriptPath };
 }
 
+function makeInstallOutputFixture() {
+  const dir = mkdtempSync(path.join(tmpdir(), 'install-output-test-'));
+  const home = path.join(dir, 'home');
+  const xdg = path.join(dir, 'xdg');
+  const bin = path.join(dir, 'bin');
+  mkdirSync(path.join(home, '.claude'), { recursive: true });
+  mkdirSync(path.join(home, '.gemini'), { recursive: true });
+  mkdirSync(xdg, { recursive: true });
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(path.join(home, '.claude', 'settings.json'), '{}');
+  writeFileSync(path.join(home, '.gemini', 'settings.json'), '{not json');
+  for (const name of ['claude', 'codex', 'gemini', 'bun']) {
+    writeFileSync(path.join(bin, name), '#!/bin/sh\necho shim\n', { mode: 0o755 });
+  }
+  return { dir, home, xdg, bin };
+}
+
+function runInstallForOutput(fixture) {
+  return spawnSync('bash', [INSTALL_SH], {
+    cwd: REPO_ROOT,
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      HOME: fixture.home,
+      XDG_DATA_HOME: fixture.xdg,
+      PICKLE_INSTALL_MODE: 'tarball',
+      PATH: `${fixture.bin}${path.delimiter}${process.env.PATH}`,
+      FORCE_COLOR: '0',
+    },
+  });
+}
+
 describe('install.sh schemaVersion parity check (F3)', () => {
   test('install.sh aborts if compiled JS schemaVersion differs from source TS', () => {
     const { dir, scriptPath } = makeFixture({ sourceVersion: 3, compiledVersion: 2 });
@@ -126,12 +158,34 @@ describe('install.sh schemaVersion parity check (F3)', () => {
   });
 });
 
+describe('install.sh status output', () => {
+  test('real install.sh reports manifest path and mixed host states', () => {
+    const fixture = makeInstallOutputFixture();
+    try {
+      const result = runInstallForOutput(fixture);
+      const manifestPath = path.join(fixture.xdg, 'pickle-rick', 'install_manifest.json');
+
+      assert.equal(result.status, 0, result.stderr);
+      assert.match(result.stdout, new RegExp(`Manifest: ${manifestPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+      assert.match(result.stdout, /Claude: installed/);
+      assert.match(result.stdout, /Codex: skipped \(host root not found\)/);
+      assert.match(result.stdout, /Gemini: error \(settings\.json is not valid JSON\)/);
+    } finally {
+      rmSync(fixture.dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('install.sh Forward Fix F2: lock serialization', () => {
   test('install.sh contains the lock block', () => {
     const src = readFileSync(INSTALL_SH, 'utf8');
     assert.ok(
-      src.includes('LOCKFILE="$EXTENSION_ROOT/.install.lock"'),
-      'install.sh must declare a lockfile under $EXTENSION_ROOT',
+      src.includes('GLOBAL_LOCK_ROOT="${TMPDIR:-/tmp}/pickle-rick-install"'),
+      'install.sh must declare a global lock root',
+    );
+    assert.ok(
+      src.includes('LOCKFILE="$GLOBAL_LOCK_ROOT/install.lock"'),
+      'install.sh must declare a lockfile under $GLOBAL_LOCK_ROOT',
     );
     assert.ok(
       src.includes('flock -x'),
@@ -145,7 +199,7 @@ describe('install.sh Forward Fix F2: lock serialization', () => {
 
   test('install.sh has a --dry-run guard after the lock', () => {
     const src = readFileSync(INSTALL_SH, 'utf8');
-    const lockIdx = src.indexOf('LOCKFILE="$EXTENSION_ROOT/.install.lock"');
+    const lockIdx = src.indexOf('LOCKFILE="$GLOBAL_LOCK_ROOT/install.lock"');
     const dryRunIdx = src.indexOf('--dry-run');
     assert.ok(lockIdx !== -1, 'lock block missing');
     assert.ok(dryRunIdx !== -1, 'install.sh must accept --dry-run');

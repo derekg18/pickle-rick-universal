@@ -56,6 +56,10 @@ test('install manifest records package, roots, checksums, host status, counts, f
 
     assert.equal(result.status, 0, result.stderr);
     const manifestPath = path.join(fixture.xdg, 'pickle-rick', 'install_manifest.json');
+    assert.match(result.stdout, new RegExp(`Manifest: ${manifestPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+    assert.match(result.stdout, /Claude: installed/);
+    assert.match(result.stdout, /Codex: installed/);
+    assert.match(result.stdout, /Gemini: skipped \(host root not found\)/);
     assert.equal(existsSync(manifestPath), true);
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     const pkg = JSON.parse(readFileSync(path.join(REPO_ROOT, 'extension', 'package.json'), 'utf8'));

@@ -66,6 +66,19 @@ function runtimeMarker(file) {
   return readFileSync(file, 'utf8').trim();
 }
 
+function countFiles(dir, suffix) {
+  return readdirSync(dir).filter((file) => file.endsWith(suffix)).length;
+}
+
+function commandSurfaceCounts(fixture) {
+  return {
+    claude: countFiles(path.join(fixture.home, '.claude', 'commands'), '.md'),
+    codex: countFiles(path.join(fixture.home, '.codex', 'prompts', 'pickle-rick'), '.md'),
+    geminiMarkdown: countFiles(path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'commands-md'), '.md'),
+    geminiToml: countFiles(path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'commands'), '.toml'),
+  };
+}
+
 function assertNoStaleRuntimeReference(content, fixture, runtimeRoot) {
   assert.equal(content.includes(REPO_ROOT), false, 'adapter content must not point at the source checkout');
   assert.equal(content.includes(fixture.dir) && !content.includes(runtimeRoot), false, 'adapter content must not point at fixture temp paths outside runtime_root');
@@ -200,10 +213,17 @@ describe('universal install.sh host adapters', () => {
       writeJson(settingsPath(fixture, 'gemini'), {});
 
       const first = runInstall(fixture);
-      const second = runInstall(fixture);
-
       assert.equal(first.status, 0, first.stderr);
+      const firstCounts = commandSurfaceCounts(fixture);
+      const second = runInstall(fixture);
       assert.equal(second.status, 0, second.stderr);
+      assert.deepEqual(commandSurfaceCounts(fixture), firstCounts);
+      assert.deepEqual(firstCounts, {
+        claude: COMMAND_COUNT,
+        codex: COMMAND_COUNT,
+        geminiMarkdown: COMMAND_COUNT,
+        geminiToml: COMMAND_COUNT,
+      });
       const claudeSettings = JSON.parse(readFileSync(settingsPath(fixture, 'claude'), 'utf8'));
       const stopCommands = claudeSettings.hooks.Stop.flatMap((group) => group.hooks.map((hook) => hook.command));
       const pickleStops = stopCommands.filter((command) => command === CLAUDE_STOP_HOOK);
@@ -212,6 +232,46 @@ describe('universal install.sh host adapters', () => {
       assert.equal(postCommands.filter((command) => command === CLAUDE_COMMIT_HOOK).length, 1);
       assert.ok(readdirSync(path.join(fixture.home, '.claude', 'backups')).length >= 2);
       assert.equal(readManifest(fixture).hosts.claude.status, 'installed');
+    } finally {
+      rmSync(fixture.dir, { recursive: true, force: true });
+    }
+  });
+
+  test('reruns preserve unmanaged user files while deleting stale managed runtime files', () => {
+    const fixture = makeFixture();
+    try {
+      writeJson(settingsPath(fixture, 'claude'), { userSetting: 'keep' });
+      mkdirSync(path.join(fixture.home, '.codex'), { recursive: true });
+      writeJson(settingsPath(fixture, 'gemini'), { userSetting: 'keep' });
+
+      const first = runInstall(fixture);
+      assert.equal(first.status, 0, first.stderr);
+
+      const runtimeStale = path.join(fixture.xdg, 'pickle-rick', 'runtime', 'extension', 'bin', 'stale-managed.js');
+      const geminiStale = path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'extension', 'bin', 'stale-managed.js');
+      const claudeUserCommand = path.join(fixture.home, '.claude', 'commands', 'user-command.md');
+      const codexUserCommand = path.join(fixture.home, '.codex', 'prompts', 'pickle-rick', 'user-command.md');
+      const geminiUserCommand = path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'commands-md', 'user-command.md');
+      const geminiUserToml = path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'commands', 'user-command.toml');
+
+      writeFileSync(runtimeStale, 'stale runtime\n');
+      writeFileSync(geminiStale, 'stale adapter runtime\n');
+      writeFileSync(claudeUserCommand, '# user command\n');
+      writeFileSync(codexUserCommand, '# user command\n');
+      writeFileSync(geminiUserCommand, '# user command\n');
+      writeFileSync(geminiUserToml, 'description = "user command"\n');
+
+      const second = runInstall(fixture);
+
+      assert.equal(second.status, 0, second.stderr);
+      assert.equal(existsSync(runtimeStale), false);
+      assert.equal(existsSync(geminiStale), false);
+      assert.equal(existsSync(claudeUserCommand), true);
+      assert.equal(existsSync(codexUserCommand), true);
+      assert.equal(existsSync(geminiUserCommand), true);
+      assert.equal(existsSync(geminiUserToml), true);
+      assert.equal(JSON.parse(readFileSync(settingsPath(fixture, 'claude'), 'utf8')).userSetting, 'keep');
+      assert.equal(JSON.parse(readFileSync(settingsPath(fixture, 'gemini'), 'utf8')).userSetting, 'keep');
     } finally {
       rmSync(fixture.dir, { recursive: true, force: true });
     }

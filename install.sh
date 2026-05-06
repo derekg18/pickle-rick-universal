@@ -137,6 +137,20 @@ checksums_json_from_files() {
   ' "$files_json"
 }
 
+print_host_status() {
+  local host="$1"
+  local label="$2"
+  local status
+  local reason
+  status="$(jq -r --arg host "$host" '.hosts[$host].status // "unknown"' "$MANIFEST_FILE")"
+  reason="$(jq -r --arg host "$host" '.hosts[$host].reason // ""' "$MANIFEST_FILE")"
+  if [ -n "$reason" ]; then
+    echo "   $label: $status ($reason)"
+  else
+    echo "   $label: $status"
+  fi
+}
+
 assert_command_registry_parity() {
   node --input-type=module -e '
     import { pathToFileURL } from "url";
@@ -607,6 +621,10 @@ jq -n \
 echo ""
 echo "✅ Pickle Rick universal installer finished!"
 echo "🧾 Manifest: $MANIFEST_FILE"
+echo "🖥️  Host status:"
+print_host_status "claude" "Claude"
+print_host_status "codex" "Codex"
+print_host_status "gemini" "Gemini"
 echo ""
 echo "📝 Persona setup — add the Pickle Rick persona to your project's AGENTS.md/CLAUDE.md/GEMINI.md:"
 echo ""
