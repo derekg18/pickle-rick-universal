@@ -11,16 +11,19 @@ MANIFEST_FILE="$DATA_ROOT/install_manifest.json"
 COMMANDS_SOURCE_DIR="$SCRIPT_DIR/.claude/commands"
 AGENTS_SOURCE_DIR="$SCRIPT_DIR/.claude/agents"
 SOURCE_SETTINGS="$SCRIPT_DIR/.claude/settings.json"
-# IMPORTANT: $HOME is intentionally a literal here — it gets expanded at runtime
-# by the shell when Gemini CLI executes the hook command. Do NOT expand it at install time.
-HOOK_CMD_LITERAL='node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/hooks/dispatch.js stop-hook'
+LEGACY_RUNTIME_ROOT_MARKER="$LEGACY_CLAUDE_RUNTIME_ROOT/runtime_root"
+CLAUDE_STOP_HOOK_CMD="sh -c 'exec node \"\$(cat $LEGACY_RUNTIME_ROOT_MARKER)/extension/hooks/dispatch.js\" stop-hook'"
+CLAUDE_COMMIT_HOOK_CMD="sh -c 'exec node \"\$(cat $LEGACY_RUNTIME_ROOT_MARKER)/extension/bin/log-commit.js\"'"
+OLD_CLAUDE_STOP_HOOK_CMD='node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/hooks/dispatch.js stop-hook'
+OLD_CLAUDE_COMMIT_HOOK_CMD='node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/log-commit.js'
 
 # --- LOCK (Forward Fix F2: serialize concurrent install.sh invocations) ---
 # Cross-skill workers can run install.sh simultaneously, racing on settings.json
 # backup + jq-merge and producing paired backups seconds apart. Acquire an
 # exclusive lock for the lifetime of the script.
-mkdir -p "$EXTENSION_ROOT"
-LOCKFILE="$EXTENSION_ROOT/.install.lock"
+GLOBAL_LOCK_ROOT="${TMPDIR:-/tmp}/pickle-rick-install"
+mkdir -p "$EXTENSION_ROOT" "$GLOBAL_LOCK_ROOT"
+LOCKFILE="$GLOBAL_LOCK_ROOT/install.lock"
 if command -v flock >/dev/null 2>&1; then
   exec 9>"$LOCKFILE"
   if ! flock -x -n 9; then
@@ -30,7 +33,7 @@ if command -v flock >/dev/null 2>&1; then
 else
   # Portable fallback for systems without flock(1) (e.g. stock macOS):
   # mkdir is atomic on POSIX filesystems, so it doubles as a lock primitive.
-  LOCKDIR="$EXTENSION_ROOT/.install.lock.d"
+  LOCKDIR="$GLOBAL_LOCK_ROOT/install.lock.d"
   while ! mkdir "$LOCKDIR" 2>/dev/null; do
     echo "⏳ Another install.sh is running; waiting..."
     sleep 1
@@ -320,6 +323,7 @@ install_claude_adapter() {
   # Keep legacy Claude hook path usable while shared runtime is the canonical install.
   mkdir -p "$LEGACY_CLAUDE_RUNTIME_ROOT"
   rsync -a --delete "$RUNTIME_ROOT/" "$LEGACY_CLAUDE_RUNTIME_ROOT/"
+  printf '%s\n' "$RUNTIME_ROOT" > "$LEGACY_RUNTIME_ROOT_MARKER"
 
   mkdir -p "$claude_root/backups"
   backup_path="$claude_root/backups/settings.json.pickle-backup.$(date +%s).$$"
@@ -364,14 +368,28 @@ install_claude_adapter() {
   rm -f "$commands_dir/microverse.md"
   rm -f "$commands_dir/pickle-microverse-tmux.md"
 
-  # --- STOP HOOK (idempotent jq merge, $HOME stays LITERAL in JSON) ---
-  if jq -e '.hooks.Stop // [] | map(.hooks // [] | map(.command)) | flatten | any(. == "node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/hooks/dispatch.js stop-hook")' \
+  # --- MANAGED CLAUDE HOOKS (migrate stale commands, then merge idempotently) ---
+  TMPFILE="$(mktemp)"
+  jq --arg old_stop "$OLD_CLAUDE_STOP_HOOK_CMD" \
+     --arg new_stop "$CLAUDE_STOP_HOOK_CMD" \
+     --arg old_commit "$OLD_CLAUDE_COMMIT_HOOK_CMD" \
+     --arg new_commit "$CLAUDE_COMMIT_HOOK_CMD" '
+    if .hooks?.Stop then
+      .hooks.Stop |= map(if .hooks then .hooks |= map(if .command == $old_stop then .command = $new_stop else . end) else . end)
+    else . end |
+    if .hooks?.PostToolUse then
+      .hooks.PostToolUse |= map(if .hooks then .hooks |= map(if .command == $old_commit then .command = $new_commit else . end) else . end)
+    else . end
+  ' "$settings_file" > "$TMPFILE" \
+    && mv "$TMPFILE" "$settings_file"
+
+  if jq -e --arg cmd "$CLAUDE_STOP_HOOK_CMD" \
+      '.hooks.Stop // [] | map(.hooks // [] | map(.command)) | flatten | any(. == $cmd)' \
       "$settings_file" >/dev/null 2>&1; then
     echo "⚠️  Stop hook already registered — skipping"
   else
     TMPFILE="$(mktemp)"
-    jq '
-      "node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/hooks/dispatch.js stop-hook" as $cmd |
+    jq --arg cmd "$CLAUDE_STOP_HOOK_CMD" '
       {"type": "command", "command": $cmd} as $entry |
       if .hooks == null then
         .hooks = {"Stop": [{"hooks": [$entry]}]}
@@ -386,14 +404,13 @@ install_claude_adapter() {
   fi
 
   # --- POST-TOOL-USE HOOK (git commit activity logger, idempotent) ---
-  COMMIT_HOOK_CMD='node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/log-commit.js'
-  if jq -e --arg cmd "$COMMIT_HOOK_CMD" \
+  if jq -e --arg cmd "$CLAUDE_COMMIT_HOOK_CMD" \
       '.hooks.PostToolUse // [] | map(.hooks // [] | map(.command)) | flatten | any(. == $cmd)' \
       "$settings_file" >/dev/null 2>&1; then
     echo "⚠️  PostToolUse hook already registered — skipping"
   else
     TMPFILE="$(mktemp)"
-    jq --arg cmd "$COMMIT_HOOK_CMD" '
+    jq --arg cmd "$CLAUDE_COMMIT_HOOK_CMD" '
       {"type": "command", "command": $cmd, "async": true, "timeout": 5} as $entry |
       {"matcher": "Bash", "hooks": [$entry]} as $group |
       if .hooks == null then
@@ -454,7 +471,7 @@ install_claude_adapter() {
   local agent_files_json
   agent_files_json="$(json_array_from_find "$managed_agents_dir")"
   files_json="$(jq -n --argjson a "$files_json" --argjson b "$agent_files_json" '$a + $b')"
-  files_json="$(jq -n --arg legacy "$LEGACY_CLAUDE_RUNTIME_ROOT" --argjson files "$files_json" '$files + [$legacy]')"
+  files_json="$(jq -n --arg legacy "$LEGACY_CLAUDE_RUNTIME_ROOT" --arg marker "$LEGACY_RUNTIME_ROOT_MARKER" --argjson files "$files_json" '$files + [$legacy, $marker]')"
   backups_json="$(printf '%s\n' "$backup_path" | jq -R . | jq -s .)"
   local checksums_json
   checksums_json="$(checksums_json_from_files "$files_json")"
@@ -517,7 +534,7 @@ install_gemini_adapter() {
   for command_md in "$COMMANDS_SOURCE_DIR"/*.md; do
     [ -e "$command_md" ] || continue
     command_name="$(basename "$command_md" .md)"
-    command_target="$command_md_dir/$(basename "$command_md")"
+    command_target="../commands-md/$(basename "$command_md")"
     render_gemini_toml "$command_name" "$command_target" > "$command_toml_dir/$command_name.toml"
   done
   echo "✅ Gemini adapter installed to $adapter_root/"

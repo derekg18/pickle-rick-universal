@@ -10,8 +10,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const INSTALL_SH = path.join(REPO_ROOT, 'install.sh');
 const LEGACY_CLAUDE_RUNTIME_ROOT = '/Users/derekgreene/.gemini/extensions/pickle-rick';
-const CLAUDE_STOP_HOOK = 'node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/hooks/dispatch.js stop-hook';
-const CLAUDE_COMMIT_HOOK = 'node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/log-commit.js';
+const LEGACY_RUNTIME_ROOT_MARKER = path.join(LEGACY_CLAUDE_RUNTIME_ROOT, 'runtime_root');
+const CLAUDE_STOP_HOOK = `sh -c 'exec node "$(cat ${LEGACY_RUNTIME_ROOT_MARKER})/extension/hooks/dispatch.js" stop-hook'`;
+const CLAUDE_COMMIT_HOOK = `sh -c 'exec node "$(cat ${LEGACY_RUNTIME_ROOT_MARKER})/extension/bin/log-commit.js"'`;
+const OLD_CLAUDE_STOP_HOOK = 'node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/hooks/dispatch.js stop-hook';
+const OLD_CLAUDE_COMMIT_HOOK = 'node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/log-commit.js';
 
 function makeFixture() {
   const dir = mkdtempSync(path.join(tmpdir(), 'pickle-universal-install-'));
@@ -56,11 +59,25 @@ function settingsPath(fixture, host) {
   return path.join(fixture.home, `.${host}`, 'settings.json');
 }
 
+function runtimeMarker(file) {
+  return readFileSync(file, 'utf8').trim();
+}
+
+function assertNoStaleRuntimeReference(content, fixture, runtimeRoot) {
+  assert.equal(content.includes(REPO_ROOT), false, 'adapter content must not point at the source checkout');
+  assert.equal(content.includes(fixture.dir) && !content.includes(runtimeRoot), false, 'adapter content must not point at fixture temp paths outside runtime_root');
+}
+
 describe('universal install.sh host adapters', () => {
   test('installs shared runtime and all present hosts', () => {
     const fixture = makeFixture();
     try {
-      writeJson(settingsPath(fixture, 'claude'), { hooks: { Stop: [{ hooks: [{ type: 'command', command: 'third-party' }] }] } });
+      writeJson(settingsPath(fixture, 'claude'), {
+        hooks: {
+          Stop: [{ hooks: [{ type: 'command', command: 'third-party' }, { type: 'command', command: OLD_CLAUDE_STOP_HOOK }] }],
+          PostToolUse: [{ hooks: [{ type: 'command', command: OLD_CLAUDE_COMMIT_HOOK }] }],
+        },
+      });
       mkdirSync(path.join(fixture.home, '.codex'), { recursive: true });
       writeJson(settingsPath(fixture, 'gemini'), {});
 
@@ -68,7 +85,9 @@ describe('universal install.sh host adapters', () => {
 
       assert.equal(result.status, 0, result.stderr);
       const manifest = readManifest(fixture);
-      assert.equal(manifest.runtime_root, path.join(fixture.xdg, 'pickle-rick', 'runtime'));
+      const runtimeRoot = path.join(fixture.xdg, 'pickle-rick', 'runtime');
+      assert.equal(manifest.runtime_root, runtimeRoot);
+      assert.equal(path.isAbsolute(manifest.runtime_root), true);
       assert.equal(manifest.hosts.claude.status, 'installed');
       assert.equal(manifest.hosts.codex.status, 'installed');
       assert.equal(manifest.hosts.gemini.status, 'installed');
@@ -78,8 +97,19 @@ describe('universal install.sh host adapters', () => {
 
       assert.equal(existsSync(path.join(fixture.xdg, 'pickle-rick', 'runtime', 'extension', 'bin', 'setup.js')), true);
       assert.ok(manifest.hosts.claude.files_written.includes(LEGACY_CLAUDE_RUNTIME_ROOT));
+      assert.ok(manifest.hosts.claude.files_written.includes(LEGACY_RUNTIME_ROOT_MARKER));
+      assert.equal(runtimeMarker(LEGACY_RUNTIME_ROOT_MARKER), runtimeRoot);
+      assert.equal(manifest.hosts.claude.file_checksums[LEGACY_RUNTIME_ROOT_MARKER].length, 64);
+      const codexRuntimeMarker = path.join(fixture.home, '.codex', 'pickle-rick', 'runtime_root');
+      const geminiRuntimeMarker = path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'runtime_root');
+      assert.equal(runtimeMarker(codexRuntimeMarker), runtimeRoot);
+      assert.equal(runtimeMarker(geminiRuntimeMarker), runtimeRoot);
       assert.equal(existsSync(path.join(fixture.home, '.codex', 'prompts', 'pickle-rick', 'pickle.md')), true);
-      assert.equal(existsSync(path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'commands', 'pickle.toml')), true);
+      const geminiPickleToml = path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'commands', 'pickle.toml');
+      assert.equal(existsSync(geminiPickleToml), true);
+      const geminiPickleTomlContent = readFileSync(geminiPickleToml, 'utf8');
+      assert.ok(geminiPickleTomlContent.includes('../commands-md/pickle.md'));
+      assertNoStaleRuntimeReference(geminiPickleTomlContent, fixture, runtimeRoot);
       const geminiTmuxRunner = path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'extension', 'bin', 'tmux-runner.js');
       assert.equal(existsSync(geminiTmuxRunner), true);
       assert.equal(lstatSync(geminiTmuxRunner).isSymbolicLink(), true);
@@ -92,6 +122,11 @@ describe('universal install.sh host adapters', () => {
       const stopCommands = claudeSettings.hooks.Stop.flatMap((group) => group.hooks.map((hook) => hook.command));
       assert.ok(stopCommands.includes('third-party'));
       assert.ok(stopCommands.includes(CLAUDE_STOP_HOOK));
+      assert.equal(stopCommands.includes(OLD_CLAUDE_STOP_HOOK), false);
+      assertNoStaleRuntimeReference(CLAUDE_STOP_HOOK, fixture, runtimeRoot);
+      const postCommands = claudeSettings.hooks.PostToolUse.flatMap((group) => group.hooks.map((hook) => hook.command));
+      assert.ok(postCommands.includes(CLAUDE_COMMIT_HOOK));
+      assert.equal(postCommands.includes(OLD_CLAUDE_COMMIT_HOOK), false);
       assert.equal(readdirSync(path.join(fixture.home, '.claude', 'backups')).length, 1);
     } finally {
       rmSync(fixture.dir, { recursive: true, force: true });

@@ -102,7 +102,7 @@ function sourceForManagedFile(filePath: string, manifest: InstallManifest): { co
   if (filePath.includes(`${path.sep}extensions${path.sep}pickle-rick${path.sep}commands${path.sep}`) && filePath.endsWith('.toml')) {
     const command = commandFromTomlTarget(filePath);
     if (!command) return null;
-    const mdTarget = path.join(path.dirname(path.dirname(filePath)), 'commands-md', `${command}.md`);
+    const mdTarget = path.join('..', 'commands-md', `${command}.md`);
     return { content: renderGeminiToml(command, mdTarget) };
   }
 

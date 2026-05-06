@@ -75,7 +75,7 @@ function sourceForManagedFile(filePath, manifest) {
         const command = commandFromTomlTarget(filePath);
         if (!command)
             return null;
-        const mdTarget = path.join(path.dirname(path.dirname(filePath)), 'commands-md', `${command}.md`);
+        const mdTarget = path.join('..', 'commands-md', `${command}.md`);
         return { content: renderGeminiToml(command, mdTarget) };
     }
     return null;

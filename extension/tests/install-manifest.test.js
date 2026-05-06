@@ -53,7 +53,10 @@ test('install manifest records package, roots, checksums, host status, counts, f
     assert.equal(manifest.package_version, pkg.version);
     assert.match(manifest.installed_at, /^\d{4}-\d{2}-\d{2}T/);
     assert.equal(manifest.source_root, REPO_ROOT);
-    assert.equal(manifest.runtime_root, path.join(fixture.xdg, 'pickle-rick', 'runtime'));
+    const runtimeRoot = path.join(fixture.xdg, 'pickle-rick', 'runtime');
+    assert.equal(manifest.runtime_root, runtimeRoot);
+    assert.equal(path.isAbsolute(manifest.runtime_root), true);
+    assert.equal(manifest.runtime_root.startsWith(REPO_ROOT), false);
     assert.equal(manifest.data_root, path.join(fixture.xdg, 'pickle-rick'));
     assert.equal(manifest.manifest_file, manifestPath);
     assert.match(manifest.checksums['extension/package.json'], /^[a-f0-9]{64}$/);
@@ -64,6 +67,9 @@ test('install manifest records package, roots, checksums, host status, counts, f
     assert.equal(manifest.hosts.claude.command_count, 33);
     assert.equal(manifest.hosts.claude.agent_count, 14);
     assert.ok(manifest.hosts.claude.files_written.some((file) => file.endsWith('/commands/pickle.md')));
+    const claudeRuntimeMarker = manifest.hosts.claude.files_written.find((file) => file.endsWith('/runtime_root'));
+    assert.equal(readFileSync(claudeRuntimeMarker, 'utf8').trim(), runtimeRoot);
+    assert.match(manifest.hosts.claude.file_checksums[claudeRuntimeMarker], /^[a-f0-9]{64}$/);
     assert.match(manifest.hosts.claude.file_checksums[
       manifest.hosts.claude.files_written.find((file) => file.endsWith('/commands/pickle.md'))
     ], /^[a-f0-9]{64}$/);
@@ -72,6 +78,9 @@ test('install manifest records package, roots, checksums, host status, counts, f
     assert.equal(manifest.hosts.codex.status, 'installed');
     assert.equal(manifest.hosts.codex.command_count, 33);
     assert.ok(manifest.hosts.codex.files_written.some((file) => file.endsWith('/prompts/pickle-rick/pickle.md')));
+    const codexRuntimeMarker = manifest.hosts.codex.files_written.find((file) => file.endsWith('/pickle-rick/runtime_root'));
+    assert.equal(readFileSync(codexRuntimeMarker, 'utf8').trim(), runtimeRoot);
+    assert.match(manifest.hosts.codex.file_checksums[codexRuntimeMarker], /^[a-f0-9]{64}$/);
     assert.match(manifest.hosts.codex.file_checksums[
       manifest.hosts.codex.files_written.find((file) => file.endsWith('/prompts/pickle-rick/pickle.md'))
     ], /^[a-f0-9]{64}$/);

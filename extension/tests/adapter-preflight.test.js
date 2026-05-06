@@ -39,13 +39,15 @@ function makeFixture() {
   const codexRuntime = path.join(home, '.codex', 'pickle-rick', 'runtime_root');
   const geminiMd = path.join(geminiMdDir, 'pickle.md');
   const geminiToml = path.join(geminiTomlDir, 'pickle.toml');
-  const geminiTomlContent = renderGeminiToml('pickle', geminiMd);
+  const geminiRuntime = path.join(home, '.gemini', 'extensions', 'pickle-rick', 'runtime_root');
+  const geminiTomlContent = renderGeminiToml('pickle', '../commands-md/pickle.md');
 
   writeFileSync(codexPrompt, commandContent);
   writeFileSync(codexPersona, personaContent);
   writeFileSync(codexRuntime, runtimeRootContent);
   writeFileSync(geminiMd, commandContent);
   writeFileSync(geminiToml, geminiTomlContent);
+  writeFileSync(geminiRuntime, runtimeRootContent);
 
   const codexChecksums = {
     [codexPrompt]: sha256(commandContent),
@@ -55,6 +57,7 @@ function makeFixture() {
   const geminiChecksums = {
     [geminiMd]: sha256(commandContent),
     [geminiToml]: sha256(geminiTomlContent),
+    [geminiRuntime]: sha256(runtimeRootContent),
   };
   const manifestPath = path.join(root, 'install_manifest.json');
   const manifest = {
@@ -67,7 +70,7 @@ function makeFixture() {
     },
   };
   writeFileSync(manifestPath, JSON.stringify(manifest, null, 2));
-  return { root, manifestPath, codexPrompt, geminiToml, commandContent, geminiTomlContent };
+  return { root, runtimeRoot, manifestPath, codexPrompt, codexRuntime, geminiRuntime, geminiToml, commandContent, geminiTomlContent };
 }
 
 describe('adapter preflight', () => {
@@ -75,7 +78,7 @@ describe('adapter preflight', () => {
     const fixture = makeFixture();
     try {
       const result = assertAdaptersFresh(fixture.manifestPath);
-      assert.equal(result.checked, 5);
+      assert.equal(result.checked, 6);
       assert.deepEqual(result.repaired, []);
       assert.deepEqual(result.skippedHosts, ['claude']);
     } finally {
@@ -102,6 +105,21 @@ describe('adapter preflight', () => {
       const result = assertAdaptersFresh(fixture.manifestPath);
       assert.ok(result.repaired.includes(fixture.geminiToml));
       assert.equal(readFileSync(fixture.geminiToml, 'utf8'), fixture.geminiTomlContent);
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test('auto-syncs stale runtime-root markers from manifest runtime_root', () => {
+    const fixture = makeFixture();
+    try {
+      writeFileSync(fixture.codexRuntime, '/tmp/stale-runtime\n');
+      writeFileSync(fixture.geminiRuntime, '/var/folders/stale-runtime\n');
+      const result = assertAdaptersFresh(fixture.manifestPath);
+      assert.ok(result.repaired.includes(fixture.codexRuntime));
+      assert.ok(result.repaired.includes(fixture.geminiRuntime));
+      assert.equal(readFileSync(fixture.codexRuntime, 'utf8'), `${fixture.runtimeRoot}\n`);
+      assert.equal(readFileSync(fixture.geminiRuntime, 'utf8'), `${fixture.runtimeRoot}\n`);
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
     }
