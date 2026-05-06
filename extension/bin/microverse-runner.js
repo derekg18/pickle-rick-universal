@@ -598,11 +598,13 @@ export function buildMicroverseHandoff(mvState, iteration, workingDir, sessionDi
 }
 export function getBestScore(mvState) {
     const history = mvState.convergence?.history ?? [];
-    const bestFn = (mvState.key_metric.direction ?? 'higher') === 'lower' ? Math.min : Math.max;
+    const baseline = Number.isFinite(Number(mvState.baseline_score)) ? Number(mvState.baseline_score) : null;
+    const direction = mvState.key_metric?.direction ?? 'higher';
+    const bestFn = direction === 'lower' ? Math.min : Math.max;
     const accepted = history.filter(h => h.action === 'accept').map(h => h.score);
     if (accepted.length === 0)
-        return mvState.baseline_score;
-    return bestFn(...accepted, mvState.baseline_score);
+        return baseline;
+    return baseline === null ? bestFn(...accepted) : bestFn(...accepted, baseline);
 }
 export function buildFailureDistribution(failureHistory) {
     if (failureHistory.length === 0) {
@@ -1214,8 +1216,15 @@ export async function executeMainLoop(state, ctx) {
         await prepareIteration(state, ctx);
         const outcome = await _deps.runIteration(ctx.sessionDir, ctx.iteration, ctx.extensionRoot, '');
         const stepResult = await handleIterationOutcome(state, baseline, ctx, outcome);
-        if (stepResult === 'continue')
+        if (stepResult === 'continue') {
+            if (state.convergence_mode === 'worker' && state.status !== 'iterating') {
+                ctx.log(`Worker-mode state drifted to status=${String(state.status)} after a successful iteration — restoring iterating`);
+                state.status = 'iterating';
+                delete state.exit_reason;
+                writeMicroverseState(ctx.sessionDir, state);
+            }
             continue;
+        }
         if (stepResult) {
             exitReason = stepResult;
             break;

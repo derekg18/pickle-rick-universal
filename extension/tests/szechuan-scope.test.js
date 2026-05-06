@@ -105,6 +105,9 @@ describe('szechuan scope injection', () => {
 
       const state = readMicroverse(dir);
       assert.deepStrictEqual(state.allowed_paths, ['src/foo.ts']);
+      const convergence = JSON.parse(fs.readFileSync(path.join(dir, 'szechuan-sauce.json'), 'utf-8'));
+      assert.equal(convergence.converged, false);
+      assert.deepStrictEqual(convergence.findings, []);
     } finally {
       fs.rmSync(dir, { recursive: true });
     }
@@ -144,6 +147,10 @@ describe('szechuan scope injection', () => {
     assert.ok(
       content.includes('<!-- scope-hook: override-3-allowed-paths -->'),
       'szechuan-sauce.md must contain Override 3 scope-hook marker',
+    );
+    assert.ok(
+      content.includes('szechuan-sauce.json') && content.includes('"converged": true') && content.includes('"converged": false'),
+      'szechuan-sauce.md must require workers to maintain the convergence file',
     );
   });
 

@@ -775,8 +775,15 @@ function buildSzechuanPrd(target, stallLimit, principlesPath, extensionRoot, dom
         prdParts.push(`Read: ${path.join(extensionRoot, `szechuan-sauce-${domain}-principles.md`)}`);
     if (focus)
         prdParts.push('', '## Focus', focus);
-    prdParts.push('', '## Key Metric', '- **Type**: llm (LLM judge scoring)', '- **Direction**: lower', '- **Convergence Target**: 0', `- **Stall Limit**: ${stallLimit}`, '', '## Process', '### Iteration 1: Contract Discovery + Gap Analysis', '1. Extract all exports from target files', '2. Grep the entire codebase for importers — build contract map', '3. Flag cross-module mismatches as P1', '4. Catalog all violations into gap_analysis.md', '', '### Each subsequent iteration', '1. Read the principles reference and target code', '2. Identify the highest-priority violation (P0 > P1 > P2 > P3 > P4)', '3. Fix it — one logical change per iteration', '4. Run tests — ensure green', '5. Commit', '', '## Rules', '- One fix per iteration (atomic, revertible)', '- Never repeat a failed approach', '- P0 before P1 before P2 before P3 before P4', ...buildCitadelSzechuanContext(citadelReport));
+    prdParts.push('', '## Key Metric', '- **Type**: llm (LLM judge scoring)', '- **Direction**: lower', '- **Convergence Target**: 0', `- **Stall Limit**: ${stallLimit}`, '', '## Process', '### Iteration 1: Contract Discovery + Gap Analysis', '1. Extract all exports from target files', '2. Grep the entire codebase for importers — build contract map', '3. Flag cross-module mismatches as P1', '4. Catalog all violations into gap_analysis.md', '', '### Each subsequent iteration', '1. Read the principles reference and target code', '2. Identify the highest-priority violation (P0 > P1 > P2 > P3 > P4)', '3. Fix it — one logical change per iteration', '4. Run tests — ensure green', '5. Commit', '6. Update `szechuan-sauce.json`: keep `{"converged": false, "findings": [...]}` while violations remain, and write `{"converged": true, "reason": "zero actionable violations"}` only when clean.', '', '## Rules', '- One fix per iteration (atomic, revertible)', '- Never repeat a failed approach', '- P0 before P1 before P2 before P3 before P4', ...buildCitadelSzechuanContext(citadelReport));
     return prdParts.join('\n');
+}
+function writeSzechuanConvergenceSeed(sessionDir) {
+    writeStateFile(path.join(sessionDir, 'szechuan-sauce.json'), {
+        converged: false,
+        reason: 'szechuan-sauce phase initialized',
+        findings: [],
+    });
 }
 export function setupSzechuanSauce(sessionDir, target, stallLimit, extensionRoot, domain, focus, log, scope) {
     const principlesPath = path.join(extensionRoot, 'szechuan-sauce-principles.md');
@@ -807,6 +814,7 @@ export function setupSzechuanSauce(sessionDir, target, stallLimit, extensionRoot
     }
     try {
         execFileSync('node', initArgs, { timeout: 30_000, encoding: 'utf-8' });
+        writeSzechuanConvergenceSeed(sessionDir);
     }
     catch (err) {
         log(`init-microverse.js failed: ${safeErrorMessage(err)}`);

@@ -26,6 +26,16 @@ describe('microverse-runner finalizer', () => {
     assert.strictEqual(score, 70, 'Should return baseline_score when convergence is missing');
   });
 
+  test('getBestScore returns null for partial worker state without metric fields', () => {
+    const state = {
+      status: 'stopped',
+      exit_reason: 'error',
+      // no key_metric, baseline_score, or convergence object
+    };
+    const score = getBestScore(state);
+    assert.strictEqual(score, null, 'Should tolerate partial worker state without throwing');
+  });
+
   test('writeFinalReport does not throw in worker mode (missing convergence)', () => {
     const state = {
       status: 'converged',

@@ -954,6 +954,7 @@ function buildSzechuanPrd(
     '3. Fix it — one logical change per iteration',
     '4. Run tests — ensure green',
     '5. Commit',
+    '6. Update `szechuan-sauce.json`: keep `{"converged": false, "findings": [...]}` while violations remain, and write `{"converged": true, "reason": "zero actionable violations"}` only when clean.',
     '',
     '## Rules',
     '- One fix per iteration (atomic, revertible)',
@@ -962,6 +963,14 @@ function buildSzechuanPrd(
     ...buildCitadelSzechuanContext(citadelReport),
   );
   return prdParts.join('\n');
+}
+
+function writeSzechuanConvergenceSeed(sessionDir: string): void {
+  writeStateFile(path.join(sessionDir, 'szechuan-sauce.json'), {
+    converged: false,
+    reason: 'szechuan-sauce phase initialized',
+    findings: [],
+  });
 }
 
 export function setupSzechuanSauce(
@@ -1001,6 +1010,7 @@ export function setupSzechuanSauce(
   }
   try {
     execFileSync('node', initArgs, { timeout: 30_000, encoding: 'utf-8' });
+    writeSzechuanConvergenceSeed(sessionDir);
   } catch (err) {
     log(`init-microverse.js failed: ${safeErrorMessage(err)}`);
     return false;
