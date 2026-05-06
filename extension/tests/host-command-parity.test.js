@@ -20,6 +20,22 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const COMMANDS_DIR = path.join(REPO_ROOT, '.claude', 'commands');
 
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function expectedCommandPaths(host, command) {
+  const pathsByHost = {
+    claude: [`commands/${command}.md`],
+    codex: [`prompts/pickle-rick/${command}.md`],
+    gemini: [
+      `extensions/pickle-rick/commands-md/${command}.md`,
+      `extensions/pickle-rick/commands/${command}.toml`,
+    ],
+  };
+  return pathsByHost[host];
+}
+
 describe('host command registry parity', () => {
   test('canonical registry exactly matches Claude command markdown files', () => {
     const commandFiles = readdirSync(COMMANDS_DIR)
@@ -48,15 +64,30 @@ describe('host command registry parity', () => {
   });
 
   test('adapter relative paths include host-specific command surfaces', () => {
-    assert.ok(expectedAdapterRelativePaths('claude').includes('commands/pickle.md'));
-    assert.ok(expectedAdapterRelativePaths('codex').includes('prompts/pickle-rick/pickle-tmux.md'));
-    assert.ok(expectedAdapterRelativePaths('gemini').includes('extensions/pickle-rick/commands/pickle-pipeline.toml'));
+    for (const host of BACKENDS) {
+      const paths = new Set(expectedAdapterRelativePaths(host));
+      for (const { name } of commandsForHost(host)) {
+        for (const expectedPath of expectedCommandPaths(host, name)) {
+          assert.equal(paths.has(expectedPath), true, `${host} must include ${expectedPath}`);
+        }
+      }
+    }
   });
 
-  test('Gemini TOML renderer uses registry description and args placeholder', () => {
-    const rendered = renderGeminiToml('pickle', '/tmp/commands-md/pickle.md');
-    assert.match(rendered, /description = "Start the interactive Pickle Rick autonomous coding loop\."/);
-    assert.match(rendered, /\/tmp\/commands-md\/pickle\.md/);
+  test('Gemini TOML renderer uses registry descriptions, markdown targets, and args placeholder', () => {
+    for (const { name, description } of commandsForHost('gemini')) {
+      const markdownPath = `/tmp/commands-md/${name}.md`;
+      const rendered = renderGeminiToml(name, markdownPath);
+      assert.match(rendered, new RegExp(`description = ${escapeRegExp(JSON.stringify(description))}`));
+      assert.match(rendered, new RegExp(escapeRegExp(markdownPath)));
+      assert.match(rendered, /\{\{args\}\}/);
+    }
+  });
+
+  test('Gemini TOML renderer falls back for unknown commands', () => {
+    const rendered = renderGeminiToml('unknown-command', '../commands-md/unknown-command.md');
+    assert.match(rendered, /description = "Pickle Rick \/unknown-command"/);
+    assert.match(rendered, /\.\.\/commands-md\/unknown-command\.md/);
     assert.match(rendered, /\{\{args\}\}/);
   });
 });

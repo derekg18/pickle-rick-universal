@@ -5,6 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { canonicalCommandNames } from '../services/host-command-registry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -15,6 +16,8 @@ const CLAUDE_STOP_HOOK = `sh -c 'exec node "$(cat ${LEGACY_RUNTIME_ROOT_MARKER})
 const CLAUDE_COMMIT_HOOK = `sh -c 'exec node "$(cat ${LEGACY_RUNTIME_ROOT_MARKER})/extension/bin/log-commit.js"'`;
 const OLD_CLAUDE_STOP_HOOK = 'node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/hooks/dispatch.js stop-hook';
 const OLD_CLAUDE_COMMIT_HOOK = 'node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/log-commit.js';
+const COMMAND_NAMES = canonicalCommandNames();
+const COMMAND_COUNT = COMMAND_NAMES.length;
 
 function makeFixture() {
   const dir = mkdtempSync(path.join(tmpdir(), 'pickle-universal-install-'));
@@ -68,6 +71,24 @@ function assertNoStaleRuntimeReference(content, fixture, runtimeRoot) {
   assert.equal(content.includes(fixture.dir) && !content.includes(runtimeRoot), false, 'adapter content must not point at fixture temp paths outside runtime_root');
 }
 
+function assertInstalledCommandSurfaces(fixture, runtimeRoot) {
+  for (const command of COMMAND_NAMES) {
+    assert.equal(existsSync(path.join(fixture.home, '.claude', 'commands', `${command}.md`)), true, `Claude must install /${command}`);
+    assert.equal(existsSync(path.join(fixture.home, '.codex', 'prompts', 'pickle-rick', `${command}.md`)), true, `Codex must install /${command}`);
+    assert.equal(
+      existsSync(path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'commands-md', `${command}.md`)),
+      true,
+      `Gemini must install markdown for /${command}`,
+    );
+    const geminiToml = path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'commands', `${command}.toml`);
+    assert.equal(existsSync(geminiToml), true, `Gemini must install TOML for /${command}`);
+    const geminiTomlContent = readFileSync(geminiToml, 'utf8');
+    assert.ok(geminiTomlContent.includes(`../commands-md/${command}.md`), `Gemini TOML must point at markdown for /${command}`);
+    assert.ok(geminiTomlContent.includes('{{args}}'), `Gemini TOML must preserve args for /${command}`);
+    assertNoStaleRuntimeReference(geminiTomlContent, fixture, runtimeRoot);
+  }
+}
+
 describe('universal install.sh host adapters', () => {
   test('installs shared runtime and all present hosts', () => {
     const fixture = makeFixture();
@@ -91,9 +112,9 @@ describe('universal install.sh host adapters', () => {
       assert.equal(manifest.hosts.claude.status, 'installed');
       assert.equal(manifest.hosts.codex.status, 'installed');
       assert.equal(manifest.hosts.gemini.status, 'installed');
-      assert.equal(manifest.hosts.claude.command_count, 33);
-      assert.equal(manifest.hosts.codex.command_count, 33);
-      assert.equal(manifest.hosts.gemini.command_count, 33);
+      assert.equal(manifest.hosts.claude.command_count, COMMAND_COUNT);
+      assert.equal(manifest.hosts.codex.command_count, COMMAND_COUNT);
+      assert.equal(manifest.hosts.gemini.command_count, COMMAND_COUNT);
 
       assert.equal(existsSync(path.join(fixture.xdg, 'pickle-rick', 'runtime', 'extension', 'bin', 'setup.js')), true);
       assert.ok(manifest.hosts.claude.files_written.includes(LEGACY_CLAUDE_RUNTIME_ROOT));
@@ -104,12 +125,7 @@ describe('universal install.sh host adapters', () => {
       const geminiRuntimeMarker = path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'runtime_root');
       assert.equal(runtimeMarker(codexRuntimeMarker), runtimeRoot);
       assert.equal(runtimeMarker(geminiRuntimeMarker), runtimeRoot);
-      assert.equal(existsSync(path.join(fixture.home, '.codex', 'prompts', 'pickle-rick', 'pickle.md')), true);
-      const geminiPickleToml = path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'commands', 'pickle.toml');
-      assert.equal(existsSync(geminiPickleToml), true);
-      const geminiPickleTomlContent = readFileSync(geminiPickleToml, 'utf8');
-      assert.ok(geminiPickleTomlContent.includes('../commands-md/pickle.md'));
-      assertNoStaleRuntimeReference(geminiPickleTomlContent, fixture, runtimeRoot);
+      assertInstalledCommandSurfaces(fixture, runtimeRoot);
       const geminiTmuxRunner = path.join(fixture.home, '.gemini', 'extensions', 'pickle-rick', 'extension', 'bin', 'tmux-runner.js');
       assert.equal(existsSync(geminiTmuxRunner), true);
       assert.equal(lstatSync(geminiTmuxRunner).isSymbolicLink(), true);
