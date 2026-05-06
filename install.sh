@@ -11,6 +11,10 @@ MANIFEST_FILE="$DATA_ROOT/install_manifest.json"
 COMMANDS_SOURCE_DIR="$SCRIPT_DIR/.claude/commands"
 AGENTS_SOURCE_DIR="$SCRIPT_DIR/.claude/agents"
 SOURCE_SETTINGS="$SCRIPT_DIR/.claude/settings.json"
+CODEX_PLUGIN_NAME="pickle-rick"
+CODEX_MARKETPLACE_NAME="pickle-rick"
+CODEX_PLUGIN_KEY="$CODEX_PLUGIN_NAME@$CODEX_MARKETPLACE_NAME"
+CODEX_PLUGIN_SOURCE_DIR="$SCRIPT_DIR/codex-plugin"
 LEGACY_RUNTIME_ROOT_MARKER="$LEGACY_CLAUDE_RUNTIME_ROOT/runtime_root"
 CLAUDE_STOP_HOOK_CMD="sh -c 'exec node \"\$(cat \"$LEGACY_RUNTIME_ROOT_MARKER\")/extension/hooks/dispatch.js\" stop-hook'"
 CLAUDE_COMMIT_HOOK_CMD="sh -c 'exec node \"\$(cat \"$LEGACY_RUNTIME_ROOT_MARKER\")/extension/bin/log-commit.js\"'"
@@ -61,6 +65,7 @@ gemini --version >/dev/null 2>&1 || echo "⚠️  gemini CLI not on PATH (needed
 bun --version >/dev/null 2>&1    || echo "WARNING: bun not found. Plumbus generative audit is running in degraded mode. Install bun for full analysis."
 [ -d "$SCRIPT_DIR/extension" ]   || { echo "❌ extension/ not found. Are you running from the repo root?"; exit 1; }
 [ -d "$COMMANDS_SOURCE_DIR" ]    || { echo "❌ .claude/commands/ not found. Are you running from the repo root?"; exit 1; }
+[ -f "$CODEX_PLUGIN_SOURCE_DIR/.codex-plugin/plugin.json" ] || { echo "❌ codex-plugin/.codex-plugin/plugin.json not found. Are you running from the repo root?"; exit 1; }
 
 PACKAGE_VERSION="$(node -e "const p=require('$SCRIPT_DIR/extension/package.json'); process.stdout.write(p.version)")"
 COMMAND_SOURCE_COUNT="$(find "$COMMANDS_SOURCE_DIR" -maxdepth 1 -type f -name '*.md' | wc -l | tr -d ' ')"
@@ -167,6 +172,91 @@ render_gemini_toml() {
     const mod = await import(pathToFileURL(process.argv[1]).href);
     process.stdout.write(mod.renderGeminiToml(process.argv[2], process.argv[3]));
   ' "$SCRIPT_DIR/extension/services/host-command-registry.js" "$command_name" "$command_target"
+}
+
+ensure_toml_bool() {
+  local file="$1"
+  local table="$2"
+  local key="$3"
+  local value="$4"
+  mkdir -p "$(dirname "$file")"
+  node --input-type=module - "$file" "$table" "$key" "$value" <<'NODE'
+import fs from "fs";
+
+const [file, table, key, value] = process.argv.slice(2);
+const tableHeader = `[${table}]`;
+const keyPattern = new RegExp(`^\\s*${key}\\s*=`);
+let text = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
+let lines = text.length > 0 ? text.split(/\r?\n/) : [];
+if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+
+let tableIndex = lines.findIndex((line) => line.trim() === tableHeader);
+if (tableIndex === -1) {
+  if (lines.length > 0) lines.push("");
+  lines.push(tableHeader, `${key} = ${value}`);
+  fs.writeFileSync(file, `${lines.join("\n")}\n`);
+  process.exit(0);
+}
+
+let nextTableIndex = lines.findIndex((line, index) => index > tableIndex && /^\s*\[/.test(line));
+if (nextTableIndex === -1) nextTableIndex = lines.length;
+const keyIndex = lines.findIndex((line, index) => index > tableIndex && index < nextTableIndex && keyPattern.test(line));
+if (keyIndex === -1) {
+  lines.splice(tableIndex + 1, 0, `${key} = ${value}`);
+} else {
+  lines[keyIndex] = `${key} = ${value}`;
+}
+fs.writeFileSync(file, `${lines.join("\n")}\n`);
+NODE
+}
+
+write_codex_marketplace() {
+  local marketplace_file="$1"
+  local plugin_name="$2"
+  local source_path="$3"
+  mkdir -p "$(dirname "$marketplace_file")"
+  node --input-type=module - "$marketplace_file" "$plugin_name" "$source_path" <<'NODE'
+import fs from "fs";
+
+const [file, pluginName, sourcePath] = process.argv.slice(2);
+let root = {};
+if (fs.existsSync(file)) {
+  try {
+    root = JSON.parse(fs.readFileSync(file, "utf8"));
+  } catch {
+    root = {};
+  }
+}
+
+if (!root || typeof root !== "object" || Array.isArray(root)) root = {};
+if (typeof root.name !== "string" || root.name.length === 0) root.name = "pickle-rick";
+if (!root.interface || typeof root.interface !== "object" || Array.isArray(root.interface)) root.interface = {};
+if (typeof root.interface.displayName !== "string" || root.interface.displayName.length === 0) {
+  root.interface.displayName = "Pickle Rick";
+}
+if (!Array.isArray(root.plugins)) root.plugins = [];
+
+const entry = {
+  name: pluginName,
+  source: {
+    source: "local",
+    path: sourcePath,
+  },
+  policy: {
+    installation: "AVAILABLE",
+    authentication: "ON_INSTALL",
+  },
+  category: "Coding",
+};
+
+const index = root.plugins.findIndex((plugin) => plugin && plugin.name === pluginName);
+if (index === -1) {
+  root.plugins.push(entry);
+} else {
+  root.plugins[index] = { ...root.plugins[index], ...entry };
+}
+fs.writeFileSync(file, `${JSON.stringify(root, null, 2)}\n`);
+NODE
 }
 
 write_host_json() {
@@ -495,29 +585,72 @@ install_claude_adapter() {
 install_codex_adapter() {
   local host_json="$1"
   local codex_root="$HOME/.codex"
+  local settings_file="$codex_root/config.toml"
   local adapter_root="$codex_root/pickle-rick"
   local prompts_dir="$codex_root/prompts/pickle-rick"
+  local flat_pickle_prompt="$codex_root/prompts/pickle.md"
+  local plugin_source_root="$HOME/plugins/$CODEX_PLUGIN_NAME"
+  local plugin_cache_root="$codex_root/plugins/cache/$CODEX_MARKETPLACE_NAME/$CODEX_PLUGIN_NAME/local"
+  local marketplace_file="$HOME/.agents/plugins/marketplace.json"
+  local backup_path=""
+  local backups_json="[]"
 
   if [ ! -d "$codex_root" ]; then
-    write_host_json "$host_json" "codex" "skipped" "$codex_root" "" 0 0 "[]" "[]" "{}" "host root not found"
+    write_host_json "$host_json" "codex" "skipped" "$codex_root" "$settings_file" 0 0 "[]" "[]" "{}" "host root not found"
     echo "ℹ️  Codex host not found — skipping Codex adapter"
     return 0
   fi
 
-  mkdir -p "$adapter_root" "$prompts_dir"
+  if [ -f "$settings_file" ]; then
+    backup_path="$settings_file.pickle-backup.$(date +%s).$$"
+    cp "$settings_file" "$backup_path"
+    backups_json="$(printf '%s\n' "$backup_path" | jq -R . | jq -s .)"
+    echo "✅ Backed up Codex config.toml to $backup_path"
+  fi
+
+  mkdir -p "$adapter_root" "$prompts_dir" "$(dirname "$flat_pickle_prompt")" "$plugin_source_root" "$plugin_cache_root"
   cp "$RUNTIME_ROOT/persona.md" "$adapter_root/persona.md"
   printf '%s\n' "$RUNTIME_ROOT" > "$adapter_root/runtime_root"
   rsync -a "$COMMANDS_SOURCE_DIR/" "$prompts_dir/"
+  cp "$COMMANDS_SOURCE_DIR/pickle.md" "$flat_pickle_prompt"
+
+  rsync -a --delete "$CODEX_PLUGIN_SOURCE_DIR/" "$plugin_source_root/"
+  mkdir -p "$plugin_source_root/commands"
+  cp "$RUNTIME_ROOT/persona.md" "$plugin_source_root/persona.md"
+  printf '%s\n' "$RUNTIME_ROOT" > "$plugin_source_root/runtime_root"
+  rsync -a "$COMMANDS_SOURCE_DIR/" "$plugin_source_root/commands/"
+  rsync -a --delete "$plugin_source_root/" "$plugin_cache_root/"
+
+  ensure_toml_bool "$settings_file" "features" "plugins" "true"
+  ensure_toml_bool "$settings_file" "plugins.\"$CODEX_PLUGIN_KEY\"" "enabled" "true"
+  write_codex_marketplace "$marketplace_file" "$CODEX_PLUGIN_NAME" "./plugins/$CODEX_PLUGIN_NAME"
   echo "✅ Codex adapter installed to $adapter_root and $prompts_dir/"
+  echo "✅ Codex plugin $CODEX_PLUGIN_KEY installed to $plugin_cache_root and enabled in $settings_file"
 
   local files_json
   local adapter_files_json
+  local flat_prompt_json
+  local plugin_source_files_json
+  local plugin_cache_files_json
+  local settings_files_json
+  local managed_files_json
   files_json="$(json_array_from_find "$prompts_dir")"
   adapter_files_json="$(json_array_from_find "$adapter_root")"
-  files_json="$(jq -n --argjson a "$files_json" --argjson b "$adapter_files_json" '$a + $b')"
+  flat_prompt_json="$(printf '%s\n' "$flat_pickle_prompt" | jq -R . | jq -s .)"
+  plugin_source_files_json="$(json_array_from_find "$plugin_source_root")"
+  plugin_cache_files_json="$(json_array_from_find "$plugin_cache_root")"
+  managed_files_json="$(jq -n \
+    --argjson a "$files_json" \
+    --argjson b "$adapter_files_json" \
+    --argjson c "$flat_prompt_json" \
+    --argjson d "$plugin_source_files_json" \
+    --argjson e "$plugin_cache_files_json" \
+    '$a + $b + $c + $d + $e | unique')"
+  settings_files_json="$(printf '%s\n' "$settings_file" "$marketplace_file" | jq -R . | jq -s .)"
+  files_json="$(jq -n --argjson managed "$managed_files_json" --argjson settings "$settings_files_json" '$managed + $settings | unique')"
   local checksums_json
-  checksums_json="$(checksums_json_from_files "$files_json")"
-  write_host_json "$host_json" "codex" "installed" "$codex_root" "" "$COMMAND_SOURCE_COUNT" 0 "$files_json" "[]" "$checksums_json" ""
+  checksums_json="$(checksums_json_from_files "$managed_files_json")"
+  write_host_json "$host_json" "codex" "installed" "$codex_root" "$settings_file" "$COMMAND_SOURCE_COUNT" 0 "$files_json" "$backups_json" "$checksums_json" ""
 }
 
 install_gemini_adapter() {

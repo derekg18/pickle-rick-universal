@@ -139,10 +139,17 @@ export function expectedAdapterRelativePaths(host: Backend): string[] {
     return commands.map((name) => `commands/${name}.md`);
   }
   if (host === 'codex') {
+    const pluginRoot = 'plugins/cache/pickle-rick/pickle-rick/local';
     return [
       'pickle-rick/persona.md',
       'pickle-rick/runtime_root',
+      'prompts/pickle.md',
+      `${pluginRoot}/.codex-plugin/plugin.json`,
+      `${pluginRoot}/skills/pickle/SKILL.md`,
+      `${pluginRoot}/persona.md`,
+      `${pluginRoot}/runtime_root`,
       ...commands.map((name) => `prompts/pickle-rick/${name}.md`),
+      ...commands.map((name) => `${pluginRoot}/commands/${name}.md`),
     ];
   }
   return [

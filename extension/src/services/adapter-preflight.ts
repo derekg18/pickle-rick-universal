@@ -7,6 +7,9 @@ import { getDataRoot, safeErrorMessage } from './pickle-utils.js';
 import { getCommandSpec, renderGeminiToml } from './host-command-registry.js';
 
 const REMEDIATION = 'bash install.sh';
+const CODEX_HOME_SEGMENT = `${path.sep}.${'codex'}${path.sep}`;
+const CODEX_PLUGIN_CACHE_SEGMENT = `${CODEX_HOME_SEGMENT}plugins${path.sep}cache${path.sep}pickle-rick${path.sep}pickle-rick${path.sep}local${path.sep}`;
+const CODEX_PLUGIN_SOURCE_SEGMENT = `${path.sep}plugins${path.sep}pickle-rick${path.sep}`;
 const GEMINI_HOME_SEGMENT = `${path.sep}.${'gemini'}${path.sep}`;
 
 interface HostManifest {
@@ -96,6 +99,34 @@ function sourceFromRuntimeRoot(filePath: string, manifest: InstallManifest, host
   return fs.existsSync(sourcePath) ? { sourcePath } : null;
 }
 
+function sourceFromCodexPluginFile(filePath: string, sourceRoot: string, manifest: InstallManifest): ManagedFileSource | null {
+  for (const segment of [CODEX_PLUGIN_CACHE_SEGMENT, CODEX_PLUGIN_SOURCE_SEGMENT]) {
+    const segmentIndex = filePath.indexOf(segment);
+    if (segmentIndex === -1) continue;
+
+    const relativePath = filePath.slice(segmentIndex + segment.length);
+    if (relativePath === 'runtime_root') {
+      return typeof manifest.runtime_root === 'string'
+        ? { content: `${manifest.runtime_root}\n` }
+        : null;
+    }
+    if (relativePath === 'persona.md') {
+      const sourcePath = path.join(sourceRoot, 'persona.md');
+      return fs.existsSync(sourcePath) ? { sourcePath } : null;
+    }
+    if (relativePath.startsWith(`commands${path.sep}`) && relativePath.endsWith('.md')) {
+      const command = commandFromMarkdownTarget(relativePath);
+      if (!command) return null;
+      const sourcePath = path.join(sourceRoot, '.claude', 'commands', `${command}.md`);
+      return fs.existsSync(sourcePath) ? { sourcePath } : null;
+    }
+
+    const sourcePath = path.join(sourceRoot, 'codex-plugin', relativePath);
+    return fs.existsSync(sourcePath) ? { sourcePath } : null;
+  }
+  return null;
+}
+
 function sourceForManagedFile(filePath: string, manifest: InstallManifest, host: Backend, hostManifest: HostManifest): ManagedFileSource | null {
   if (!isHostManifestFile(filePath, hostManifest)) return null;
 
@@ -112,6 +143,11 @@ function sourceForManagedFile(filePath: string, manifest: InstallManifest, host:
       : null;
   }
 
+  if (host === 'codex' && sourceRoot) {
+    const source = sourceFromCodexPluginFile(filePath, sourceRoot, manifest);
+    if (source) return source;
+  }
+
   if (sourceRoot && filePath.includes(`${path.sep}commands${path.sep}`) && filePath.endsWith('.md')) {
     const command = commandFromMarkdownTarget(filePath);
     if (!command) return null;
@@ -120,6 +156,13 @@ function sourceForManagedFile(filePath: string, manifest: InstallManifest, host:
   }
 
   if (sourceRoot && filePath.includes(`${path.sep}prompts${path.sep}pickle-rick${path.sep}`) && filePath.endsWith('.md')) {
+    const command = commandFromMarkdownTarget(filePath);
+    if (!command) return null;
+    const sourcePath = path.join(sourceRoot, '.claude', 'commands', `${command}.md`);
+    return fs.existsSync(sourcePath) ? { sourcePath } : null;
+  }
+
+  if (sourceRoot && filePath.includes(`${CODEX_HOME_SEGMENT}prompts${path.sep}`) && filePath.endsWith('.md')) {
     const command = commandFromMarkdownTarget(filePath);
     if (!command) return null;
     const sourcePath = path.join(sourceRoot, '.claude', 'commands', `${command}.md`);

@@ -1,0 +1,13 @@
+{
+  "name": "pickle-rick",
+  "description": "Pickle Rick command and skill surfaces for Codex.",
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Pickle Rick",
+    "defaultPrompt": [
+      "$pickle implement the requested change",
+      "/pickle implement the requested change",
+      "/pickle-tmux implement the requested change"
+    ]
+  }
+}

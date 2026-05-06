@@ -19,6 +19,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const COMMANDS_DIR = path.join(REPO_ROOT, '.claude', 'commands');
+const CODEX_PLUGIN_ROOT = 'plugins/cache/pickle-rick/pickle-rick/local';
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -27,7 +28,10 @@ function escapeRegExp(value) {
 function expectedCommandPaths(host, command) {
   const pathsByHost = {
     claude: [`commands/${command}.md`],
-    codex: [`prompts/pickle-rick/${command}.md`],
+    codex: [
+      `prompts/pickle-rick/${command}.md`,
+      `${CODEX_PLUGIN_ROOT}/commands/${command}.md`,
+    ],
     gemini: [
       `extensions/pickle-rick/commands-md/${command}.md`,
       `extensions/pickle-rick/commands/${command}.toml`,
@@ -72,6 +76,14 @@ describe('host command registry parity', () => {
         }
       }
     }
+  });
+
+  test('Codex adapter relative paths include plugin and flat prompt surfaces', () => {
+    const paths = new Set(expectedAdapterRelativePaths('codex'));
+    assert.equal(paths.has('prompts/pickle.md'), true);
+    assert.equal(paths.has(`${CODEX_PLUGIN_ROOT}/.codex-plugin/plugin.json`), true);
+    assert.equal(paths.has(`${CODEX_PLUGIN_ROOT}/skills/pickle/SKILL.md`), true);
+    assert.equal(paths.has(`${CODEX_PLUGIN_ROOT}/runtime_root`), true);
   });
 
   test('Gemini TOML renderer uses registry descriptions, markdown targets, and args placeholder', () => {

@@ -17,13 +17,23 @@ function makeFixture() {
   const runtimeRoot = path.join(root, 'runtime');
   const home = path.join(root, 'home');
   const commandSourceDir = path.join(sourceRoot, '.claude', 'commands');
+  const codexPluginTemplateDir = path.join(sourceRoot, 'codex-plugin');
   const codexPromptDir = path.join(home, '.codex', 'prompts', 'pickle-rick');
+  const codexPluginSourceRoot = path.join(home, 'plugins', 'pickle-rick');
+  const codexPluginCacheRoot = path.join(home, '.codex', 'plugins', 'cache', 'pickle-rick', 'pickle-rick', 'local');
   const geminiMdDir = path.join(home, '.gemini', 'extensions', 'pickle-rick', 'commands-md');
   const geminiTomlDir = path.join(home, '.gemini', 'extensions', 'pickle-rick', 'commands');
   const runtimeBinDir = path.join(runtimeRoot, 'extension', 'bin');
   const geminiBinDir = path.join(home, '.gemini', 'extensions', 'pickle-rick', 'extension', 'bin');
   mkdirSync(commandSourceDir, { recursive: true });
+  mkdirSync(path.join(codexPluginTemplateDir, '.codex-plugin'), { recursive: true });
+  mkdirSync(path.join(codexPluginTemplateDir, 'skills', 'pickle'), { recursive: true });
   mkdirSync(codexPromptDir, { recursive: true });
+  for (const pluginRoot of [codexPluginSourceRoot, codexPluginCacheRoot]) {
+    mkdirSync(path.join(pluginRoot, '.codex-plugin'), { recursive: true });
+    mkdirSync(path.join(pluginRoot, 'commands'), { recursive: true });
+    mkdirSync(path.join(pluginRoot, 'skills', 'pickle'), { recursive: true });
+  }
   mkdirSync(geminiMdDir, { recursive: true });
   mkdirSync(geminiTomlDir, { recursive: true });
   mkdirSync(runtimeBinDir, { recursive: true });
@@ -36,8 +46,12 @@ function makeFixture() {
   const personaContent = 'Persona.\n';
   const runtimeRootContent = `${runtimeRoot}\n`;
   const runtimeAdapterContent = 'console.log("runtime dispatch");\n';
+  const codexPluginManifestContent = `${JSON.stringify({ name: 'pickle-rick', skills: './skills/' }, null, 2)}\n`;
+  const codexPluginSkillContent = '---\nname: pickle\n---\n\nRead ../../commands/pickle.md.\n';
   writeFileSync(path.join(commandSourceDir, 'pickle.md'), commandContent);
   writeFileSync(path.join(sourceRoot, 'persona.md'), personaContent);
+  writeFileSync(path.join(codexPluginTemplateDir, '.codex-plugin', 'plugin.json'), codexPluginManifestContent);
+  writeFileSync(path.join(codexPluginTemplateDir, 'skills', 'pickle', 'SKILL.md'), codexPluginSkillContent);
   const runtimeAdapterSource = path.join(runtimeBinDir, 'dispatch.js');
   const runtimeMuxRunnerSource = path.join(runtimeBinDir, 'mux-runner.js');
   const runtimeTmuxRunnerSource = path.join(runtimeBinDir, 'tmux-runner.js');
@@ -46,8 +60,13 @@ function makeFixture() {
   symlinkSync(runtimeMuxRunnerSource, runtimeTmuxRunnerSource);
 
   const codexPrompt = path.join(codexPromptDir, 'pickle.md');
+  const codexFlatPrompt = path.join(home, '.codex', 'prompts', 'pickle.md');
   const codexPersona = path.join(home, '.codex', 'pickle-rick', 'persona.md');
   const codexRuntime = path.join(home, '.codex', 'pickle-rick', 'runtime_root');
+  const codexPluginCacheSkill = path.join(codexPluginCacheRoot, 'skills', 'pickle', 'SKILL.md');
+  const codexPluginCacheCommand = path.join(codexPluginCacheRoot, 'commands', 'pickle.md');
+  const codexPluginCacheRuntime = path.join(codexPluginCacheRoot, 'runtime_root');
+  const codexPluginSourceSkill = path.join(codexPluginSourceRoot, 'skills', 'pickle', 'SKILL.md');
   const geminiMd = path.join(geminiMdDir, 'pickle.md');
   const geminiToml = path.join(geminiTomlDir, 'pickle.toml');
   const geminiRuntime = path.join(home, '.gemini', 'extensions', 'pickle-rick', 'runtime_root');
@@ -56,8 +75,16 @@ function makeFixture() {
   const geminiTomlContent = renderGeminiToml('pickle', '../commands-md/pickle.md');
 
   writeFileSync(codexPrompt, commandContent);
+  writeFileSync(codexFlatPrompt, commandContent);
   writeFileSync(codexPersona, personaContent);
   writeFileSync(codexRuntime, runtimeRootContent);
+  for (const pluginRoot of [codexPluginSourceRoot, codexPluginCacheRoot]) {
+    writeFileSync(path.join(pluginRoot, '.codex-plugin', 'plugin.json'), codexPluginManifestContent);
+    writeFileSync(path.join(pluginRoot, 'commands', 'pickle.md'), commandContent);
+    writeFileSync(path.join(pluginRoot, 'skills', 'pickle', 'SKILL.md'), codexPluginSkillContent);
+    writeFileSync(path.join(pluginRoot, 'persona.md'), personaContent);
+    writeFileSync(path.join(pluginRoot, 'runtime_root'), runtimeRootContent);
+  }
   writeFileSync(geminiMd, commandContent);
   writeFileSync(geminiToml, geminiTomlContent);
   writeFileSync(geminiRuntime, runtimeRootContent);
@@ -66,8 +93,19 @@ function makeFixture() {
 
   const codexChecksums = {
     [codexPrompt]: sha256(commandContent),
+    [codexFlatPrompt]: sha256(commandContent),
     [codexPersona]: sha256(personaContent),
     [codexRuntime]: sha256(runtimeRootContent),
+    [path.join(codexPluginSourceRoot, '.codex-plugin', 'plugin.json')]: sha256(codexPluginManifestContent),
+    [path.join(codexPluginSourceRoot, 'commands', 'pickle.md')]: sha256(commandContent),
+    [path.join(codexPluginSourceRoot, 'skills', 'pickle', 'SKILL.md')]: sha256(codexPluginSkillContent),
+    [path.join(codexPluginSourceRoot, 'persona.md')]: sha256(personaContent),
+    [path.join(codexPluginSourceRoot, 'runtime_root')]: sha256(runtimeRootContent),
+    [path.join(codexPluginCacheRoot, '.codex-plugin', 'plugin.json')]: sha256(codexPluginManifestContent),
+    [codexPluginCacheCommand]: sha256(commandContent),
+    [codexPluginCacheSkill]: sha256(codexPluginSkillContent),
+    [path.join(codexPluginCacheRoot, 'persona.md')]: sha256(personaContent),
+    [codexPluginCacheRuntime]: sha256(runtimeRootContent),
   };
   const geminiChecksums = {
     [geminiMd]: sha256(commandContent),
@@ -94,13 +132,19 @@ function makeFixture() {
     runtimeRoot,
     manifestPath,
     codexPrompt,
+    codexFlatPrompt,
     codexRuntime,
+    codexPluginCacheCommand,
+    codexPluginCacheRuntime,
+    codexPluginCacheSkill,
+    codexPluginSourceSkill,
     geminiRuntime,
     geminiToml,
     geminiRuntimeAdapter,
     geminiRuntimeSymlink,
     runtimeMuxRunnerSource,
     commandContent,
+    codexPluginSkillContent,
     geminiTomlContent,
     runtimeAdapterContent,
   };
@@ -111,7 +155,7 @@ describe('adapter preflight', () => {
     const fixture = makeFixture();
     try {
       const result = assertAdaptersFresh(fixture.manifestPath);
-      assert.equal(result.checked, 8);
+      assert.equal(result.checked, 19);
       assert.deepEqual(result.repaired, []);
       assert.deepEqual(result.skippedHosts, [{ host: 'claude', status: 'skipped', reason: 'host root not found' }]);
     } finally {
@@ -123,9 +167,30 @@ describe('adapter preflight', () => {
     const fixture = makeFixture();
     try {
       writeFileSync(fixture.codexPrompt, 'stale\n');
+      writeFileSync(fixture.codexFlatPrompt, 'stale\n');
       const result = assertAdaptersFresh(fixture.manifestPath);
       assert.ok(result.repaired.includes(fixture.codexPrompt));
+      assert.ok(result.repaired.includes(fixture.codexFlatPrompt));
       assert.equal(readFileSync(fixture.codexPrompt, 'utf8'), fixture.commandContent);
+      assert.equal(readFileSync(fixture.codexFlatPrompt, 'utf8'), fixture.commandContent);
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test('auto-syncs stale Codex plugin files from managed sources', () => {
+    const fixture = makeFixture();
+    try {
+      writeFileSync(fixture.codexPluginCacheCommand, 'stale command\n');
+      writeFileSync(fixture.codexPluginCacheSkill, 'stale skill\n');
+      writeFileSync(fixture.codexPluginSourceSkill, 'stale source skill\n');
+      const result = assertAdaptersFresh(fixture.manifestPath);
+      assert.ok(result.repaired.includes(fixture.codexPluginCacheCommand));
+      assert.ok(result.repaired.includes(fixture.codexPluginCacheSkill));
+      assert.ok(result.repaired.includes(fixture.codexPluginSourceSkill));
+      assert.equal(readFileSync(fixture.codexPluginCacheCommand, 'utf8'), fixture.commandContent);
+      assert.equal(readFileSync(fixture.codexPluginCacheSkill, 'utf8'), fixture.codexPluginSkillContent);
+      assert.equal(readFileSync(fixture.codexPluginSourceSkill, 'utf8'), fixture.codexPluginSkillContent);
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
     }
@@ -147,11 +212,14 @@ describe('adapter preflight', () => {
     const fixture = makeFixture();
     try {
       writeFileSync(fixture.codexRuntime, '/tmp/stale-runtime\n');
+      writeFileSync(fixture.codexPluginCacheRuntime, '/tmp/stale-plugin-runtime\n');
       writeFileSync(fixture.geminiRuntime, '/var/folders/stale-runtime\n');
       const result = assertAdaptersFresh(fixture.manifestPath);
       assert.ok(result.repaired.includes(fixture.codexRuntime));
+      assert.ok(result.repaired.includes(fixture.codexPluginCacheRuntime));
       assert.ok(result.repaired.includes(fixture.geminiRuntime));
       assert.equal(readFileSync(fixture.codexRuntime, 'utf8'), `${fixture.runtimeRoot}\n`);
+      assert.equal(readFileSync(fixture.codexPluginCacheRuntime, 'utf8'), `${fixture.runtimeRoot}\n`);
       assert.equal(readFileSync(fixture.geminiRuntime, 'utf8'), `${fixture.runtimeRoot}\n`);
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });

@@ -128,13 +128,37 @@ test('install manifest records package, roots, checksums, host status, counts, f
 
     assert.equal(manifest.hosts.codex.status, 'installed');
     assert.equal(manifest.hosts.codex.command_count, COMMAND_COUNT);
+    assert.equal(manifest.hosts.codex.settings_file, path.join(fixture.home, '.codex', 'config.toml'));
     assertManifestIncludesCommands(manifest.hosts.codex.files_written, '/prompts/pickle-rick/', 'Codex');
+    assertManifestIncludesCommands(
+      manifest.hosts.codex.files_written,
+      '/plugins/cache/pickle-rick/pickle-rick/local/commands/',
+      'Codex plugin',
+    );
     const codexRuntimeMarker = manifest.hosts.codex.files_written.find((file) => file.endsWith('/pickle-rick/runtime_root'));
     assert.equal(readFileSync(codexRuntimeMarker, 'utf8').trim(), runtimeRoot);
     assert.match(manifest.hosts.codex.file_checksums[codexRuntimeMarker], /^[a-f0-9]{64}$/);
     assert.match(manifest.hosts.codex.file_checksums[
       manifest.hosts.codex.files_written.find((file) => file.endsWith('/prompts/pickle-rick/pickle.md'))
     ], /^[a-f0-9]{64}$/);
+    const codexFlatPrompt = manifest.hosts.codex.files_written.find((file) => file.endsWith('/.codex/prompts/pickle.md'));
+    assert.equal(readFileSync(codexFlatPrompt, 'utf8').length > 0, true);
+    assert.match(manifest.hosts.codex.file_checksums[codexFlatPrompt], /^[a-f0-9]{64}$/);
+    const codexPluginManifest = manifest.hosts.codex.files_written.find((file) => file.endsWith('/plugins/cache/pickle-rick/pickle-rick/local/.codex-plugin/plugin.json'));
+    const codexPluginSkill = manifest.hosts.codex.files_written.find((file) => file.endsWith('/plugins/cache/pickle-rick/pickle-rick/local/skills/pickle/SKILL.md'));
+    assert.equal(JSON.parse(readFileSync(codexPluginManifest, 'utf8')).name, 'pickle-rick');
+    assert.match(readFileSync(codexPluginSkill, 'utf8'), /name: pickle/);
+    assert.match(manifest.hosts.codex.file_checksums[codexPluginManifest], /^[a-f0-9]{64}$/);
+    assert.match(manifest.hosts.codex.file_checksums[codexPluginSkill], /^[a-f0-9]{64}$/);
+    const codexConfig = readFileSync(manifest.hosts.codex.settings_file, 'utf8');
+    assert.match(codexConfig, /\[features\]\nplugins = true/);
+    assert.match(codexConfig, /\[plugins\."pickle-rick@pickle-rick"\]\nenabled = true/);
+    const codexMarketplacePath = path.join(fixture.home, '.agents', 'plugins', 'marketplace.json');
+    const codexMarketplace = JSON.parse(readFileSync(codexMarketplacePath, 'utf8'));
+    assert.deepEqual(codexMarketplace.plugins.find((plugin) => plugin.name === 'pickle-rick')?.source, {
+      source: 'local',
+      path: './plugins/pickle-rick',
+    });
 
     assert.equal(manifest.hosts.gemini.status, 'skipped');
     assert.equal(manifest.hosts.gemini.reason, 'host root not found');
