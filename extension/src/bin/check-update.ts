@@ -53,11 +53,11 @@ export function readCache(): UpdateCheckCache {
       log('Cache missing or corrupted, using defaults');
       return defaultCache();
     }
-    const latestVersion = typeof raw.latest_version === 'string' && parseVersion(raw.latest_version)
-      ? raw.latest_version
+    const latestVersion = typeof raw.latest_version === 'string'
+      ? parseVersion(raw.latest_version) ?? ''
       : '';
-    const currentVersion = typeof raw.current_version === 'string' && parseVersion(raw.current_version)
-      ? raw.current_version
+    const currentVersion = typeof raw.current_version === 'string'
+      ? parseVersion(raw.current_version) ?? ''
       : '';
     const cacheVersionsValid = latestVersion !== '' && currentVersion !== '';
     return {

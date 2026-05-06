@@ -118,6 +118,19 @@ describe('readCache', () => {
         assert.deepEqual(result, data);
     });
 
+    test('normalizes v-prefixed cached versions before comparison', () => {
+        fs.writeFileSync(path.join(tmpDir, 'update-check.json'), JSON.stringify({
+            last_check_epoch: 1000,
+            latest_version: 'v2.0.0',
+            current_version: 'v1.0.0',
+        }));
+
+        const result = readCache();
+
+        assert.equal(result.latest_version, '2.0.0');
+        assert.equal(result.current_version, '1.0.0');
+    });
+
     test('checkForUpdate ignores malformed fresh cached versions and fetches release', () => {
         fs.mkdirSync(path.join(tmpDir, 'extension'), { recursive: true });
         fs.writeFileSync(
