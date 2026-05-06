@@ -8,7 +8,7 @@ import { PromiseTokens, hasToken, VALID_STEPS, Defaults, FALSE_EPIC_THRESHOLD, h
 import { StateManager, safeDeactivate, writeActivityEntry, writeTimeoutStub, assertSchemaVersionDeployParity, SchemaVersionDeployDriftError } from '../services/state-manager.js';
 import { logActivity } from '../services/activity-logger.js';
 import { loadSettings, initCircuitBreaker, canExecute, detectProgress, extractErrorSignature, recordIterationResult, resetCircuitBreaker } from '../services/circuit-breaker.js';
-import { backendSupportsCommitPendingProbe, backendSupportsDefaultClaudeModels, buildManagerInvocation, resolveBackend, resolveBackendFromStateFile, backendEnvOverrides, } from '../services/backend-spawn.js';
+import { backendSupportsCommitPendingProbe, backendSupportsDefaultClaudeModels, backendSupportsManagerErrorRelaunch, buildManagerInvocation, resolveBackend, resolveBackendFromStateFile, backendEnvOverrides, } from '../services/backend-spawn.js';
 import { readRecoverableJsonObject } from '../services/microverse-state.js';
 import { evaluateCodexManagerRelaunch, recordCodexManagerRelaunch, } from '../services/codex-manager-relaunch.js';
 import { extractAssistantContent } from '../services/classifier-utils.js';
@@ -526,9 +526,6 @@ export function detectRateLimitInText(logFile) {
 export function classifyIterationExit(completionResult, logFile, timing) {
     if (completionResult === 'inactive')
         return { type: 'inactive' };
-    if (timing?.didTimeout) {
-        return { type: 'timeout', exitCode: timing.exitCode, wallSeconds: timing.wallSeconds };
-    }
     if (completionResult === 'error')
         return { type: 'error' };
     if (completionResult === 'task_completed' || completionResult === 'review_clean')
@@ -541,6 +538,9 @@ export function classifyIterationExit(completionResult, logFile, timing) {
     // that — don't let fuzzy text matching override structured signals.
     if (!rlInfo.sawEvents && detectRateLimitInText(logFile))
         return { type: 'api_limit' };
+    if (timing?.didTimeout) {
+        return { type: 'timeout', exitCode: timing.exitCode, wallSeconds: timing.wallSeconds };
+    }
     return { type: 'success' };
 }
 /**
@@ -1272,8 +1272,10 @@ export async function processCompletionBranch(state, result, ctx) {
             postState = ctxReadState(ctx);
         }
         catch { /* fall back to pre-iteration state */ }
-        const decision = evaluateCodexManagerRelaunch(postState, collectTickets(ctx.sessionDir), ctx.cbState ?? null);
-        if (decision.shouldRelaunch) {
+        const decision = backendSupportsManagerErrorRelaunch(resolveBackend(postState))
+            ? evaluateCodexManagerRelaunch(postState, collectTickets(ctx.sessionDir), ctx.cbState ?? null)
+            : null;
+        if (decision?.shouldRelaunch) {
             ctx.log(`Codex manager subprocess errored with ${decision.pendingCount} ticket(s) still pending — ` +
                 `relaunching (count ${decision.nextRelaunchCount}/${Defaults.CODEX_MANAGER_RELAUNCH_CAP}).`);
             recordCodexManagerRelaunch(ctx.statePath, ctx.sessionDir, decision, ctx.iteration, ctx.log);
@@ -1992,8 +1994,10 @@ async function runMuxRunnerMain() {
                 postState = readRunnerState(statePath);
             }
             catch { /* fall back */ }
-            const relaunchDecision = evaluateCodexManagerRelaunch(postState, collectTickets(sessionDir), cbState);
-            if (relaunchDecision.shouldRelaunch) {
+            const relaunchDecision = backendSupportsManagerErrorRelaunch(resolveBackend(postState))
+                ? evaluateCodexManagerRelaunch(postState, collectTickets(sessionDir), cbState)
+                : null;
+            if (relaunchDecision?.shouldRelaunch) {
                 log(`Codex manager subprocess errored with ${relaunchDecision.pendingCount} ticket(s) still pending — ` +
                     `relaunching (count ${relaunchDecision.nextRelaunchCount}/${Defaults.CODEX_MANAGER_RELAUNCH_CAP}).`);
                 recordCodexManagerRelaunch(statePath, sessionDir, relaunchDecision, iteration, log);

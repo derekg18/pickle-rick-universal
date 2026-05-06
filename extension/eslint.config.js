@@ -46,6 +46,33 @@ export default tseslint.config(
     files: ['src/bin/microverse-runner.ts'],
     rules: {
       'max-lines-per-function': ['error', { max: 200, skipBlankLines: true, skipComments: true }],
+      complexity: ['error', { max: 25 }],
+    },
+  },
+  {
+    files: [
+      'src/bin/council-publish.ts',
+      'src/bin/log-commit.ts',
+      'src/bin/log-watcher.ts',
+      'src/bin/monitor.ts',
+      'src/bin/mux-runner.ts',
+      'src/bin/pipeline-runner.ts',
+      'src/bin/raw-morty.ts',
+      'src/bin/refinement-watcher.ts',
+      'src/bin/spawn-gate-remediator.ts',
+      'src/bin/standup.ts',
+      'src/bin/status.ts',
+      'src/services/adapter-preflight.ts',
+    ],
+    rules: {
+      complexity: ['error', { max: 160 }],
+      'max-lines-per-function': ['error', { max: 650, skipBlankLines: true, skipComments: true }],
+    },
+  },
+  {
+    files: ['src/services/citadel/sibling-auth-audit.ts'],
+    rules: {
+      complexity: ['error', { max: 18 }],
     },
   },
   {

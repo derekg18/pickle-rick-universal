@@ -99,8 +99,11 @@ function main(): void {
 
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
-  const outDir = path.resolve(__dirname, '..', 'types');
-  const outPath = path.join(outDir, 'attractor-schema.ts');
+  const configuredOutPath = process.env['ATTRACTOR_SCHEMA_OUT'];
+  const outPath = configuredOutPath
+    ? path.resolve(configuredOutPath)
+    : path.join(path.resolve(__dirname, '..', 'types'), 'attractor-schema.ts');
+  const outDir = path.dirname(outPath);
 
   try {
     fs.mkdirSync(outDir, { recursive: true });

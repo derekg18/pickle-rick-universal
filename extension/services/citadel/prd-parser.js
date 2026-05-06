@@ -60,6 +60,9 @@ function updateContext(line, state) {
         state.tableContext = state.tableContext ?? contextFromText(normalized);
         return;
     }
+    if (/^\s*[-*]\s+`[^`]+`/.test(line)) {
+        return;
+    }
     if (line.trim() === '') {
         return;
     }
@@ -131,8 +134,10 @@ function scanEndpoint(line, lineNumber, result, seen, state) {
 function scanAllowlistEntries(line, lineNumber, entries, seen, tableContext) {
     scanNamedAllowlist(line, lineNumber, entries, seen, 'VALID_ACTIONS', 'valid_action');
     scanNamedAllowlist(line, lineNumber, entries, seen, 'lender_feature_flags', 'lender_feature_flag');
-    if (tableContext)
-        scanContextualTableEntries(line, lineNumber, entries, seen, tableContext);
+    if (!tableContext)
+        return;
+    scanContextualTableEntries(line, lineNumber, entries, seen, tableContext);
+    scanContextualListEntries(line, lineNumber, entries, seen, tableContext);
 }
 function scanNamedAllowlist(line, lineNumber, entries, seen, name, kind) {
     if (!line.includes(name))
@@ -150,13 +155,12 @@ function scanContextualTableEntries(line, lineNumber, entries, seen, tableContex
     if (looksLikeHeader(nameCell, valueCell))
         return;
     const kind = tableContext === 'lender_feature_flags' ? 'lender_feature_flag' : tableContext === 'valid_actions' ? 'valid_action' : 'enum_value';
-    let name = cleanCell(nameCell);
+    const name = cleanCell(nameCell);
     let value = cleanCell(valueCell);
     // HEURISTIC: In lender_feature_flags tables, the first column is often the key (the flag name)
     // and the second is the value (true/false/enabled). We want the key as the allowlist value for searching.
     if (kind === 'lender_feature_flag' && (value.match(/^(enabled|disabled|true|false|on|off|enforced|ignored)$/i) || !name.match(/^(enabled|disabled|true|false|on|off|enforced|ignored)$/i))) {
         value = name;
-        name = 'lender_feature_flags';
     }
     pushAllowlistEntry(entries, seen, {
         name,
@@ -165,6 +169,27 @@ function scanContextualTableEntries(line, lineNumber, entries, seen, tableContex
         kind,
         text: line.trim(),
     });
+}
+function scanContextualListEntries(line, lineNumber, entries, seen, tableContext) {
+    if (isMarkdownTableRow(line) || tableContext === 'status_codes')
+        return;
+    const values = [...line.matchAll(/`([A-Za-z0-9_.:-]+)`/g)].map((match) => match[1]).filter(Boolean);
+    if (values.length === 0)
+        return;
+    const kind = tableContext === 'lender_feature_flags'
+        ? 'lender_feature_flag'
+        : tableContext === 'valid_actions'
+            ? 'valid_action'
+            : 'enum_value';
+    for (const value of values) {
+        pushAllowlistEntry(entries, seen, {
+            name: kind === 'lender_feature_flag' ? value : tableContext,
+            value,
+            line: lineNumber,
+            kind,
+            text: line.trim(),
+        });
+    }
 }
 function scanStatusCodeRow(line, lineNumber, rows, seen, state) {
     const cells = tableCells(line);

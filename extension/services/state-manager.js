@@ -50,6 +50,7 @@ function lockPath(statePath) {
 }
 // Shared buffer for Atomics.wait()-based synchronous sleep (no CPU spin).
 const _sleepBuf = new Int32Array(new SharedArrayBuffer(4));
+const LOCK_INITIALIZATION_GRACE_MS = 250;
 /** Synchronous sleep that yields to the OS scheduler instead of busy-waiting. */
 function sleepSync(ms) {
     Atomics.wait(_sleepBuf, 0, 0, ms);
@@ -362,11 +363,8 @@ export class StateManager {
         const maxSteals = 3; // Cap stale-steal retries to prevent unbounded loops
         for (let attempt = 0; attempt <= this.opts.maxLockRetries; attempt++) {
             try {
-                // O_CREAT | O_EXCL — fails if file already exists (atomic)
-                const fd = fs.openSync(lp, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY);
-                // Write PID + timestamp for stale detection
-                fs.writeSync(fd, JSON.stringify({ pid: process.pid, ts: Date.now() }));
-                fs.closeSync(fd);
+                // `wx` is O_CREAT | O_EXCL: fails if the lock file already exists.
+                fs.writeFileSync(lp, JSON.stringify({ pid: process.pid, ts: Date.now() }), { flag: 'wx' });
                 return;
             }
             catch {
@@ -408,13 +406,15 @@ export class StateManager {
                 const lock = JSON.parse(raw);
                 const lockPid = Number(lock.pid);
                 const lockTs = Number(lock.ts);
-                if (!Number.isFinite(lockPid) || !Number.isFinite(lockTs))
-                    return true;
+                if (!Number.isFinite(lockPid) || !Number.isFinite(lockTs)) {
+                    return Date.now() - readMtimeMs(lp) > LOCK_INITIALIZATION_GRACE_MS;
+                }
                 return !isProcessAlive(lockPid) || (Date.now() - lockTs > this.opts.staleLockTimeoutMs);
             }
             catch {
-                // Corrupt JSON — safe to steal
-                return true;
+                // A contender can observe a just-created lock before its payload is
+                // visible. Give fresh malformed locks a short initialization grace.
+                return Date.now() - readMtimeMs(lp) > LOCK_INITIALIZATION_GRACE_MS;
             }
         })();
         if (!shouldSteal)

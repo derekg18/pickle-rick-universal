@@ -89,18 +89,16 @@ export function cancelSession(cwd) {
         console.log('State file is unreadable.');
         return;
     }
-    let cancelled = false;
-    try {
-        cancelled = cancelWithSessionMapLock(SESSIONS_MAP, statePath, cwd);
-    }
-    catch (err) {
-        if (err instanceof LockError) {
-            cancelled = cancelWithoutSessionMapConsistency(statePath, err);
+    const cancelled = (() => {
+        try {
+            return cancelWithSessionMapLock(SESSIONS_MAP, statePath, cwd);
         }
-        else {
+        catch (err) {
+            if (err instanceof LockError)
+                return cancelWithoutSessionMapConsistency(statePath, err);
             throw err;
         }
-    }
+    })();
     printCancelOutcome(cancelled, sessionPath);
 }
 if (process.argv[1] && path.basename(process.argv[1]) === 'cancel.js') {

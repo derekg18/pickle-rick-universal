@@ -21,7 +21,6 @@ import { readRecoverableJsonObject } from '../services/microverse-state.js';
 import {
   evaluateCodexManagerRelaunch,
   recordCodexManagerRelaunch,
-  type CodexRelaunchDecision,
 } from '../services/codex-manager-relaunch.js';
 import { extractAssistantContent } from '../services/classifier-utils.js';
 import { assertAdaptersFresh } from '../services/adapter-preflight.js';
@@ -626,9 +625,6 @@ export function classifyIterationExit(
   timing?: { didTimeout: boolean; exitCode: number | null; wallSeconds: number },
 ): IterationExitResult {
   if (completionResult === 'inactive') return { type: 'inactive' };
-  if (timing?.didTimeout) {
-    return { type: 'timeout', exitCode: timing.exitCode, wallSeconds: timing.wallSeconds };
-  }
   if (completionResult === 'error') return { type: 'error' };
   if (completionResult === 'task_completed' || completionResult === 'review_clean') return { type: 'success' };
   const rlInfo = detectRateLimitInLog(logFile);
@@ -637,6 +633,9 @@ export function classifyIterationExit(
   // entries at all. If structured events exist but none say 'rejected', trust
   // that — don't let fuzzy text matching override structured signals.
   if (!rlInfo.sawEvents && detectRateLimitInText(logFile)) return { type: 'api_limit' };
+  if (timing?.didTimeout) {
+    return { type: 'timeout', exitCode: timing.exitCode, wallSeconds: timing.wallSeconds };
+  }
   return { type: 'success' };
 }
 
@@ -1485,12 +1484,14 @@ export async function processCompletionBranch(state: State, result: IterationOut
     // gated on circuit-breaker state.
     let postState: State = state;
     try { postState = ctxReadState(ctx); } catch { /* fall back to pre-iteration state */ }
-    const decision = evaluateCodexManagerRelaunch(
-      postState,
-      collectTickets(ctx.sessionDir),
-      ctx.cbState ?? null,
-    );
-    if (decision.shouldRelaunch) {
+    const decision = backendSupportsManagerErrorRelaunch(resolveBackend(postState))
+      ? evaluateCodexManagerRelaunch(
+          postState,
+          collectTickets(ctx.sessionDir),
+          ctx.cbState ?? null,
+        )
+      : null;
+    if (decision?.shouldRelaunch) {
       ctx.log(
         `Codex manager subprocess errored with ${decision.pendingCount} ticket(s) still pending — ` +
         `relaunching (count ${decision.nextRelaunchCount}/${Defaults.CODEX_MANAGER_RELAUNCH_CAP}).`,
@@ -2225,12 +2226,14 @@ async function runMuxRunnerMain() {
       // fall through to the legacy exit-on-error.
       let postState: State = state;
       try { postState = readRunnerState(statePath); } catch { /* fall back */ }
-      const relaunchDecision = evaluateCodexManagerRelaunch(
-        postState,
-        collectTickets(sessionDir),
-        cbState,
-      );
-      if (relaunchDecision.shouldRelaunch) {
+      const relaunchDecision = backendSupportsManagerErrorRelaunch(resolveBackend(postState))
+        ? evaluateCodexManagerRelaunch(
+            postState,
+            collectTickets(sessionDir),
+            cbState,
+          )
+        : null;
+      if (relaunchDecision?.shouldRelaunch) {
         log(
           `Codex manager subprocess errored with ${relaunchDecision.pendingCount} ticket(s) still pending — ` +
           `relaunching (count ${relaunchDecision.nextRelaunchCount}/${Defaults.CODEX_MANAGER_RELAUNCH_CAP}).`,

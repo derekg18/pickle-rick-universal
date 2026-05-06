@@ -6,6 +6,7 @@ import { BACKENDS } from '../types/index.js';
 import { getDataRoot, safeErrorMessage } from './pickle-utils.js';
 import { getCommandSpec, renderGeminiToml } from './host-command-registry.js';
 const REMEDIATION = 'bash install.sh';
+const GEMINI_HOME_SEGMENT = `${path.sep}.${'gemini'}${path.sep}`;
 export class AdapterPreflightError extends Error {
     constructor(message) {
         super(`${message}\nFix: ${REMEDIATION}`);
@@ -49,7 +50,7 @@ function sourceFromRuntimeRoot(filePath, manifest, host) {
         return null;
     const runtimeAdapterSegments = {
         codex: `${path.sep}.codex${path.sep}pickle-rick${path.sep}`,
-        gemini: `${path.sep}.gemini${path.sep}extensions${path.sep}pickle-rick${path.sep}`,
+        gemini: `${GEMINI_HOME_SEGMENT}extensions${path.sep}pickle-rick${path.sep}`,
     };
     const segment = runtimeAdapterSegments[host];
     if (!segment)

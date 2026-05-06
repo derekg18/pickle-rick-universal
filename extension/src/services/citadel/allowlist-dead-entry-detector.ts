@@ -151,7 +151,7 @@ function loadChangedProductionFiles(changedFiles: ChangedFileSummary[], repoRoot
   });
 }
 
-function loadChangedClaudeFiles(changedFiles: ChangedFileSummary[], repoRoot: string): { summary: ChangedFileSummary }[] {
+function loadChangedClaudeFiles(changedFiles: ChangedFileSummary[], _repoRoot: string): { summary: ChangedFileSummary }[] {
   return changedFiles.flatMap((summary) => {
     if (summary.status === 'D' || !CLAUDE_FILE_PATTERN.test(summary.path)) return [];
     return [{ summary }];

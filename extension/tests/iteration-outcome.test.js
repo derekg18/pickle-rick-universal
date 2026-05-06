@@ -673,11 +673,11 @@ test('evaluateCodexManagerRelaunch ignores time_limit when max_time_minutes is m
         'no start_time_epoch → time gate inert, eligible falls through');
 });
 
-test('classifyIterationExit: prioritizes timeout over error', () => {
+test('classifyIterationExit: prioritizes error over timeout', () => {
     const result = classifyIterationExit('error', '/dev/null', {
         didTimeout: true,
         exitCode: null,
         wallSeconds: 14400
     });
-    assert.equal(result.type, 'timeout', 'should be classified as timeout even if completion is error');
+    assert.equal(result.type, 'error', 'error completion should stay terminal even when timing says timeout');
 });

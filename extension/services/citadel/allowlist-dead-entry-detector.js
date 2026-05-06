@@ -85,7 +85,7 @@ function loadChangedProductionFiles(changedFiles, repoRoot) {
         }
     });
 }
-function loadChangedClaudeFiles(changedFiles, repoRoot) {
+function loadChangedClaudeFiles(changedFiles, _repoRoot) {
     return changedFiles.flatMap((summary) => {
         if (summary.status === 'D' || !CLAUDE_FILE_PATTERN.test(summary.path))
             return [];

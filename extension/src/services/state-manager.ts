@@ -73,6 +73,7 @@ function lockPath(statePath: string): string {
 
 // Shared buffer for Atomics.wait()-based synchronous sleep (no CPU spin).
 const _sleepBuf = new Int32Array(new SharedArrayBuffer(4));
+const LOCK_INITIALIZATION_GRACE_MS = 250;
 
 /** Synchronous sleep that yields to the OS scheduler instead of busy-waiting. */
 function sleepSync(ms: number): void {
@@ -409,11 +410,8 @@ export class StateManager {
 
     for (let attempt = 0; attempt <= this.opts.maxLockRetries; attempt++) {
       try {
-        // O_CREAT | O_EXCL — fails if file already exists (atomic)
-        const fd = fs.openSync(lp, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY);
-        // Write PID + timestamp for stale detection
-        fs.writeSync(fd, JSON.stringify({ pid: process.pid, ts: Date.now() }));
-        fs.closeSync(fd);
+        // `wx` is O_CREAT | O_EXCL: fails if the lock file already exists.
+        fs.writeFileSync(lp, JSON.stringify({ pid: process.pid, ts: Date.now() }), { flag: 'wx' });
         return;
       } catch {
         // Check if existing lock is stale (bounded steal attempts)
@@ -458,11 +456,14 @@ export class StateManager {
         const lockPid = Number(lock.pid);
         const lockTs = Number(lock.ts);
 
-        if (!Number.isFinite(lockPid) || !Number.isFinite(lockTs)) return true;
+        if (!Number.isFinite(lockPid) || !Number.isFinite(lockTs)) {
+          return Date.now() - readMtimeMs(lp) > LOCK_INITIALIZATION_GRACE_MS;
+        }
         return !isProcessAlive(lockPid) || (Date.now() - lockTs > this.opts.staleLockTimeoutMs);
       } catch {
-        // Corrupt JSON — safe to steal
-        return true;
+        // A contender can observe a just-created lock before its payload is
+        // visible. Give fresh malformed locks a short initialization grace.
+        return Date.now() - readMtimeMs(lp) > LOCK_INITIALIZATION_GRACE_MS;
       }
     })();
 

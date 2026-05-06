@@ -97,16 +97,14 @@ export function cancelSession(cwd: string) {
     return;
   }
 
-  let cancelled = false;
-  try {
-    cancelled = cancelWithSessionMapLock(SESSIONS_MAP, statePath, cwd);
-  } catch (err) {
-    if (err instanceof LockError) {
-      cancelled = cancelWithoutSessionMapConsistency(statePath, err);
-    } else {
+  const cancelled = (() => {
+    try {
+      return cancelWithSessionMapLock(SESSIONS_MAP, statePath, cwd);
+    } catch (err) {
+      if (err instanceof LockError) return cancelWithoutSessionMapConsistency(statePath, err);
       throw err;
     }
-  }
+  })();
 
   printCancelOutcome(cancelled, sessionPath);
 }

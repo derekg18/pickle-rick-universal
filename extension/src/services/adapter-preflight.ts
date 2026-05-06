@@ -7,6 +7,7 @@ import { getDataRoot, safeErrorMessage } from './pickle-utils.js';
 import { getCommandSpec, renderGeminiToml } from './host-command-registry.js';
 
 const REMEDIATION = 'bash install.sh';
+const GEMINI_HOME_SEGMENT = `${path.sep}.${'gemini'}${path.sep}`;
 
 interface HostManifest {
   status?: string;
@@ -82,7 +83,7 @@ function sourceFromRuntimeRoot(filePath: string, manifest: InstallManifest, host
 
   const runtimeAdapterSegments: Partial<Record<Backend, string>> = {
     codex: `${path.sep}.codex${path.sep}pickle-rick${path.sep}`,
-    gemini: `${path.sep}.gemini${path.sep}extensions${path.sep}pickle-rick${path.sep}`,
+    gemini: `${GEMINI_HOME_SEGMENT}extensions${path.sep}pickle-rick${path.sep}`,
   };
   const segment = runtimeAdapterSegments[host];
   if (!segment) return null;

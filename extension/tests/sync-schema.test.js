@@ -10,7 +10,7 @@ import os from 'node:os';
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SYNC_SCRIPT = path.resolve(__dirname, '..', 'bin', 'sync-schema.js');
-const OUTPUT_FILE = path.resolve(__dirname, '..', 'types', 'attractor-schema.ts');
+let outputFile;
 const TSCONFIG = path.resolve(__dirname, '..', '..', 'tsconfig.json');
 
 // ---------------------------------------------------------------------------
@@ -49,7 +49,7 @@ function runSync(env = {}) {
             [SYNC_SCRIPT],
             {
                 timeout: 45_000,
-                env: { ...process.env, ...env },
+                env: { ...process.env, ATTRACTOR_SCHEMA_OUT: outputFile, ...env },
                 cwd: path.resolve(__dirname, '..'),
             },
             (err, stdout, stderr) => {
@@ -71,22 +71,19 @@ let tmpDir;
 
 beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sync-schema-test-'));
-    // Clean up any prior generated file
-    try { fs.unlinkSync(OUTPUT_FILE); } catch { /* noop */ }
+    outputFile = path.join(tmpDir, 'types', 'attractor-schema.ts');
 });
 
 afterEach(() => {
     // Clean up temp dir
     fs.rmSync(tmpDir, { recursive: true, force: true });
-    // Clean up generated file
-    try { fs.unlinkSync(OUTPUT_FILE); } catch { /* noop */ }
 });
 
 // ---------------------------------------------------------------------------
 // sync-schema tests — RED phase
 // ---------------------------------------------------------------------------
 
-describe('sync-schema', () => {
+describe('sync-schema', { concurrency: false }, () => {
     test('(1) valid schema.json at $ATTRACTOR_ROOT → generates types/attractor-schema.ts', async () => {
         const schema = validSchema();
         fs.writeFileSync(path.join(tmpDir, 'schema.json'), JSON.stringify(schema, null, 2));
@@ -94,9 +91,9 @@ describe('sync-schema', () => {
         const result = await runSync({ ATTRACTOR_ROOT: tmpDir });
 
         assert.equal(result.code, 0, `expected exit 0, got ${result.code}: ${result.stderr}`);
-        assert.ok(fs.existsSync(OUTPUT_FILE), 'attractor-schema.ts should be generated');
+        assert.ok(fs.existsSync(outputFile), 'attractor-schema.ts should be generated');
 
-        const content = fs.readFileSync(OUTPUT_FILE, 'utf8');
+        const content = fs.readFileSync(outputFile, 'utf8');
         assert.ok(content.length > 0, 'generated file should not be empty');
         // Must export something usable
         assert.ok(
@@ -136,7 +133,7 @@ describe('sync-schema', () => {
             'stderr should contain a warning about missing ATTRACTOR_ROOT',
         );
         assert.ok(
-            !fs.existsSync(OUTPUT_FILE),
+            !fs.existsSync(outputFile),
             'should not generate output file when ATTRACTOR_ROOT is missing',
         );
     });
@@ -147,14 +144,14 @@ describe('sync-schema', () => {
 
         const syncResult = await runSync({ ATTRACTOR_ROOT: tmpDir });
         assert.equal(syncResult.code, 0, `sync-schema should exit 0: ${syncResult.stderr}`);
-        assert.ok(fs.existsSync(OUTPUT_FILE), 'generated file must exist before tsc check');
+        assert.ok(fs.existsSync(outputFile), 'generated file must exist before tsc check');
 
         // Run tsc --noEmit on the generated file (use tsc binary directly to avoid npx/rtk proxy issues)
         const tscBin = path.resolve(__dirname, '..', 'node_modules', '.bin', 'tsc');
         const tscResult = await new Promise((resolve) => {
             execFile(
                 tscBin,
-                ['--noEmit', '--strict', '--esModuleInterop', OUTPUT_FILE],
+                ['--noEmit', '--strict', '--esModuleInterop', '--skipLibCheck', outputFile],
                 {
                     // 30s → 90s: tsc compile budget under concurrent test runs.
                     timeout: 90_000,
@@ -286,9 +283,9 @@ describe('sync-schema', () => {
 
         const syncResult = await runSync({ ATTRACTOR_ROOT: tmpDir });
         assert.equal(syncResult.code, 0, `sync-schema should exit 0: ${syncResult.stderr}`);
-        assert.ok(fs.existsSync(OUTPUT_FILE), 'generated file must exist');
+        assert.ok(fs.existsSync(outputFile), 'generated file must exist');
 
-        const generated = fs.readFileSync(OUTPUT_FILE, 'utf8');
+        const generated = fs.readFileSync(outputFile, 'utf8');
 
         // Import fallback attribute names for comparison
         const { ATTRACTOR_SCHEMA_FALLBACK } = await import('../types/attractor-schema.fallback.js');

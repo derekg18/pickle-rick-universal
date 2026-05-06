@@ -5,7 +5,7 @@
   "type": "module",
   "engines": {
     "node": ">=20.0.0",
-    "codex": "0.128.0"
+    "codex": "0.42.1"
   },
   "scripts": {
     "lint": "eslint src/",
