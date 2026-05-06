@@ -41,84 +41,117 @@ function statusToExitCode(status: GateResult['status']): number {
   return 1;
 }
 
-export async function checkGateMain(opts: CheckGateMainOpts): Promise<number> {
-  const { argv, runGateFn = runGate } = opts;
-  const out = opts.stdout ?? ((msg: string) => process.stdout.write(msg + '\n'));
-  const err = opts.stderr ?? ((msg: string) => process.stderr.write(msg + '\n'));
-  const jsonMode = hasFlag(argv, '--json');
-
-  if (hasFlag(argv, '--help') || hasFlag(argv, '-h')) {
-    out(USAGE);
-    return 0;
+function loadAllowedPathsFile(allowedPathsFile: string): { allowedPaths?: string[]; error?: string } {
+  let raw: unknown;
+  try {
+    raw = readRecoverableJsonObject(allowedPathsFile);
+  } catch (e) {
+    return { error: `Failed to read --allowed-paths-file ${allowedPathsFile}: ${safeErrorMessage(e)}` };
   }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return { error: `--allowed-paths-file ${allowedPathsFile}: expected a JSON object with an 'allowed_paths' array` };
+  }
+  const field = (raw as Record<string, unknown>).allowed_paths;
+  if (!Array.isArray(field)) {
+    return { error: `--allowed-paths-file ${allowedPathsFile}: 'allowed_paths' is missing or not an array` };
+  }
+  if (!field.every((p) => typeof p === 'string')) {
+    return { error: `--allowed-paths-file ${allowedPathsFile}: 'allowed_paths' must contain only strings` };
+  }
+  return { allowedPaths: field as string[] };
+}
 
-  // Detect unknown flags
+interface ParsedCheckGateArgs {
+  mode: GateMode;
+  scope: 'full' | 'changed';
+  checks: ('typecheck' | 'lint' | 'tests')[];
+  workingDir: string;
+  baselinePath?: string;
+  since?: string;
+  allowedPathsFile?: string;
+}
+
+function parseCheckGateArgs(argv: string[]): { parsed?: ParsedCheckGateArgs; error?: string } {
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg.startsWith('-')) continue;
-    if (!ALL_FLAGS.has(arg)) {
-      err(`Unknown flag: ${arg}\n${USAGE}`);
-      return 1;
-    }
-    if (VALUE_FLAGS.has(arg)) i++; // skip value
+    if (!ALL_FLAGS.has(arg)) return { error: `Unknown flag: ${arg}\n${USAGE}` };
+    if (VALUE_FLAGS.has(arg)) i++;
   }
 
   const mode = parseFlag(argv, '--mode');
   const scope = parseFlag(argv, '--scope');
   const checks = parseFlag(argv, '--checks');
   const workingDir = parseFlag(argv, '--working-dir');
-  const baselinePath = parseFlag(argv, '--baseline-path');
-  const since = parseFlag(argv, '--since');
-  const allowedPathsFile = parseFlag(argv, '--allowed-paths-file');
-
-  if (!mode) { err(`--mode is required\n${USAGE}`); return 1; }
-  if (!VALID_MODES.has(mode)) { err(`--mode must be baseline|strict, got: ${mode}`); return 1; }
-  if (!scope) { err(`--scope is required\n${USAGE}`); return 1; }
-  if (!VALID_SCOPES.has(scope)) { err(`--scope must be full|changed, got: ${scope}`); return 1; }
-  if (!checks) { err(`--checks is required\n${USAGE}`); return 1; }
-  if (!workingDir) { err(`--working-dir is required\n${USAGE}`); return 1; }
+  if (!mode) return { error: `--mode is required\n${USAGE}` };
+  if (!VALID_MODES.has(mode)) return { error: `--mode must be baseline|strict, got: ${mode}` };
+  if (!scope) return { error: `--scope is required\n${USAGE}` };
+  if (!VALID_SCOPES.has(scope)) return { error: `--scope must be full|changed, got: ${scope}` };
+  if (!checks) return { error: `--checks is required\n${USAGE}` };
+  if (!workingDir) return { error: `--working-dir is required\n${USAGE}` };
 
   const parsedChecks = checks.split(',').map(c => c.trim()).filter(Boolean);
   const invalidChecks = parsedChecks.filter(c => !VALID_CHECKS.has(c as 'typecheck' | 'lint' | 'tests'));
   if (invalidChecks.length > 0) {
-    err(`--checks contains invalid values: ${invalidChecks.join(', ')}. Valid: typecheck,lint,tests`);
+    return { error: `--checks contains invalid values: ${invalidChecks.join(', ')}. Valid: typecheck,lint,tests` };
+  }
+
+  return {
+    parsed: {
+      mode: mode as GateMode,
+      scope: scope as 'full' | 'changed',
+      checks: parsedChecks as ('typecheck' | 'lint' | 'tests')[],
+      workingDir,
+      baselinePath: parseFlag(argv, '--baseline-path'),
+      since: parseFlag(argv, '--since'),
+      allowedPathsFile: parseFlag(argv, '--allowed-paths-file'),
+    },
+  };
+}
+
+function writeTextResult(result: GateResult, out: (msg: string) => void): void {
+  const badge = result.status === 'green' ? 'GREEN' : result.status === 'red' ? 'RED' : 'WARN';
+  out(`[check-gate] ${badge} status=${result.status} failures=${result.failures.length} elapsed=${result.elapsed_ms}ms`);
+  for (const f of result.failures) {
+    out(`  [${f.check}] ${f.file}:${f.line} ${f.ruleOrCode} — ${f.message.slice(0, 120)}`);
+  }
+}
+
+export async function checkGateMain(opts: CheckGateMainOpts): Promise<number> {
+  const { argv, runGateFn = runGate } = opts;
+  const out = opts.stdout ?? ((msg: string) => process.stdout.write(msg + '\n'));
+  const err = opts.stderr ?? ((msg: string) => process.stderr.write(msg + '\n'));
+  const jsonMode = hasFlag(argv, '--json');
+  if (hasFlag(argv, '--help') || hasFlag(argv, '-h')) {
+    out(USAGE);
+    return 0;
+  }
+
+  const { parsed, error } = parseCheckGateArgs(argv);
+  if (error || !parsed) {
+    err(error ?? USAGE);
     return 1;
   }
 
   let allowedPaths: string[] | undefined;
-  if (allowedPathsFile) {
-    let raw: unknown;
-    try {
-      raw = readRecoverableJsonObject(allowedPathsFile);
-    } catch (e) {
-      err(`Failed to read --allowed-paths-file ${allowedPathsFile}: ${safeErrorMessage(e)}`);
+  if (parsed.allowedPathsFile) {
+    const loadedAllowedPaths = loadAllowedPathsFile(parsed.allowedPathsFile);
+    if (loadedAllowedPaths.error) {
+      err(loadedAllowedPaths.error);
       return 1;
     }
-    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
-      err(`--allowed-paths-file ${allowedPathsFile}: expected a JSON object with an 'allowed_paths' array`);
-      return 1;
-    }
-    const field = (raw as Record<string, unknown>).allowed_paths;
-    if (!Array.isArray(field)) {
-      err(`--allowed-paths-file ${allowedPathsFile}: 'allowed_paths' is missing or not an array`);
-      return 1;
-    }
-    if (!field.every((p) => typeof p === 'string')) {
-      err(`--allowed-paths-file ${allowedPathsFile}: 'allowed_paths' must contain only strings`);
-      return 1;
-    }
-    allowedPaths = field as string[];
+    allowedPaths = loadedAllowedPaths.allowedPaths;
   }
 
   let result: GateResult;
   try {
     result = await runGateFn({
-      workingDir,
-      mode: mode as GateMode,
-      scope: scope as 'full' | 'changed',
-      checks: parsedChecks as ('typecheck' | 'lint' | 'tests')[],
-      baselinePath,
-      since,
+      workingDir: parsed.workingDir,
+      mode: parsed.mode,
+      scope: parsed.scope,
+      checks: parsed.checks,
+      baselinePath: parsed.baselinePath,
+      since: parsed.since,
       allowedPaths,
     });
   } catch (e) {
@@ -129,13 +162,7 @@ export async function checkGateMain(opts: CheckGateMainOpts): Promise<number> {
   if (jsonMode) {
     out(JSON.stringify(result));
   } else {
-    const badge = result.status === 'green' ? 'GREEN' : result.status === 'red' ? 'RED' : 'WARN';
-    out(`[check-gate] ${badge} status=${result.status} failures=${result.failures.length} elapsed=${result.elapsed_ms}ms`);
-    if (result.failures.length > 0) {
-      for (const f of result.failures) {
-        out(`  [${f.check}] ${f.file}:${f.line} ${f.ruleOrCode} — ${f.message.slice(0, 120)}`);
-      }
-    }
+    writeTextResult(result, out);
   }
 
   return statusToExitCode(result.status);
