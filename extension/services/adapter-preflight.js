@@ -37,11 +37,35 @@ function commandFromTomlTarget(filePath) {
     const name = path.basename(filePath, '.toml');
     return getCommandSpec(name) ? name : null;
 }
-function sourceForManagedFile(filePath, manifest) {
-    const sourceRoot = manifest.source_root;
-    if (!sourceRoot)
+function isHostManifestFile(filePath, hostManifest) {
+    if (!hostManifest.files_written || hostManifest.files_written.length === 0) {
+        return true;
+    }
+    return hostManifest.files_written.some((managedPath) => normalizeExistingPath(managedPath) === filePath);
+}
+function sourceFromRuntimeRoot(filePath, manifest, host) {
+    const runtimeRoot = manifest.runtime_root;
+    if (!runtimeRoot)
         return null;
-    if (filePath.endsWith(`${path.sep}persona.md`)) {
+    const runtimeAdapterSegments = {
+        codex: `${path.sep}.codex${path.sep}pickle-rick${path.sep}`,
+        gemini: `${path.sep}.gemini${path.sep}extensions${path.sep}pickle-rick${path.sep}`,
+    };
+    const segment = runtimeAdapterSegments[host];
+    if (!segment)
+        return null;
+    const segmentIndex = filePath.indexOf(segment);
+    if (segmentIndex === -1)
+        return null;
+    const relativePath = filePath.slice(segmentIndex + segment.length);
+    const sourcePath = path.join(runtimeRoot, relativePath);
+    return fs.existsSync(sourcePath) ? { sourcePath } : null;
+}
+function sourceForManagedFile(filePath, manifest, host, hostManifest) {
+    if (!isHostManifestFile(filePath, hostManifest))
+        return null;
+    const sourceRoot = manifest.source_root;
+    if (sourceRoot && filePath.endsWith(`${path.sep}persona.md`)) {
         const sourcePath = path.join(sourceRoot, 'persona.md');
         return fs.existsSync(sourcePath) ? { sourcePath } : null;
     }
@@ -50,21 +74,21 @@ function sourceForManagedFile(filePath, manifest) {
             ? { content: `${manifest.runtime_root}\n` }
             : null;
     }
-    if (filePath.includes(`${path.sep}commands${path.sep}`) && filePath.endsWith('.md')) {
+    if (sourceRoot && filePath.includes(`${path.sep}commands${path.sep}`) && filePath.endsWith('.md')) {
         const command = commandFromMarkdownTarget(filePath);
         if (!command)
             return null;
         const sourcePath = path.join(sourceRoot, '.claude', 'commands', `${command}.md`);
         return fs.existsSync(sourcePath) ? { sourcePath } : null;
     }
-    if (filePath.includes(`${path.sep}prompts${path.sep}pickle-rick${path.sep}`) && filePath.endsWith('.md')) {
+    if (sourceRoot && filePath.includes(`${path.sep}prompts${path.sep}pickle-rick${path.sep}`) && filePath.endsWith('.md')) {
         const command = commandFromMarkdownTarget(filePath);
         if (!command)
             return null;
         const sourcePath = path.join(sourceRoot, '.claude', 'commands', `${command}.md`);
         return fs.existsSync(sourcePath) ? { sourcePath } : null;
     }
-    if (filePath.includes(`${path.sep}commands-md${path.sep}`) && filePath.endsWith('.md')) {
+    if (sourceRoot && filePath.includes(`${path.sep}commands-md${path.sep}`) && filePath.endsWith('.md')) {
         const command = commandFromMarkdownTarget(filePath);
         if (!command)
             return null;
@@ -78,23 +102,43 @@ function sourceForManagedFile(filePath, manifest) {
         const mdTarget = path.join('..', 'commands-md', `${command}.md`);
         return { content: renderGeminiToml(command, mdTarget) };
     }
-    return null;
+    return sourceFromRuntimeRoot(filePath, manifest, host);
 }
-function repairManagedFile(filePath, expectedHash, manifest) {
-    const source = sourceForManagedFile(filePath, manifest);
+function sourceIsSymlink(source) {
+    return Boolean(source?.sourcePath && fs.lstatSync(source.sourcePath).isSymbolicLink());
+}
+function symlinkMatchesSource(filePath, source) {
+    if (!source?.sourcePath || !sourceIsSymlink(source))
+        return true;
+    try {
+        return fs.lstatSync(filePath).isSymbolicLink()
+            && fs.readlinkSync(filePath) === fs.readlinkSync(source.sourcePath);
+    }
+    catch {
+        return false;
+    }
+}
+function repairManagedFile(filePath, expectedHash, source) {
     if (!source)
         return false;
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     if (source.sourcePath) {
-        fs.copyFileSync(source.sourcePath, filePath);
+        fs.rmSync(filePath, { force: true });
+        if (fs.lstatSync(source.sourcePath).isSymbolicLink()) {
+            fs.symlinkSync(fs.readlinkSync(source.sourcePath), filePath);
+        }
+        else {
+            fs.copyFileSync(source.sourcePath, filePath);
+        }
     }
     else if (typeof source.content === 'string') {
+        fs.rmSync(filePath, { force: true });
         fs.writeFileSync(filePath, source.content);
     }
     else {
         return false;
     }
-    return fs.existsSync(filePath) && sha256File(filePath) === expectedHash;
+    return fs.existsSync(filePath) && sha256File(filePath) === expectedHash && symlinkMatchesSource(filePath, source);
 }
 function normalizeExistingPath(filePath) {
     if (filePath.startsWith('~'))
@@ -103,15 +147,24 @@ function normalizeExistingPath(filePath) {
 }
 export function assertAdaptersFresh(manifestPath) {
     const manifest = readManifest(manifestPath);
-    if (!manifest)
-        return { checked: 0, repaired: [], skippedHosts: [...BACKENDS] };
+    if (!manifest) {
+        return {
+            checked: 0,
+            repaired: [],
+            skippedHosts: BACKENDS.map((host) => ({ host, status: 'missing-manifest', reason: 'install manifest not found' })),
+        };
+    }
     const repaired = [];
     const skippedHosts = [];
     let checked = 0;
     for (const host of BACKENDS) {
         const hostManifest = manifest.hosts?.[host];
         if (!hostManifest || hostManifest.status !== 'installed') {
-            skippedHosts.push(host);
+            skippedHosts.push({
+                host,
+                status: hostManifest?.status ?? 'missing',
+                reason: hostManifest?.reason ?? null,
+            });
             continue;
         }
         const checksums = hostManifest.file_checksums;
@@ -121,13 +174,17 @@ export function assertAdaptersFresh(manifestPath) {
         for (const [rawFilePath, expectedHash] of Object.entries(checksums)) {
             const filePath = normalizeExistingPath(rawFilePath);
             checked += 1;
-            if (fs.existsSync(filePath) && sha256File(filePath) === expectedHash)
+            const source = sourceForManagedFile(filePath, manifest, host, hostManifest);
+            const reason = fs.existsSync(filePath)
+                ? (sha256File(filePath) === expectedHash ? 'symlink target mismatch' : 'checksum mismatch')
+                : 'missing';
+            if (fs.existsSync(filePath) && sha256File(filePath) === expectedHash && symlinkMatchesSource(filePath, source))
                 continue;
-            if (repairManagedFile(filePath, expectedHash, manifest)) {
+            if (repairManagedFile(filePath, expectedHash, source)) {
                 repaired.push(filePath);
                 continue;
             }
-            throw new AdapterPreflightError(`Pickle Rick ${host} adapter is stale or missing: ${filePath}`);
+            throw new AdapterPreflightError(`Pickle Rick ${host} adapter ${reason}: ${filePath}; unable to repair from managed source`);
         }
     }
     return { checked, repaired, skippedHosts };

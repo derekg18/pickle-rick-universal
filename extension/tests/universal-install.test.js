@@ -133,6 +133,8 @@ describe('universal install.sh host adapters', () => {
         readlinkSync(geminiTmuxRunner),
         path.join(fixture.xdg, 'pickle-rick', 'runtime', 'extension', 'bin', 'mux-runner.js'),
       );
+      assert.ok(manifest.hosts.gemini.files_written.includes(geminiTmuxRunner));
+      assert.equal(manifest.hosts.gemini.file_checksums[geminiTmuxRunner].length, 64);
 
       const claudeSettings = JSON.parse(readFileSync(settingsPath(fixture, 'claude'), 'utf8'));
       const stopCommands = claudeSettings.hooks.Stop.flatMap((group) => group.hooks.map((hook) => hook.command));
