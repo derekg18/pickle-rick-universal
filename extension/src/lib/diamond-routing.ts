@@ -13,6 +13,8 @@ interface CondEdge {
   condition: ParsedCondition;
 }
 
+type DiamondRoutingState = Pick<DiamondRoutingRow, 'covered_states' | 'stuck_states'>;
+
 function edgeCondition(edge: Record<string, unknown>): string | null {
   const attrs =
     typeof edge['attrs'] === 'object' && edge['attrs'] !== null
@@ -84,8 +86,7 @@ function collectObservedValues(graph: Graph): Map<string, Set<string>> {
   return observed;
 }
 
-// eslint-disable-next-line complexity -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
-export function buildDiamondRouting(graph: Graph): DiamondRoutingRow[] {
+function collectOutgoingConditionEdges(graph: Graph): Map<string, CondEdge[]> {
   const outgoing = new Map<string, CondEdge[]>();
   for (const edge of graph.edges) {
     const src =
@@ -99,9 +100,10 @@ export function buildDiamondRouting(graph: Graph): DiamondRoutingRow[] {
     if (!outgoing.has(src)) outgoing.set(src, []);
     outgoing.get(src)!.push({ id: edgeId(edge), condition: parsed });
   }
+  return outgoing;
+}
 
-  const observed = collectObservedValues(graph);
-
+function collectDiamondIds(graph: Graph, outgoing: Map<string, CondEdge[]>): Set<string> {
   const diamonds = new Set<string>();
   for (const node of graph.nodes) {
     const id = typeof node['id'] === 'string' ? node['id'] : null;
@@ -112,50 +114,59 @@ export function buildDiamondRouting(graph: Graph): DiamondRoutingRow[] {
       diamonds.add(id);
     }
   }
+  return diamonds;
+}
 
+function buildKeySets(edges: CondEdge[], observed: Map<string, Set<string>>): Array<[string, string[]]> {
+  const referencedKeys = [...new Set(edges.map(e => e.condition.key))].sort();
+  return referencedKeys.map(key => {
+    if (key === 'outcome') return [key, ['fail', 'success', 'unset']];
+    const obs = observed.get(key) ?? new Set<string>();
+    return [key, [...new Set([...obs, 'unset'])].sort()];
+  });
+}
+
+function routeDiamond(edges: CondEdge[], observed: Map<string, Set<string>>): DiamondRoutingState {
+  const keySets = buildKeySets(edges, observed);
+  const totalCells = keySets.reduce((acc, [, vals]) => acc * vals.length, 1);
+  if (totalCells > CARTESIAN_CAP) {
+    return {
+      covered_states: [],
+      stuck_states: [
+        { cell: {}, matchingEdges: [], note: 'diamond too complex to enumerate mechanically' },
+      ],
+    };
+  }
+
+  const covered: DiamondRoutingState['covered_states'] = [];
+  const stuck: DiamondRoutingState['stuck_states'] = [];
+
+  for (const cell of cartesian(keySets)) {
+    const matching = edges
+      .filter(e => cell[e.condition.key] === e.condition.expectedValue)
+      .map(e => e.id)
+      .sort();
+    if (matching.length === 0) {
+      stuck.push({ cell, matchingEdges: [] });
+    } else {
+      covered.push({ cell, matchingEdges: matching });
+    }
+  }
+
+  return { covered_states: covered, stuck_states: stuck };
+}
+
+export function buildDiamondRouting(graph: Graph): DiamondRoutingRow[] {
+  const outgoing = collectOutgoingConditionEdges(graph);
+  const observed = collectObservedValues(graph);
+  const diamonds = collectDiamondIds(graph, outgoing);
   const rows: DiamondRoutingRow[] = [];
 
   for (const diamond of [...diamonds].sort()) {
     const edges = outgoing.get(diamond);
     if (!edges || edges.length === 0) continue;
 
-    const referencedKeys = [...new Set(edges.map(e => e.condition.key))].sort();
-
-    const keySets: Array<[string, string[]]> = referencedKeys.map(key => {
-      if (key === 'outcome') return [key, ['fail', 'success', 'unset']];
-      const obs = observed.get(key) ?? new Set<string>();
-      return [key, [...new Set([...obs, 'unset'])].sort()];
-    });
-
-    const totalCells = keySets.reduce((acc, [, vals]) => acc * vals.length, 1);
-    if (totalCells > CARTESIAN_CAP) {
-      rows.push({
-        diamond,
-        covered_states: [],
-        stuck_states: [
-          { cell: {}, matchingEdges: [], note: 'diamond too complex to enumerate mechanically' },
-        ],
-      });
-      continue;
-    }
-
-    const cells = cartesian(keySets);
-    const covered: Array<{ cell: Record<string, string>; matchingEdges: string[] }> = [];
-    const stuck: Array<{ cell: Record<string, string>; matchingEdges: string[] }> = [];
-
-    for (const cell of cells) {
-      const matching = edges
-        .filter(e => cell[e.condition.key] === e.condition.expectedValue)
-        .map(e => e.id)
-        .sort();
-      if (matching.length === 0) {
-        stuck.push({ cell, matchingEdges: [] });
-      } else {
-        covered.push({ cell, matchingEdges: matching });
-      }
-    }
-
-    rows.push({ diamond, covered_states: covered, stuck_states: stuck });
+    rows.push({ diamond, ...routeDiamond(edges, observed) });
   }
 
   return rows;

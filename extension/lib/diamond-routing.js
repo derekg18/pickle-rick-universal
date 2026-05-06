@@ -68,8 +68,7 @@ function collectObservedValues(graph) {
     }
     return observed;
 }
-// eslint-disable-next-line complexity -- pre-existing — outside T0–T15 god-fn refactor scope; defer to follow-up epic
-export function buildDiamondRouting(graph) {
+function collectOutgoingConditionEdges(graph) {
     const outgoing = new Map();
     for (const edge of graph.edges) {
         const src = (typeof edge['source'] === 'string' ? edge['source'] : null) ??
@@ -86,7 +85,9 @@ export function buildDiamondRouting(graph) {
             outgoing.set(src, []);
         outgoing.get(src).push({ id: edgeId(edge), condition: parsed });
     }
-    const observed = collectObservedValues(graph);
+    return outgoing;
+}
+function collectDiamondIds(graph, outgoing) {
     const diamonds = new Set();
     for (const node of graph.nodes) {
         const id = typeof node['id'] === 'string' ? node['id'] : null;
@@ -99,45 +100,54 @@ export function buildDiamondRouting(graph) {
             diamonds.add(id);
         }
     }
+    return diamonds;
+}
+function buildKeySets(edges, observed) {
+    const referencedKeys = [...new Set(edges.map(e => e.condition.key))].sort();
+    return referencedKeys.map(key => {
+        if (key === 'outcome')
+            return [key, ['fail', 'success', 'unset']];
+        const obs = observed.get(key) ?? new Set();
+        return [key, [...new Set([...obs, 'unset'])].sort()];
+    });
+}
+function routeDiamond(edges, observed) {
+    const keySets = buildKeySets(edges, observed);
+    const totalCells = keySets.reduce((acc, [, vals]) => acc * vals.length, 1);
+    if (totalCells > CARTESIAN_CAP) {
+        return {
+            covered_states: [],
+            stuck_states: [
+                { cell: {}, matchingEdges: [], note: 'diamond too complex to enumerate mechanically' },
+            ],
+        };
+    }
+    const covered = [];
+    const stuck = [];
+    for (const cell of cartesian(keySets)) {
+        const matching = edges
+            .filter(e => cell[e.condition.key] === e.condition.expectedValue)
+            .map(e => e.id)
+            .sort();
+        if (matching.length === 0) {
+            stuck.push({ cell, matchingEdges: [] });
+        }
+        else {
+            covered.push({ cell, matchingEdges: matching });
+        }
+    }
+    return { covered_states: covered, stuck_states: stuck };
+}
+export function buildDiamondRouting(graph) {
+    const outgoing = collectOutgoingConditionEdges(graph);
+    const observed = collectObservedValues(graph);
+    const diamonds = collectDiamondIds(graph, outgoing);
     const rows = [];
     for (const diamond of [...diamonds].sort()) {
         const edges = outgoing.get(diamond);
         if (!edges || edges.length === 0)
             continue;
-        const referencedKeys = [...new Set(edges.map(e => e.condition.key))].sort();
-        const keySets = referencedKeys.map(key => {
-            if (key === 'outcome')
-                return [key, ['fail', 'success', 'unset']];
-            const obs = observed.get(key) ?? new Set();
-            return [key, [...new Set([...obs, 'unset'])].sort()];
-        });
-        const totalCells = keySets.reduce((acc, [, vals]) => acc * vals.length, 1);
-        if (totalCells > CARTESIAN_CAP) {
-            rows.push({
-                diamond,
-                covered_states: [],
-                stuck_states: [
-                    { cell: {}, matchingEdges: [], note: 'diamond too complex to enumerate mechanically' },
-                ],
-            });
-            continue;
-        }
-        const cells = cartesian(keySets);
-        const covered = [];
-        const stuck = [];
-        for (const cell of cells) {
-            const matching = edges
-                .filter(e => cell[e.condition.key] === e.condition.expectedValue)
-                .map(e => e.id)
-                .sort();
-            if (matching.length === 0) {
-                stuck.push({ cell, matchingEdges: [] });
-            }
-            else {
-                covered.push({ cell, matchingEdges: matching });
-            }
-        }
-        rows.push({ diamond, covered_states: covered, stuck_states: stuck });
+        rows.push({ diamond, ...routeDiamond(edges, observed) });
     }
     return rows;
 }
