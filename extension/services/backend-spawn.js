@@ -2,14 +2,14 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { BACKENDS } from '../types/index.js';
 import { StateManager } from './state-manager.js';
-export function isBackend(value) {
-    return typeof value === 'string' && BACKENDS.includes(value);
-}
 function resolvePassModelOverride(backend, pass, fallbackModel, overrides) {
     if (!pass || !overrides)
         return fallbackModel;
     const model = overrides[pass]?.[backend];
     return typeof model === 'string' && model.length > 0 ? model : fallbackModel;
+}
+export function isBackend(value) {
+    return typeof value === 'string' && BACKENDS.includes(value);
 }
 // Dedupe by (source, value) so a bad state.json or typo'd env var warns once
 // per process rather than N times per call site. Same silent-fallback trap-door
