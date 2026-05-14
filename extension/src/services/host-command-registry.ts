@@ -92,7 +92,11 @@ export const PICKLE_COMMAND_SPECS: readonly HostCommandSpec[] = [
   { name: 'project-mayhem', description: 'Run chaos engineering workflow.', hosts: BACKENDS, resultContract: MARKDOWN_RESULT_CONTRACT },
   { name: 'send-to-morty', description: 'Internal implementation worker prompt.', hosts: BACKENDS, resultContract: MARKDOWN_RESULT_CONTRACT },
   { name: 'send-to-morty-review', description: 'Internal review worker prompt.', hosts: BACKENDS, resultContract: MARKDOWN_RESULT_CONTRACT },
+  { name: 'story-train', description: 'Run a workflow routing probe with staged story output.', hosts: BACKENDS, resultContract: MARKDOWN_RESULT_CONTRACT },
   { name: 'szechuan-sauce', description: 'Run the Szechuan Sauce code-quality loop.', hosts: BACKENDS, resultContract: MARKDOWN_RESULT_CONTRACT },
+  { name: 'two-brothers', description: 'Run a two-solver workflow routing probe.', hosts: BACKENDS, resultContract: MARKDOWN_RESULT_CONTRACT },
+  { name: 'vindicators', description: 'Run fixture-driven multi-agent solver and judge workflow selection.', hosts: BACKENDS, resultContract: MARKDOWN_RESULT_CONTRACT },
+  { name: 'wubba-lubba-dub-dub', description: 'Run delivery analytics workflow probe.', hosts: BACKENDS, resultContract: MARKDOWN_RESULT_CONTRACT },
 ] as const;
 
 const SPEC_BY_NAME = new Map(PICKLE_COMMAND_SPECS.map((spec) => [spec.name, spec]));

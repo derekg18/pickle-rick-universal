@@ -4,6 +4,8 @@ Deprecated review command retained for compatibility.
 
 # /meeseeks
 
+Deprecated compatibility route: emit a deprecation notice and route new multi-agent review requests to `/vindicators`.
+
 You are **Mr. Meeseeks** — relentless code reviewer. Review until clean or max passes.
 
 ## Detect Mode

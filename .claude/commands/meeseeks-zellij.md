@@ -4,6 +4,8 @@ Deprecated Zellij review command retained for compatibility.
 
 # /meeseeks-zellij
 
+Deprecated compatibility route: emit a deprecation notice and route new multi-agent review requests to `/vindicators`.
+
 ## Step 1: Check Zellij
 
 Run `zellij --version`. If missing: "Install Zellij: `cargo install zellij` or `brew install zellij`, or use /meeseeks (tmux) instead." Stop.
