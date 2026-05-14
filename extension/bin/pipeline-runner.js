@@ -29,6 +29,7 @@ import { runAcPhaseGate } from '../services/ac-phase-gate.js';
 import { resolveScope, refreshScope, filterBySubsystem, ScopeError, } from '../services/scope-resolver.js';
 import { runCitadelAudit } from '../services/citadel/audit-runner.js';
 import { notifySessionEvent } from '../services/notification-dispatcher.js';
+import { finalizeTokenAccounting } from '../services/token-accounting/index.js';
 const sm = new StateManager();
 const DEFAULT_IGNORE_DIRTY_PATHS = ['prds', 'docs'];
 const CODEX_REQUIRED_BACKEND = 'codex-required';
@@ -1177,6 +1178,7 @@ function finalizePipeline(runtime, counters, cancelMarker, startTime) {
         duration_min: Math.round(totalElapsed / 60),
         mode: 'tmux',
     });
+    finalizeTokenAccounting(runtime.sessionDir, { backend: runtime.backend });
     const allDone = (counters.completed + counters.skipped) === runtime.config.phases.length;
     notifySessionEvent({
         kind: 'pipeline_session_end',

@@ -4,6 +4,7 @@ import { loadPickleSettings } from './pickle-settings.js';
 export const NOTIFICATION_KINDS = [
     'mux_session_end',
     'pipeline_session_end',
+    'token_accounting_ready',
 ];
 const DEFAULT_NOTIFICATION_SETTINGS = {
     os_enabled: true,
@@ -12,6 +13,7 @@ const DEFAULT_NOTIFICATION_SETTINGS = {
     kinds: {
         mux_session_end: true,
         pipeline_session_end: true,
+        token_accounting_ready: true,
     },
 };
 const severityRank = {
@@ -41,6 +43,7 @@ function normalizeSettings(raw) {
         kinds: {
             mux_session_end: booleanOrDefault(kinds.mux_session_end, DEFAULT_NOTIFICATION_SETTINGS.kinds.mux_session_end),
             pipeline_session_end: booleanOrDefault(kinds.pipeline_session_end, DEFAULT_NOTIFICATION_SETTINGS.kinds.pipeline_session_end),
+            token_accounting_ready: booleanOrDefault(kinds.token_accounting_ready, DEFAULT_NOTIFICATION_SETTINGS.kinds.token_accounting_ready),
         },
     };
 }

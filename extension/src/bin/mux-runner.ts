@@ -26,6 +26,7 @@ import { extractAssistantContent } from '../services/classifier-utils.js';
 import { assertAdaptersFresh } from '../services/adapter-preflight.js';
 import { getHeadSha, isWorkingTreeDirty } from '../services/git-utils.js';
 import { notifySessionEvent } from '../services/notification-dispatcher.js';
+import { finalizeTokenAccounting } from '../services/token-accounting/index.js';
 export { extractAssistantContent } from '../services/classifier-utils.js';
 
 const sm = new StateManager();
@@ -2332,7 +2333,9 @@ async function runMuxRunnerMain() {
 
   const totalElapsed = Math.floor((Date.now() - startTime) / 1000);
   const isFailedExit = isFailureExit(exitReason);
-  logActivity({ event: 'session_end', source: 'pickle', session: path.basename(sessionDir), duration_min: Math.round(totalElapsed / 60), mode: 'tmux', backend: resolveBackendFromStateFile(statePath), ...(isFailedExit ? { error: exitReason } : {}) });
+  const finalBackend = resolveBackendFromStateFile(statePath);
+  logActivity({ event: 'session_end', source: 'pickle', session: path.basename(sessionDir), duration_min: Math.round(totalElapsed / 60), mode: 'tmux', backend: finalBackend, ...(isFailedExit ? { error: exitReason } : {}) });
+  finalizeTokenAccounting(sessionDir, { backend: finalBackend });
   let finalStep = 'unknown';
   let finalActive = 'unknown';
   let finalMinIter = 0;

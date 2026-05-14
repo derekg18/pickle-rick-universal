@@ -10,6 +10,7 @@ import { loadPickleSettings } from './pickle-settings.js';
 export const NOTIFICATION_KINDS = [
   'mux_session_end',
   'pipeline_session_end',
+  'token_accounting_ready',
 ] as const;
 
 export type NotificationKind = typeof NOTIFICATION_KINDS[number];
@@ -65,6 +66,7 @@ const DEFAULT_NOTIFICATION_SETTINGS: NotificationSettings = {
   kinds: {
     mux_session_end: true,
     pipeline_session_end: true,
+    token_accounting_ready: true,
   },
 };
 
@@ -99,6 +101,7 @@ function normalizeSettings(raw: unknown): NotificationSettings {
     kinds: {
       mux_session_end: booleanOrDefault(kinds.mux_session_end, DEFAULT_NOTIFICATION_SETTINGS.kinds.mux_session_end),
       pipeline_session_end: booleanOrDefault(kinds.pipeline_session_end, DEFAULT_NOTIFICATION_SETTINGS.kinds.pipeline_session_end),
+      token_accounting_ready: booleanOrDefault(kinds.token_accounting_ready, DEFAULT_NOTIFICATION_SETTINGS.kinds.token_accounting_ready),
     },
   };
 }

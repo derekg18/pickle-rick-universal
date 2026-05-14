@@ -155,6 +155,7 @@ export const VALID_ACTIVITY_EVENTS = [
     'readiness_failed_post_correction',
     'archaeology_complete',
     'archaeology_skipped',
+    'token_report',
     'phase_personas_disabled_seen',
     'debate_solo_auto',
     'debate_user_declined_auto_promote',

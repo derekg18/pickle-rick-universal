@@ -56,7 +56,7 @@ function withBrokenCanadianDateLocale(fn) {
 
 // --- VALID_ACTIVITY_EVENTS ---
 
-test('VALID_ACTIVITY_EVENTS contains all 54 expected event types', () => {
+test('VALID_ACTIVITY_EVENTS contains all 55 expected event types', () => {
     const expected = [
         'session_start', 'session_end', 'ticket_completed', 'epic_completed',
         'meeseeks_pass', 'commit', 'research', 'bug_fix', 'feature',
@@ -79,6 +79,7 @@ test('VALID_ACTIVITY_EVENTS contains all 54 expected event types', () => {
         'readiness_failed_post_correction',
         'archaeology_complete',
         'archaeology_skipped',
+        'token_report',
         'phase_personas_disabled_seen',
         'debate_solo_auto',
         'debate_user_declined_auto_promote',
@@ -92,7 +93,7 @@ test('VALID_ACTIVITY_EVENTS contains all 54 expected event types', () => {
         // can flag the deploy-drift class of failures.
         'cap_check_failed_schema_mismatch',
     ];
-    assert.equal(VALID_ACTIVITY_EVENTS.length, 54);
+    assert.equal(VALID_ACTIVITY_EVENTS.length, 55);
     for (const e of expected) {
         assert.ok(VALID_ACTIVITY_EVENTS.includes(e), `Missing event type: ${e}`);
     }

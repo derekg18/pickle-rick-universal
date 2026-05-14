@@ -179,6 +179,7 @@ test('loadNotificationSettings reads notification block with defaults', () => {
       kinds: {
         mux_session_end: false,
         pipeline_session_end: true,
+        token_accounting_ready: true,
       },
     });
   } finally {
@@ -211,6 +212,7 @@ test('settings loaders share canonical pickle_settings.json path', () => {
       kinds: {
         mux_session_end: true,
         pipeline_session_end: true,
+        token_accounting_ready: true,
       },
     });
     assert.deepEqual(loadCircuitBreakerSettings(tmpDir), {
@@ -239,6 +241,7 @@ test('malformed shared settings warn and fall back to defaults', () => {
       kinds: {
         mux_session_end: true,
         pipeline_session_end: true,
+        token_accounting_ready: true,
       },
     });
     assert.deepEqual(loadCircuitBreakerSettings(tmpDir), {

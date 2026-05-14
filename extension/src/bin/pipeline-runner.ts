@@ -48,6 +48,7 @@ import {
 import { runCitadelAudit } from '../services/citadel/audit-runner.js';
 import type { CitadelFinding, CitadelJsonReport, CitadelSeverity } from '../services/citadel/reporter.js';
 import { notifySessionEvent } from '../services/notification-dispatcher.js';
+import { finalizeTokenAccounting } from '../services/token-accounting/index.js';
 
 const sm = new StateManager();
 
@@ -1448,6 +1449,7 @@ function finalizePipeline(
     duration_min: Math.round(totalElapsed / 60),
     mode: 'tmux',
   });
+  finalizeTokenAccounting(runtime.sessionDir, { backend: runtime.backend });
 
   const allDone = (counters.completed + counters.skipped) === runtime.config.phases.length;
   notifySessionEvent({

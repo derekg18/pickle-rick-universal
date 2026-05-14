@@ -53,6 +53,7 @@ import {
 } from '../services/codex-manager-relaunch.js';
 import { logActivity } from '../services/activity-logger.js';
 import { assertBaselineFresh, BaselineMissingError, BaselineStaleError, runGate } from '../services/convergence-gate.js';
+import { finalizeTokenAccounting } from '../services/token-accounting/index.js';
 import { spawnGateRemediatorMain } from './spawn-gate-remediator.js';
 
 type ExitReason = 'converged' | 'limit_reached' | 'stopped' | 'error' | 'rate_limit_exhausted' | 'approach_exhaustion' | 'no_progress';
@@ -1764,6 +1765,7 @@ function finalizeMicroverseRun(sessionDir: string, ctx: RunContext, outcome: Exi
       backend: resolveBackend(ctx.currentRunnerState),
       ...(outcome.exitReason === 'error' || outcome.exitReason === 'rate_limit_exhausted' ? { error: outcome.exitReason } : {}),
     });
+    finalizeTokenAccounting(sessionDir, { backend: resolveBackend(ctx.currentRunnerState) });
 
     const panelBestScore = getBestScore(outcome.state);
 
