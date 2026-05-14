@@ -1,6 +1,7 @@
 {
   "name": "pickle-rick",
   "description": "Pickle Rick command and skill surfaces for Codex.",
+  "agents": "./agents/",
   "skills": "./skills/",
   "interface": {
     "displayName": "Pickle Rick",

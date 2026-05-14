@@ -18,7 +18,9 @@ function makeFixture() {
   const home = path.join(root, 'home');
   const commandSourceDir = path.join(sourceRoot, '.claude', 'commands');
   const codexPluginTemplateDir = path.join(sourceRoot, 'codex-plugin');
+  const codexAgentSourceDir = path.join(sourceRoot, '.codex', 'agents');
   const codexPromptDir = path.join(home, '.codex', 'prompts', 'pickle-rick');
+  const codexAgentDir = path.join(home, '.codex', 'agents');
   const codexPluginSourceRoot = path.join(home, 'plugins', 'pickle-rick');
   const codexPluginCacheRoot = path.join(home, '.codex', 'plugins', 'cache', 'pickle-rick', 'pickle-rick', 'local');
   const geminiMdDir = path.join(home, '.gemini', 'extensions', 'pickle-rick', 'commands-md');
@@ -27,10 +29,14 @@ function makeFixture() {
   const geminiBinDir = path.join(home, '.gemini', 'extensions', 'pickle-rick', 'extension', 'bin');
   mkdirSync(commandSourceDir, { recursive: true });
   mkdirSync(path.join(codexPluginTemplateDir, '.codex-plugin'), { recursive: true });
+  mkdirSync(path.join(codexPluginTemplateDir, 'agents'), { recursive: true });
   mkdirSync(path.join(codexPluginTemplateDir, 'skills', 'pickle'), { recursive: true });
+  mkdirSync(codexAgentSourceDir, { recursive: true });
   mkdirSync(codexPromptDir, { recursive: true });
+  mkdirSync(codexAgentDir, { recursive: true });
   for (const pluginRoot of [codexPluginSourceRoot, codexPluginCacheRoot]) {
     mkdirSync(path.join(pluginRoot, '.codex-plugin'), { recursive: true });
+    mkdirSync(path.join(pluginRoot, 'agents'), { recursive: true });
     mkdirSync(path.join(pluginRoot, 'commands'), { recursive: true });
     mkdirSync(path.join(pluginRoot, 'skills', 'pickle'), { recursive: true });
   }
@@ -46,11 +52,14 @@ function makeFixture() {
   const personaContent = 'Persona.\n';
   const runtimeRootContent = `${runtimeRoot}\n`;
   const runtimeAdapterContent = 'console.log("runtime dispatch");\n';
-  const codexPluginManifestContent = `${JSON.stringify({ name: 'pickle-rick', skills: './skills/' }, null, 2)}\n`;
+  const codexPluginManifestContent = `${JSON.stringify({ name: 'pickle-rick', agents: './agents/', skills: './skills/' }, null, 2)}\n`;
   const codexPluginSkillContent = '---\nname: pickle\n---\n\nRead ../../commands/pickle.md.\n';
+  const codexAgentContent = 'name = "morty-implementer"\ndescription = "Implementation worker."\n';
   writeFileSync(path.join(commandSourceDir, 'pickle.md'), commandContent);
   writeFileSync(path.join(sourceRoot, 'persona.md'), personaContent);
   writeFileSync(path.join(codexPluginTemplateDir, '.codex-plugin', 'plugin.json'), codexPluginManifestContent);
+  writeFileSync(path.join(codexPluginTemplateDir, 'agents', 'morty-implementer.toml'), codexAgentContent);
+  writeFileSync(path.join(codexAgentSourceDir, 'morty-implementer.toml'), codexAgentContent);
   writeFileSync(path.join(codexPluginTemplateDir, 'skills', 'pickle', 'SKILL.md'), codexPluginSkillContent);
   const runtimeAdapterSource = path.join(runtimeBinDir, 'dispatch.js');
   const runtimeMuxRunnerSource = path.join(runtimeBinDir, 'mux-runner.js');
@@ -63,6 +72,9 @@ function makeFixture() {
   const codexFlatPrompt = path.join(home, '.codex', 'prompts', 'pickle.md');
   const codexPersona = path.join(home, '.codex', 'pickle-rick', 'persona.md');
   const codexRuntime = path.join(home, '.codex', 'pickle-rick', 'runtime_root');
+  const codexAgent = path.join(codexAgentDir, 'morty-implementer.toml');
+  const codexPluginSourceAgent = path.join(codexPluginSourceRoot, 'agents', 'morty-implementer.toml');
+  const codexPluginCacheAgent = path.join(codexPluginCacheRoot, 'agents', 'morty-implementer.toml');
   const codexPluginCacheSkill = path.join(codexPluginCacheRoot, 'skills', 'pickle', 'SKILL.md');
   const codexPluginCacheCommand = path.join(codexPluginCacheRoot, 'commands', 'pickle.md');
   const codexPluginCacheRuntime = path.join(codexPluginCacheRoot, 'runtime_root');
@@ -78,8 +90,10 @@ function makeFixture() {
   writeFileSync(codexFlatPrompt, commandContent);
   writeFileSync(codexPersona, personaContent);
   writeFileSync(codexRuntime, runtimeRootContent);
+  writeFileSync(codexAgent, codexAgentContent);
   for (const pluginRoot of [codexPluginSourceRoot, codexPluginCacheRoot]) {
     writeFileSync(path.join(pluginRoot, '.codex-plugin', 'plugin.json'), codexPluginManifestContent);
+    writeFileSync(path.join(pluginRoot, 'agents', 'morty-implementer.toml'), codexAgentContent);
     writeFileSync(path.join(pluginRoot, 'commands', 'pickle.md'), commandContent);
     writeFileSync(path.join(pluginRoot, 'skills', 'pickle', 'SKILL.md'), codexPluginSkillContent);
     writeFileSync(path.join(pluginRoot, 'persona.md'), personaContent);
@@ -96,12 +110,15 @@ function makeFixture() {
     [codexFlatPrompt]: sha256(commandContent),
     [codexPersona]: sha256(personaContent),
     [codexRuntime]: sha256(runtimeRootContent),
+    [codexAgent]: sha256(codexAgentContent),
     [path.join(codexPluginSourceRoot, '.codex-plugin', 'plugin.json')]: sha256(codexPluginManifestContent),
+    [codexPluginSourceAgent]: sha256(codexAgentContent),
     [path.join(codexPluginSourceRoot, 'commands', 'pickle.md')]: sha256(commandContent),
     [path.join(codexPluginSourceRoot, 'skills', 'pickle', 'SKILL.md')]: sha256(codexPluginSkillContent),
     [path.join(codexPluginSourceRoot, 'persona.md')]: sha256(personaContent),
     [path.join(codexPluginSourceRoot, 'runtime_root')]: sha256(runtimeRootContent),
     [path.join(codexPluginCacheRoot, '.codex-plugin', 'plugin.json')]: sha256(codexPluginManifestContent),
+    [codexPluginCacheAgent]: sha256(codexAgentContent),
     [codexPluginCacheCommand]: sha256(commandContent),
     [codexPluginCacheSkill]: sha256(codexPluginSkillContent),
     [path.join(codexPluginCacheRoot, 'persona.md')]: sha256(personaContent),
@@ -134,6 +151,10 @@ function makeFixture() {
     codexPrompt,
     codexFlatPrompt,
     codexRuntime,
+    codexAgent,
+    codexAgentContent,
+    codexPluginSourceAgent,
+    codexPluginCacheAgent,
     codexPluginCacheCommand,
     codexPluginCacheRuntime,
     codexPluginCacheSkill,
@@ -155,7 +176,7 @@ describe('adapter preflight', () => {
     const fixture = makeFixture();
     try {
       const result = assertAdaptersFresh(fixture.manifestPath);
-      assert.equal(result.checked, 19);
+      assert.equal(result.checked, 22);
       assert.deepEqual(result.repaired, []);
       assert.deepEqual(result.skippedHosts, [{ host: 'claude', status: 'skipped', reason: 'host root not found' }]);
     } finally {
@@ -191,6 +212,24 @@ describe('adapter preflight', () => {
       assert.equal(readFileSync(fixture.codexPluginCacheCommand, 'utf8'), fixture.commandContent);
       assert.equal(readFileSync(fixture.codexPluginCacheSkill, 'utf8'), fixture.codexPluginSkillContent);
       assert.equal(readFileSync(fixture.codexPluginSourceSkill, 'utf8'), fixture.codexPluginSkillContent);
+    } finally {
+      rmSync(fixture.root, { recursive: true, force: true });
+    }
+  });
+
+  test('auto-syncs stale Codex agent definitions from managed sources', () => {
+    const fixture = makeFixture();
+    try {
+      writeFileSync(fixture.codexAgent, 'stale global agent\n');
+      writeFileSync(fixture.codexPluginCacheAgent, 'stale plugin agent\n');
+      writeFileSync(fixture.codexPluginSourceAgent, 'stale source plugin agent\n');
+      const result = assertAdaptersFresh(fixture.manifestPath);
+      assert.ok(result.repaired.includes(fixture.codexAgent));
+      assert.ok(result.repaired.includes(fixture.codexPluginCacheAgent));
+      assert.ok(result.repaired.includes(fixture.codexPluginSourceAgent));
+      assert.equal(readFileSync(fixture.codexAgent, 'utf8'), fixture.codexAgentContent);
+      assert.equal(readFileSync(fixture.codexPluginCacheAgent, 'utf8'), fixture.codexAgentContent);
+      assert.equal(readFileSync(fixture.codexPluginSourceAgent, 'utf8'), fixture.codexAgentContent);
     } finally {
       rmSync(fixture.root, { recursive: true, force: true });
     }

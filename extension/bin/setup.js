@@ -33,6 +33,20 @@ function resolveWorkingDirOrNull(value) {
         return null;
     return path.resolve(trimmed);
 }
+function parseBackendValue(value) {
+    if (typeof value !== 'string')
+        return undefined;
+    const trimmed = value.trim();
+    return BACKENDS.includes(trimmed) ? trimmed : undefined;
+}
+function resolveDefaultBackendFromEnv(env = process.env) {
+    return parseBackendValue(env.PICKLE_BACKEND) ?? parseBackendValue(env.PICKLE_HOST_BACKEND);
+}
+function applyDefaultBackend(config) {
+    if (config.backend)
+        return;
+    config.backend = resolveDefaultBackendFromEnv();
+}
 function buildSetupPaths() {
     const dataDir = getDataRoot();
     return {
@@ -300,8 +314,9 @@ export function resolveCodexVersionForSetup(backend, extensionRoot = getExtensio
  *   3. default_max_iterations (already in config.loopLimit from loadSettings).
  *   4. Hard-coded 100 fallback (config default).
  *
- * Backend defaults to 'claude' when --backend is not passed (matches the
- * activation panel's `config.backend || 'claude'` rendering).
+ * Backend defaults from the caller host when available, then falls back to
+ * 'claude' (matches the activation panel's `config.backend || 'claude'`
+ * rendering).
  */
 function applyPerBackendBudget(config) {
     if (config.explicitFlags.has('max-iterations'))
@@ -490,9 +505,12 @@ function validateCommandLine(config) {
     if (config.explicitFlags.has('max-parallel') && !config.teamsMode) {
         die('--max-parallel requires --teams');
     }
+    if (config.resumeMode && !config.explicitFlags.has('backend')) {
+        return;
+    }
     const backend = config.backend || 'claude';
     if (config.teamsMode && !backendSupportsTeamsMode(backend)) {
-        die(`--teams is incompatible with --backend ${backend} (claude backend only)`);
+        die(`--teams is incompatible with --backend ${backend} (supported backends: claude, codex)`);
     }
 }
 function validateResumeCompatibility(preState, config) {
@@ -505,7 +523,7 @@ function validateResumeCompatibility(preState, config) {
     const willHaveBackend = config.explicitFlags.has('backend') ? config.backend : preState.backend;
     const backend = willHaveBackend || 'claude';
     if (willHaveTeams && !backendSupportsTeamsMode(backend)) {
-        die(`--teams is incompatible with --backend ${backend} (claude backend only). Resume would create a conflicting state — refusing to continue.`);
+        die(`--teams is incompatible with --backend ${backend} (supported backends: claude, codex). Resume would create a conflicting state — refusing to continue.`);
     }
 }
 function applyResumeConfig(s, config, fullSessionPath, codexVersionSeen) {
@@ -551,8 +569,9 @@ function applyResumeModeConfig(s, config) {
         s.backend = config.backend;
     if (config.explicitFlags.has('teams'))
         s.teams_mode = config.teamsMode;
-    if (config.explicitFlags.has('max-parallel'))
+    if (config.explicitFlags.has('max-parallel') || (config.explicitFlags.has('teams') && config.teamsMode)) {
         s.max_parallel = config.maxParallel;
+    }
     if (config.explicitFlags.has('effort'))
         s.effort = config.effort;
 }
@@ -722,6 +741,7 @@ export function parseArguments(argv) {
     const config = createSetupConfig();
     loadSettings(config, paths.rootDir);
     parseCommandLine(config, argv);
+    applyDefaultBackend(config);
     validateCommandLine(config);
     applyPerBackendBudget(config);
     return config;

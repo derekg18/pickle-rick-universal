@@ -120,4 +120,24 @@ describe('walkDiff', () => {
       fs.rmSync(repo, { recursive: true, force: true });
     }
   });
+
+  test('skips lockfile blame while preserving changed line ranges', () => {
+    const repo = createRepo();
+    try {
+      writeFile(repo, 'package-lock.json', '{\n  "packages": {}\n}\n');
+      const base = commit(repo, 'base lockfile', 'Alice Base');
+
+      const packageRows = Array.from({ length: 7000 }, (_, index) => `    "node_modules/pkg-${index}": { "version": "1.0.0" }`);
+      writeFile(repo, 'package-lock.json', `{\n  "packages": {\n${packageRows.join(',\n')}\n  }\n}\n`);
+      commit(repo, 'expand lockfile', 'Bob Change');
+
+      const summary = walkDiff(`${base}..HEAD`, { repoRoot: repo });
+      const lockfile = summary.changedFiles.find((file) => file.path === 'package-lock.json');
+
+      assert.deepEqual(lockfile.changedLines, [{ start: 2, end: 7003 }]);
+      assert.deepEqual(lockfile.blame, []);
+    } finally {
+      fs.rmSync(repo, { recursive: true, force: true });
+    }
+  });
 });

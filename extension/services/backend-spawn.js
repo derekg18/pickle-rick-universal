@@ -299,7 +299,7 @@ export const backendAdapters = {
         buildWorkerInvocation: (opts) => buildCodexInvocation(opts.prompt, opts.addDirs, opts.model, opts.effort),
         buildManagerInvocation: (opts) => buildCodexInvocation(opts.prompt, opts.addDirs, opts.model),
         buildJudgeInvocation: buildCodexJudgeInvocation,
-        supportsTeamsMode: () => false,
+        supportsTeamsMode: () => true,
         supportsDefaultClaudeModels: () => false,
         supportsCommitPendingProbe: () => true,
         supportsManagerErrorRelaunch: () => true,

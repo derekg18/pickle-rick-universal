@@ -13,11 +13,12 @@ Extract flags from `$ARGUMENTS` (`--max-iterations <N>`, `--resume <path>`, etc.
 node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" <FLAGS> --task "<TASK_TEXT>"
 ```
 No flags: `setup.js --task "$ARGUMENTS"`. Extension root: `/Users/derekgreene/.gemini/extensions/pickle-rick` (`${EXTENSION_ROOT}`).
+Default backend: if the user did not pass `--backend` and this is not resuming a session with a stored backend, set `PICKLE_HOST_BACKEND` to the caller host (`claude`, `codex`, or `gemini`) before running setup.
 Backend example: `setup.js --backend codex --task "refactor auth"` — routes worker spawns through `codex exec` instead of `claude`. Backend persists in `state.json` and survives resume.
 
 Extract `SESSION_ROOT=<path>` from output.
 
-**Flags**: `--task "TEXT"` | `--max-iterations <N>` | `--max-time <MIN>` | `--worker-timeout <SEC>` | `--completion-promise <TEXT>` | `--resume [PATH]` | `--reset` | `--backend <claude|codex>`
+**Flags**: `--task "TEXT"` | `--max-iterations <N>` | `--max-time <MIN>` | `--worker-timeout <SEC>` | `--completion-promise <TEXT>` | `--resume [PATH]` | `--reset` | `--backend <claude|codex|gemini>`
 
 # Step 2: Execution (Management)
 
@@ -141,21 +142,23 @@ Read `${SESSION_ROOT}/state.json` once at Phase 3 entry. If `state.teams_mode ==
 
 ## Phase 3.B — Teams Mode (`--teams`)
 
-When `state.teams_mode === true`. Claude backend only (setup.js rejects codex+teams). Use harness team primitives instead of `spawn-morty.js`. **Spec:** `prds/pickle-agent-teams.md`.
+When `state.teams_mode === true`. Use host callable agents instead of `spawn-morty.js`. Claude backend uses harness team primitives; Codex backend uses `spawn_agent` / `wait_agent` / `close_agent`. Gemini is not supported for teams. **Spec:** `prds/pickle-agent-teams.md`.
 
 **Setup (once)**:
 1. Derive a session id once: `SESSION_ID = path.basename(${SESSION_ROOT})`.
-2. **TeamCreate**: `team_name = "pickle-${SESSION_ID}"`, `description` = `original_prompt` truncated to ~80 chars.
-3. **TaskCreate per ticket**: for each non-Done ticket in `order` order, create one task with `subject` = ticket title, `description` = `Implement ticket ${TICKET_ID} — see ${SESSION_ROOT}/${TICKET_ID}/linear_ticket_${TICKET_ID}.md`, and metadata `{ ticket_id: <id> }`. Capture the returned task IDs and keep a local mapping `{ticket_id → team_task_id}`.
-4. **Readiness gate BEFORE first Agent call**: run `node "${EXTENSION_ROOT}/extension/bin/check-readiness.js" --session-dir "${SESSION_ROOT}" --repo-root "$(node -e 'const fs=require("fs"); const state=JSON.parse(fs.readFileSync(process.argv[1],"utf-8")); console.log(state.working_dir || process.cwd())' "${SESSION_ROOT}/state.json")"`. Nonzero exit halts before any `Agent` call. If stdout reports `"delta":true`, surface the readiness report path as the post-correction delta-mode halt banner.
+2. Read `state.backend || "claude"` once. If backend is not `claude` or `codex`, halt with `--teams supports claude and codex only`.
+3. **Claude backend**: `TeamCreate` with `team_name = "pickle-${SESSION_ID}"`, `description` = `original_prompt` truncated to ~80 chars. `TaskCreate` one task per non-Done ticket and keep `{ticket_id → team_task_id}`.
+4. **Codex backend**: skip `TeamCreate` and `TaskCreate`; keep an in-memory `{ticket_id → agent_id/status}` map from `spawn_agent` results.
+5. **Readiness gate BEFORE first Agent call**: run `node "${EXTENSION_ROOT}/extension/bin/check-readiness.js" --session-dir "${SESSION_ROOT}" --repo-root "$(node -e 'const fs=require("fs"); const state=JSON.parse(fs.readFileSync(process.argv[1],"utf-8")); console.log(state.working_dir || process.cwd())' "${SESSION_ROOT}/state.json")"`. Nonzero exit halts before any `Agent` call. If stdout reports `"delta":true`, surface the readiness report path as the post-correction delta-mode halt banner.
 
 **Per ticket** (sequential — `state.max_parallel` is plumbed for a follow-up that fans out independent tickets in parallel; today, treat as 1):
-1. **Pick**: lowest-order non-Done ticket whose team task is not yet `completed`. `update-state.js current_ticket <ID> ${SESSION_ROOT}` + `update-state.js step research ${SESSION_ROOT}`.
+1. **Pick**: lowest-order non-Done ticket whose Claude team task or Codex agent status is not yet `completed`. `update-state.js current_ticket <ID> ${SESSION_ROOT}` + `update-state.js step research ${SESSION_ROOT}`.
 2. **Phase dispatch feature flag**: Default OFF. Enable phase-specialized dispatch only when `PICKLE_PHASE_PERSONAS=on` OR `pickle_settings.json:bmad_hardening.phase_personas_enabled === true`. Before enabling, verify `${EXTENSION_ROOT}/extension/tests/behavioral/phase-personas/baseline.json` exists and records `minDistinctness >= 0.30`; missing or weak baseline is a hard failure. When disabled and phase dispatch would otherwise apply, print once per session: `[phase-personas] feature available but disabled (calibration in progress); enable with: pickle settings set bmad_hardening.phase_personas_enabled true OR PICKLE_PHASE_PERSONAS=on`, emit activity event `phase_personas_disabled_seen` once, and use the legacy single `morty-implementer` teammate for the ticket.
 2a. **Phase dispatch preflight**: Read `${EXTENSION_ROOT}/extension/data/phase-personas.json` with the Read tool before the first phase `Agent` call for this ticket. Assert `version >= 1`; mismatch is a hard failure. Resolve this ordered phase list from the JSON keys: `research`, `plan`, `implement`, `verify`, `review`, `refactor`.
    - Required subagents: `morty-phase-researcher`, `morty-phase-planner`, `morty-phase-implementer`, `morty-phase-verifier`, `morty-phase-reviewer`, `morty-phase-simplifier`.
-   - Verify each exists at `~/.claude/agents/<subagent_type>.md` or `~/.claude/agents/.pickle-managed/<subagent_type>.md`.
-   - If any are missing, emit activity event `phase_dispatch_preflight_failed` and halt with: `[ticket T<id>] missing: morty-phase-verifier.md, ...; install path: ~/.claude/agents/.pickle-managed/; recovery: bash install.sh && /pickle-retry T<id>`.
+   - Claude backend: verify each exists at `~/.claude/agents/<subagent_type>.md` or `~/.claude/agents/.pickle-managed/<subagent_type>.md`.
+   - Codex backend: verify each exists at `~/.codex/agents/<subagent_type>.toml` or `${EXTENSION_ROOT}/codex-plugin/agents/<subagent_type>.toml`.
+   - If any are missing, emit activity event `phase_dispatch_preflight_failed` and halt with: `[ticket T<id>] missing: morty-phase-verifier, ...; recovery: bash install.sh && /pickle-retry T<id>`.
 3. **Spawn**: make six distinct sequential `Agent` calls when phase dispatch is enabled, one per phase from `phase-personas.json`:
    - `research` → `subagent_type: "morty-phase-researcher"`; produce `research_*.md` and `research_review.md`, then stop.
    - `plan` → `subagent_type: "morty-phase-planner"`; read approved research, produce `plan_*.md` and `plan_review.md`, then stop.
@@ -164,19 +167,19 @@ When `state.teams_mode === true`. Claude backend only (setup.js rejects codex+te
    - `review` → `subagent_type: "morty-phase-reviewer"`; review `git diff`, fix in-scope defects, produce `code_review_*.md`, then stop.
    - `refactor` → `subagent_type: "morty-phase-simplifier"`; simplify only modified files, rerun checks, then stop.
    For each call use:
-   - `team_name: "pickle-${SESSION_ID}"`
-   - `name: "morty-${phase}-${TICKET_ID}"`
-   - `prompt`: a self-contained phase brief that includes `SESSION_ROOT`, `TICKET_ID`, `TICKET_DIR=${SESSION_ROOT}/${TICKET_ID}`, the `team_task_id`, the phase name, the path to `linear_ticket_${TICKET_ID}.md`, and the `working_dir` from the ticket's frontmatter (if present — needed for sub-repo targets). If `${SESSION_ROOT}/project-context.md` exists and is non-empty, include its content as a `## Project Context` block before the phase instructions / 8-phase lifecycle guidance. Only the final `refactor` phase calls `TaskUpdate(taskId=<team_task_id>, status="completed")`.
-4. **Wait**: after each phase Agent call, wait for its completion response before dispatching the next phase. After `refactor`, the teammate's `TaskUpdate(status="completed")` arrives as an auto-delivered notification (a new turn). Do NOT poll. Only fall back to a `TaskList` check if no notification has arrived past `state.worker_timeout_seconds`.
+   - Claude backend: call `Agent` with `team_name: "pickle-${SESSION_ID}"`, `name: "morty-${phase}-${TICKET_ID}"`, and the phase brief. Include the `team_task_id`; only final `refactor` calls `TaskUpdate(taskId=<team_task_id>, status="completed")`.
+   - Codex backend: call `spawn_agent` with `agent_type: "<subagent_type>"`, `message: <same phase brief>`, no `team_name`, and no team task id. Store the returned `agent_id`, then call `wait_agent` for that id before dispatching the next phase. Treat the completed final message as the phase completion signal.
+   - `prompt` / `message`: self-contained phase brief with `SESSION_ROOT`, `TICKET_ID`, `TICKET_DIR=${SESSION_ROOT}/${TICKET_ID}`, phase name, path to `linear_ticket_${TICKET_ID}.md`, and `working_dir` from ticket frontmatter (if present — needed for sub-repo targets). If `${SESSION_ROOT}/project-context.md` exists and is non-empty, include it as a `## Project Context` block before the phase instructions / 8-phase lifecycle guidance.
+4. **Wait**: after each phase Agent call, wait for completion before dispatching the next phase. Claude receives the final `TaskUpdate(status="completed")` notification after `refactor`; Codex receives a completed `wait_agent` status. Only fall back to a Claude `TaskList` check or a Codex extra `wait_agent` call if no completion has arrived past `state.worker_timeout_seconds`.
 5. **Validate**: run `node "${EXTENSION_ROOT}/extension/bin/validate-teams-ticket.js" --ticket-path "${SESSION_ROOT}/${TICKET_ID}" --role implementation`. Exit 0 → continue. Exit 1 → log the missing artifacts (stderr lists them), mark the ticket Failed in frontmatter, do NOT commit.
 6. **Commit**: pass → run `git status`, `git diff`, project tests/build, then commit. Fail → `git stash` + `git checkout .`.
 7. **Update**: mark ticket Done in frontmatter; output `<promise` + `>TASK_COMPLETED</promise>`.
 8. **Increment iteration** (same as Legacy step 7).
-9. **Next ticket**: repeat until `TaskList` shows all team tasks `completed` or all tickets in frontmatter are Done/Failed.
+9. **Next ticket**: repeat until Claude `TaskList` shows all team tasks `completed`, Codex agent statuses are complete, or all tickets in frontmatter are Done/Failed.
 
 **Teardown (once, before EPIC_COMPLETED)**:
-- For each still-running teammate (rare — should only happen if a teammate hung past timeout), send `SendMessage` with `{type: "shutdown_request"}` and wait for the shutdown response.
-- Once no teammates remain active, call `TeamDelete`.
+- Claude backend: for each still-running teammate, send `SendMessage` with `{type: "shutdown_request"}` and wait for the shutdown response; once none remain, call `TeamDelete`.
+- Codex backend: call `close_agent` for each still-running `agent_id`.
 
 ## All Tickets Done (shared)
 

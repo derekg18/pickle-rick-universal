@@ -8,6 +8,7 @@ Persona via CLAUDE.md. Proceed to Step 1.
 node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --task "$ARGUMENTS" --paused
 ```
 Extract `SESSION_ROOT=<path>`. Extension root: `/Users/derekgreene/.gemini/extensions/pickle-rick` (`${EXTENSION_ROOT}`).
+Default backend: set `PICKLE_HOST_BACKEND` to the caller host (`claude`, `codex`, or `gemini`) before running setup unless the user explicitly passes `--backend`.
 
 ## Step 2: Interview
 PAUSED mode — normal chat. Interrogate:

@@ -169,6 +169,13 @@ function sourceForManagedFile(filePath: string, manifest: InstallManifest, host:
     return fs.existsSync(sourcePath) ? { sourcePath } : null;
   }
 
+  if (sourceRoot && filePath.includes(`${CODEX_HOME_SEGMENT}agents${path.sep}`) && filePath.endsWith('.toml')) {
+    const sourcePath = path.join(sourceRoot, '.codex', 'agents', path.basename(filePath));
+    if (fs.existsSync(sourcePath)) return { sourcePath };
+    const pluginSourcePath = path.join(sourceRoot, 'codex-plugin', 'agents', path.basename(filePath));
+    return fs.existsSync(pluginSourcePath) ? { sourcePath: pluginSourcePath } : null;
+  }
+
   if (sourceRoot && filePath.includes(`${path.sep}commands-md${path.sep}`) && filePath.endsWith('.md')) {
     const command = commandFromMarkdownTarget(filePath);
     if (!command) return null;

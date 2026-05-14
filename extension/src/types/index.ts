@@ -33,7 +33,7 @@ export interface State {
   activity?: ActivityLogEntry[];
   /** Implementation backend for worker/manager spawns. Defaults to 'claude' when absent. */
   backend?: Backend;
-  /** When true, /pickle Phase 3 spawns workers via harness team primitives (TeamCreate + Agent + TaskUpdate) instead of `claude -p` subprocesses. claude backend only. */
+  /** When true, /pickle Phase 3 spawns workers via host callable agents instead of backend subprocesses. Supported by claude and codex. */
   teams_mode?: boolean;
   /** Concurrency cap for parallel `morty-implementer` teammates when teams_mode is true. Default 5. v1 ships sequential; this field is plumbed for the parallel-fan-out follow-up. */
   max_parallel?: number;

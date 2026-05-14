@@ -69,7 +69,7 @@ test('backend adapter contract: exported builders dispatch through backend-owned
 
 test('backend adapter contract: lifecycle policy helpers preserve backend capabilities', () => {
     assert.equal(backendSupportsTeamsMode('claude'), true);
-    assert.equal(backendSupportsTeamsMode('codex'), false);
+    assert.equal(backendSupportsTeamsMode('codex'), true);
     assert.equal(backendSupportsTeamsMode('gemini'), false);
 
     assert.equal(backendSupportsDefaultClaudeModels('claude'), true);

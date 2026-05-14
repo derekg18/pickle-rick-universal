@@ -52,14 +52,14 @@ function readState(sessionRoot) {
 test('codex backend records compatible codex --version output', () => {
   const dataRoot = makeTempRoot('pickle-codex-smoke-data-');
   const shimDir = makeTempRoot('pickle-codex-smoke-bin-');
-  makeCodexShim(shimDir, 'echo "codex 0.42.1"');
+  makeCodexShim(shimDir, 'echo "codex 0.128.0"');
 
   try {
     const output = runSetup(['--backend', 'codex', '--task', 'codex smoke pass'], setupEnv(dataRoot, shimDir));
     const state = readState(parseSessionRoot(output));
 
     assert.equal(state.backend, 'codex');
-    assert.equal(state.codex_version_seen, 'codex 0.42.1');
+    assert.equal(state.codex_version_seen, 'codex 0.128.0');
   } finally {
     fs.rmSync(dataRoot, { recursive: true, force: true });
     fs.rmSync(shimDir, { recursive: true, force: true });
@@ -69,7 +69,7 @@ test('codex backend records compatible codex --version output', () => {
 test('codex backend rejects incompatible codex --version output', () => {
   const dataRoot = makeTempRoot('pickle-codex-smoke-data-');
   const shimDir = makeTempRoot('pickle-codex-smoke-bin-');
-  makeCodexShim(shimDir, 'echo "codex 0.41.9"');
+  makeCodexShim(shimDir, 'echo "codex 0.127.9"');
 
   try {
     const result = spawnSync(process.execPath, [setupBin, '--backend', 'codex', '--task', 'codex smoke mismatch'], {

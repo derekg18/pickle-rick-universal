@@ -19,6 +19,16 @@ test('pickle.md: references TeamCreate, TeamDelete, and Agent primitives', () =>
     assert.match(text, /\bAgent\b/, 'should mention the Agent tool');
 });
 
+test('pickle.md: documents backend-specific team dispatch for Claude and Codex', () => {
+    const phaseStart = text.indexOf('## Phase 3.B');
+    assert.ok(phaseStart >= 0, 'should include Phase 3.B');
+    const phaseText = text.slice(phaseStart);
+    assert.doesNotMatch(phaseText, /Claude backend only/);
+    assert.match(phaseText, /Claude backend/i);
+    assert.match(phaseText, /Codex backend/i);
+    assert.match(phaseText, /spawn_agent/);
+});
+
 test('pickle.md: dispatches all six phase subagents', () => {
     for (const subagent of [
         'morty-phase-researcher',

@@ -15,6 +15,10 @@ CODEX_PLUGIN_NAME="pickle-rick"
 CODEX_MARKETPLACE_NAME="pickle-rick"
 CODEX_PLUGIN_KEY="$CODEX_PLUGIN_NAME@$CODEX_MARKETPLACE_NAME"
 CODEX_PLUGIN_SOURCE_DIR="$SCRIPT_DIR/codex-plugin"
+CODEX_AGENTS_SOURCE_DIR="$SCRIPT_DIR/.codex/agents"
+if [ ! -d "$CODEX_AGENTS_SOURCE_DIR" ]; then
+  CODEX_AGENTS_SOURCE_DIR="$CODEX_PLUGIN_SOURCE_DIR/agents"
+fi
 LEGACY_RUNTIME_ROOT_MARKER="$LEGACY_CLAUDE_RUNTIME_ROOT/runtime_root"
 CLAUDE_STOP_HOOK_CMD="sh -c 'exec node \"\$(cat \"$LEGACY_RUNTIME_ROOT_MARKER\")/extension/hooks/dispatch.js\" stop-hook'"
 CLAUDE_COMMIT_HOOK_CMD="sh -c 'exec node \"\$(cat \"$LEGACY_RUNTIME_ROOT_MARKER\")/extension/bin/log-commit.js\"'"
@@ -72,6 +76,10 @@ COMMAND_SOURCE_COUNT="$(find "$COMMANDS_SOURCE_DIR" -maxdepth 1 -type f -name '*
 AGENT_SOURCE_COUNT="0"
 if [ -d "$AGENTS_SOURCE_DIR" ]; then
   AGENT_SOURCE_COUNT="$(find "$AGENTS_SOURCE_DIR" -maxdepth 1 -type f -name '*.md' | wc -l | tr -d ' ')"
+fi
+CODEX_AGENT_SOURCE_COUNT="0"
+if [ -d "$CODEX_AGENTS_SOURCE_DIR" ]; then
+  CODEX_AGENT_SOURCE_COUNT="$(find "$CODEX_AGENTS_SOURCE_DIR" -maxdepth 1 -type f -name '*.toml' | wc -l | tr -d ' ')"
 fi
 
 # --- MODE DETECTION ---
@@ -587,6 +595,7 @@ install_codex_adapter() {
   local codex_root="$HOME/.codex"
   local settings_file="$codex_root/config.toml"
   local adapter_root="$codex_root/pickle-rick"
+  local agents_dir="$codex_root/agents"
   local prompts_dir="$codex_root/prompts/pickle-rick"
   local flat_pickle_prompt="$codex_root/prompts/pickle.md"
   local plugin_source_root="$HOME/plugins/$CODEX_PLUGIN_NAME"
@@ -608,9 +617,12 @@ install_codex_adapter() {
     echo "✅ Backed up Codex config.toml to $backup_path"
   fi
 
-  mkdir -p "$adapter_root" "$prompts_dir" "$(dirname "$flat_pickle_prompt")" "$plugin_source_root" "$plugin_cache_root"
+  mkdir -p "$adapter_root" "$agents_dir" "$prompts_dir" "$(dirname "$flat_pickle_prompt")" "$plugin_source_root" "$plugin_cache_root"
   cp "$RUNTIME_ROOT/persona.md" "$adapter_root/persona.md"
   printf '%s\n' "$RUNTIME_ROOT" > "$adapter_root/runtime_root"
+  if [ -d "$CODEX_AGENTS_SOURCE_DIR" ]; then
+    rsync -a "$CODEX_AGENTS_SOURCE_DIR/" "$agents_dir/"
+  fi
   rsync -a "$COMMANDS_SOURCE_DIR/" "$prompts_dir/"
   cp "$COMMANDS_SOURCE_DIR/pickle.md" "$flat_pickle_prompt"
 
@@ -625,10 +637,14 @@ install_codex_adapter() {
   ensure_toml_bool "$settings_file" "plugins.\"$CODEX_PLUGIN_KEY\"" "enabled" "true"
   write_codex_marketplace "$marketplace_file" "$CODEX_PLUGIN_NAME" "./plugins/$CODEX_PLUGIN_NAME"
   echo "✅ Codex adapter installed to $adapter_root and $prompts_dir/"
+  if [ "$CODEX_AGENT_SOURCE_COUNT" -gt 0 ]; then
+    echo "✅ Codex agent definitions installed to $agents_dir/"
+  fi
   echo "✅ Codex plugin $CODEX_PLUGIN_KEY installed to $plugin_cache_root and enabled in $settings_file"
 
   local files_json
   local adapter_files_json
+  local agent_files_json
   local flat_prompt_json
   local plugin_source_files_json
   local plugin_cache_files_json
@@ -636,6 +652,7 @@ install_codex_adapter() {
   local managed_files_json
   files_json="$(json_array_from_find "$prompts_dir")"
   adapter_files_json="$(json_array_from_find "$adapter_root")"
+  agent_files_json="$(json_array_from_find "$agents_dir")"
   flat_prompt_json="$(printf '%s\n' "$flat_pickle_prompt" | jq -R . | jq -s .)"
   plugin_source_files_json="$(json_array_from_find "$plugin_source_root")"
   plugin_cache_files_json="$(json_array_from_find "$plugin_cache_root")"
@@ -645,12 +662,13 @@ install_codex_adapter() {
     --argjson c "$flat_prompt_json" \
     --argjson d "$plugin_source_files_json" \
     --argjson e "$plugin_cache_files_json" \
-    '$a + $b + $c + $d + $e | unique')"
+    --argjson f "$agent_files_json" \
+    '$a + $b + $c + $d + $e + $f | unique')"
   settings_files_json="$(printf '%s\n' "$settings_file" "$marketplace_file" | jq -R . | jq -s .)"
   files_json="$(jq -n --argjson managed "$managed_files_json" --argjson settings "$settings_files_json" '$managed + $settings | unique')"
   local checksums_json
   checksums_json="$(checksums_json_from_files "$managed_files_json")"
-  write_host_json "$host_json" "codex" "installed" "$codex_root" "$settings_file" "$COMMAND_SOURCE_COUNT" 0 "$files_json" "$backups_json" "$checksums_json" ""
+  write_host_json "$host_json" "codex" "installed" "$codex_root" "$settings_file" "$COMMAND_SOURCE_COUNT" "$CODEX_AGENT_SOURCE_COUNT" "$files_json" "$backups_json" "$checksums_json" ""
 }
 
 install_gemini_adapter() {

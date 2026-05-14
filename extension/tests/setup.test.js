@@ -66,6 +66,40 @@ test('setup parseArguments: --paused sets pausedMode', () => {
     assert.equal(args.task, 'paused parse test');
 });
 
+test('setup parseArguments: PICKLE_HOST_BACKEND supplies caller backend default', () => {
+    const previousHostBackend = process.env.PICKLE_HOST_BACKEND;
+    const previousBackend = process.env.PICKLE_BACKEND;
+    process.env.PICKLE_HOST_BACKEND = 'codex';
+    delete process.env.PICKLE_BACKEND;
+
+    try {
+        const args = parseArguments(['--task', 'host backend default parse test']);
+
+        assert.equal(args.backend, 'codex');
+        assert.equal(args.explicitFlags.has('backend'), false);
+    } finally {
+        if (previousHostBackend === undefined) delete process.env.PICKLE_HOST_BACKEND;
+        else process.env.PICKLE_HOST_BACKEND = previousHostBackend;
+        if (previousBackend === undefined) delete process.env.PICKLE_BACKEND;
+        else process.env.PICKLE_BACKEND = previousBackend;
+    }
+});
+
+test('setup parseArguments: explicit --backend overrides caller backend default', () => {
+    const previousHostBackend = process.env.PICKLE_HOST_BACKEND;
+    process.env.PICKLE_HOST_BACKEND = 'codex';
+
+    try {
+        const args = parseArguments(['--backend', 'claude', '--task', 'explicit backend parse test']);
+
+        assert.equal(args.backend, 'claude');
+        assert.equal(args.explicitFlags.has('backend'), true);
+    } finally {
+        if (previousHostBackend === undefined) delete process.env.PICKLE_HOST_BACKEND;
+        else process.env.PICKLE_HOST_BACKEND = previousHostBackend;
+    }
+});
+
 test('setup initializeNewSession: state field set matches schema fixture', () => {
     const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-setup-schema-data-'));
     const previousDataRoot = process.env.PICKLE_DATA_ROOT;
@@ -323,7 +357,7 @@ test('setup: --resume with --tmux propagates tmux_mode to state.json', () => {
     }
 });
 
-test('setup: --resume rejects codex teams conflict from recovered tmp state', () => {
+test('setup: --resume accepts codex teams state recovered from tmp state', () => {
     const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-setup-conflict-data-'));
     const sessionPath = path.join(dataRoot, 'sessions', 'resume-conflict');
     fs.mkdirSync(sessionPath, { recursive: true });
@@ -354,10 +388,10 @@ test('setup: --resume rejects codex teams conflict from recovered tmp state', ()
     }, null, 2));
 
     try {
-        assert.throws(
-            () => runSetupWithEnv(['--resume', sessionPath], { PICKLE_DATA_ROOT: dataRoot }),
-            /--teams is incompatible with --backend codex/i,
-        );
+        runSetupWithEnv(['--resume', sessionPath], { PICKLE_DATA_ROOT: dataRoot });
+        const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+        assert.equal(state.backend, 'codex');
+        assert.equal(state.teams_mode, true);
     } finally {
         fs.rmSync(dataRoot, { recursive: true, force: true });
     }
@@ -853,13 +887,31 @@ function makeExtensionRootWithSettings(settings) {
 function makeCodexSmokeEnv(extraEnv) {
     const shimDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-setup-codex-bin-'));
     const shimPath = path.join(shimDir, 'codex');
-    fs.writeFileSync(shimPath, '#!/bin/sh\necho "codex 0.42.1"\n');
+    fs.writeFileSync(shimPath, '#!/bin/sh\necho "codex 0.128.0"\n');
     fs.chmodSync(shimPath, 0o755);
     return {
         env: { ...extraEnv, PATH: `${shimDir}${path.delimiter}${process.env.PATH ?? ''}` },
         cleanup: () => fs.rmSync(shimDir, { recursive: true, force: true }),
     };
 }
+
+test('setup CLI: PICKLE_HOST_BACKEND becomes the new-session backend default', () => {
+    const dataRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-setup-host-backend-data-'));
+    const codexEnv = makeCodexSmokeEnv({ PICKLE_DATA_ROOT: dataRoot, PICKLE_HOST_BACKEND: 'codex' });
+    const output = runSetupWithEnv(
+        ['--task', 'host backend default session test'],
+        codexEnv.env
+    );
+    const sessionPath = output.match(/SESSION_ROOT=(.+)/)[1].trim();
+    try {
+        const state = JSON.parse(fs.readFileSync(path.join(sessionPath, 'state.json'), 'utf-8'));
+        assert.equal(state.backend, 'codex');
+        assert.equal(state.codex_version_seen, 'codex 0.128.0');
+    } finally {
+        codexEnv.cleanup();
+        fs.rmSync(dataRoot, { recursive: true, force: true });
+    }
+});
 
 test('setup: iteration_budget_per_backend.codex honored when --backend codex', () => {
     const extRoot = makeExtensionRootWithSettings({

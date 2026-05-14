@@ -35,7 +35,7 @@ function cleanup(sessionPath) {
 function makeCodexSmokeEnv() {
     const shimDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-setup-teams-codex-bin-'));
     const shimPath = path.join(shimDir, 'codex');
-    fs.writeFileSync(shimPath, '#!/bin/sh\necho "codex 0.42.1"\n');
+    fs.writeFileSync(shimPath, '#!/bin/sh\necho "codex 0.128.0"\n');
     fs.chmodSync(shimPath, 0o755);
     return {
         env: { EXTENSION_DIR: REPO_ROOT, PATH: `${shimDir}${path.delimiter}${process.env.PATH ?? ''}` },
@@ -80,10 +80,18 @@ test('setup --max-parallel without --teams: rejects with non-zero exit', () => {
     assert.match(r.stderr, /teams/i);
 });
 
-test('setup --teams --backend codex: rejects with non-zero exit', () => {
-    const r = runSetupExpectFail(['--teams', '--backend', 'codex', '--task', 'codex-conflict']);
-    assert.notEqual(r.code, 0, 'expected non-zero exit');
-    assert.match(r.stderr, /codex|claude/i);
+test('setup --teams --backend codex: writes codex backend and teams mode to state.json', () => {
+    const codexEnv = makeCodexSmokeEnv();
+    const sessionPath = runSetup(['--teams', '--backend', 'codex', '--task', 'codex-teams'], codexEnv.env);
+    try {
+        const state = JSON.parse(fs.readFileSync(path.join(sessionPath, 'state.json'), 'utf-8'));
+        assert.equal(state.backend, 'codex');
+        assert.equal(state.teams_mode, true);
+        assert.equal(state.max_parallel, 5);
+    } finally {
+        codexEnv.cleanup();
+        cleanup(sessionPath);
+    }
 });
 
 test('setup --teams --backend gemini: rejects with non-zero exit', () => {
@@ -125,9 +133,9 @@ test('setup --teams --resume: preserves teams_mode and max_parallel', () => {
     } finally { cleanup(sessionPath); }
 });
 
-// Regression: P0-1 — codex/teams conflict must fire across resume in BOTH directions.
+// Regression: P0-1 — teams/backend compatibility must be enforced on resume.
 
-test('setup --resume + --teams against codex session: rejects, leaves state unchanged', () => {
+test('setup --resume + --teams against codex session: enables teams mode', () => {
     const codexEnv = makeCodexSmokeEnv();
     const sessionPath = runSetup(['--backend', 'codex', '--task', 'codex-base'], codexEnv.env);
     try {
@@ -136,19 +144,40 @@ test('setup --resume + --teams against codex session: rejects, leaves state unch
         assert.equal(before.backend, 'codex');
         assert.ok(!before.teams_mode);
 
-        const r = runSetupExpectFail(['--resume', sessionPath, '--teams']);
-        assert.notEqual(r.code, 0, 'expected non-zero exit on codex+teams resume conflict');
+        runSetup(['--resume', sessionPath, '--teams'], codexEnv.env);
 
         const after = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
         assert.equal(after.backend, 'codex', 'backend should remain codex');
-        assert.ok(!after.teams_mode, 'teams_mode must NOT be set on a codex session');
+        assert.equal(after.teams_mode, true, 'teams_mode should be set on a codex session');
+        assert.equal(after.max_parallel, 5);
     } finally {
         codexEnv.cleanup();
         cleanup(sessionPath);
     }
 });
 
-test('setup --resume + --backend codex against teams session: rejects, leaves state unchanged', () => {
+test('setup --resume + --teams uses stored backend over caller host default', () => {
+    const codexEnv = makeCodexSmokeEnv();
+    const sessionPath = runSetup(['--backend', 'codex', '--task', 'codex-host-default-base'], codexEnv.env);
+    try {
+        const statePath = path.join(sessionPath, 'state.json');
+
+        runSetup(['--resume', sessionPath, '--teams'], {
+            ...codexEnv.env,
+            PICKLE_HOST_BACKEND: 'gemini',
+        });
+
+        const after = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+        assert.equal(after.backend, 'codex', 'stored backend should win over caller host default on resume');
+        assert.equal(after.teams_mode, true);
+    } finally {
+        codexEnv.cleanup();
+        cleanup(sessionPath);
+    }
+});
+
+test('setup --resume + --backend codex against teams session: switches backend and preserves teams mode', () => {
+    const codexEnv = makeCodexSmokeEnv();
     const sessionPath = runSetup(['--teams', '--task', 'teams-base']);
     try {
         const statePath = path.join(sessionPath, 'state.json');
@@ -156,13 +185,15 @@ test('setup --resume + --backend codex against teams session: rejects, leaves st
         assert.equal(before.teams_mode, true);
         assert.ok(!before.backend || before.backend !== 'codex');
 
-        const r = runSetupExpectFail(['--resume', sessionPath, '--backend', 'codex']);
-        assert.notEqual(r.code, 0, 'expected non-zero exit on teams+codex resume conflict');
+        runSetup(['--resume', sessionPath, '--backend', 'codex'], codexEnv.env);
 
         const after = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
         assert.equal(after.teams_mode, true, 'teams_mode must remain true');
-        assert.notEqual(after.backend, 'codex', 'backend must NOT be set to codex on a teams session');
-    } finally { cleanup(sessionPath); }
+        assert.equal(after.backend, 'codex', 'backend should be set to codex on a teams session');
+    } finally {
+        codexEnv.cleanup();
+        cleanup(sessionPath);
+    }
 });
 
 // Regression: P1-1 — --max-parallel must NOT silently consume the next flag when its value is missing.

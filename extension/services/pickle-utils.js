@@ -100,6 +100,7 @@ function runArgvCmd(cmd, options) {
         cwd: options.cwd,
         encoding: 'utf-8',
         timeout: 30_000,
+        maxBuffer: 64 * 1024 * 1024,
         stdio: options.capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
     });
     if (options.check && (result.status ?? 1) !== 0) {
@@ -118,6 +119,7 @@ function runShellCmd(cmd, options) {
             cwd: options.cwd,
             encoding: 'utf-8',
             timeout: 30_000,
+            maxBuffer: 64 * 1024 * 1024,
             stdio: options.capture ? ['ignore', 'pipe', 'pipe'] : 'inherit',
         });
         return (stdout || '').trim();

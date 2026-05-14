@@ -4,6 +4,21 @@ import { getDiffFiles, runGit } from '../git-utils.js';
 const DEFAULT_HEAD = 'HEAD';
 const TEST_FILE_PATTERN = /(?:^|\/)(?:__tests__|tests?|specs?)(?:\/|$)|(?:\.|-)test\.[cm]?[jt]sx?$|(?:\.|-)spec\.[cm]?[jt]sx?$/i;
 const SKIPPED_CLAUDE_DIRS = new Set(['.git', 'node_modules']);
+const BLAME_SKIP_BASENAMES = new Set([
+    'package-lock.json',
+    'yarn.lock',
+    'pnpm-lock.yaml',
+    'npm-shrinkwrap.json',
+    'composer.lock',
+    'Gemfile.lock',
+    'Pipfile.lock',
+    'poetry.lock',
+    'Cargo.lock',
+    'go.sum',
+]);
+function shouldSkipBlame(filePath) {
+    return BLAME_SKIP_BASENAMES.has(path.basename(filePath));
+}
 export function walkDiff(range, options = {}) {
     const repoRoot = path.resolve(options.repoRoot ?? process.cwd());
     const parsed = parseRange(range);
@@ -38,12 +53,13 @@ function stableDiffEntries(entries) {
 }
 function summarizeChangedFile(entry, range, repoRoot) {
     const changedLines = entry.status === 'D' ? [] : getChangedLineRanges(entry.path, range, repoRoot);
+    const skipBlame = entry.status === 'D' || shouldSkipBlame(entry.path);
     return {
         path: entry.path,
         status: entry.status,
         kind: classifyChangedFile(entry.path),
         changedLines,
-        blame: summarizeBlame(entry.path, changedLines, range.head, repoRoot),
+        blame: skipBlame ? [] : summarizeBlame(entry.path, changedLines, range.head, repoRoot),
     };
 }
 function classifyChangedFile(filePath) {

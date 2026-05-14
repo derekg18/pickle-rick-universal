@@ -1,6 +1,6 @@
 Refine and decompose PRD into atomic tickets using parallel Morty analysis team.
 
-> **Backend:** Always claude. Refinement is planning, not implementation; codex is never used here even if the parent session has `--backend codex`.
+> **Refinement backend:** Always claude. Refinement is planning, not implementation; codex is never used for refinement workers even if the session backend is codex. The session backend may still default from the caller host for downstream `/pickle --resume`.
 
 Persona via CLAUDE.md. Proceed to Step 0.
 
@@ -71,6 +71,7 @@ Extension root: `/Users/derekgreene/.gemini/extensions/pickle-rick` (`${EXTENSIO
 node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/setup.js" --paused --task "PRD Refinement: ${TASK_ARGS}"
 ```
 Extract `SESSION_ROOT`. Save original path as `<PRD_PATH>`. `cp "<PRD_PATH>" "${SESSION_ROOT}/prd.md"`.
+Default backend: set `PICKLE_HOST_BACKEND` to the caller host (`claude`, `codex`, or `gemini`) before running setup unless the user explicitly passes `--backend`. Refinement workers still force claude in Step 4b.
 
 ## Step 4: Deploy Refinement Team
 

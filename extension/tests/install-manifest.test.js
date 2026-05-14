@@ -5,7 +5,7 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { canonicalCommandNames } from '../services/host-command-registry.js';
+import { PICKLE_CODEX_AGENT_NAMES, canonicalCommandNames } from '../services/host-command-registry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -128,6 +128,7 @@ test('install manifest records package, roots, checksums, host status, counts, f
 
     assert.equal(manifest.hosts.codex.status, 'installed');
     assert.equal(manifest.hosts.codex.command_count, COMMAND_COUNT);
+    assert.equal(manifest.hosts.codex.agent_count, PICKLE_CODEX_AGENT_NAMES.length);
     assert.equal(manifest.hosts.codex.settings_file, path.join(fixture.home, '.codex', 'config.toml'));
     assertManifestIncludesCommands(manifest.hosts.codex.files_written, '/prompts/pickle-rick/', 'Codex');
     assertManifestIncludesCommands(
@@ -146,10 +147,17 @@ test('install manifest records package, roots, checksums, host status, counts, f
     assert.match(manifest.hosts.codex.file_checksums[codexFlatPrompt], /^[a-f0-9]{64}$/);
     const codexPluginManifest = manifest.hosts.codex.files_written.find((file) => file.endsWith('/plugins/cache/pickle-rick/pickle-rick/local/.codex-plugin/plugin.json'));
     const codexPluginSkill = manifest.hosts.codex.files_written.find((file) => file.endsWith('/plugins/cache/pickle-rick/pickle-rick/local/skills/pickle/SKILL.md'));
+    const codexAgent = manifest.hosts.codex.files_written.find((file) => file.endsWith('/.codex/agents/morty-implementer.toml'));
+    const codexPluginAgent = manifest.hosts.codex.files_written.find((file) => file.endsWith('/plugins/cache/pickle-rick/pickle-rick/local/agents/morty-implementer.toml'));
     assert.equal(JSON.parse(readFileSync(codexPluginManifest, 'utf8')).name, 'pickle-rick');
+    assert.equal(JSON.parse(readFileSync(codexPluginManifest, 'utf8')).agents, './agents/');
     assert.match(readFileSync(codexPluginSkill, 'utf8'), /name: pickle/);
+    assert.match(readFileSync(codexAgent, 'utf8'), /name = "morty-implementer"/);
+    assert.match(readFileSync(codexPluginAgent, 'utf8'), /name = "morty-implementer"/);
     assert.match(manifest.hosts.codex.file_checksums[codexPluginManifest], /^[a-f0-9]{64}$/);
     assert.match(manifest.hosts.codex.file_checksums[codexPluginSkill], /^[a-f0-9]{64}$/);
+    assert.match(manifest.hosts.codex.file_checksums[codexAgent], /^[a-f0-9]{64}$/);
+    assert.match(manifest.hosts.codex.file_checksums[codexPluginAgent], /^[a-f0-9]{64}$/);
     const codexConfig = readFileSync(manifest.hosts.codex.settings_file, 'utf8');
     assert.match(codexConfig, /\[features\]\nplugins = true/);
     assert.match(codexConfig, /\[plugins\."pickle-rick@pickle-rick"\]\nenabled = true/);

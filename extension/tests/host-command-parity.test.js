@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
-import { readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -8,6 +8,7 @@ import {
 } from '../types/index.js';
 import {
   REQUIRED_PICKLE_COMMANDS,
+  PICKLE_CODEX_AGENT_NAMES,
   assertCommandRegistryParity,
   canonicalCommandNames,
   commandsForHost,
@@ -19,6 +20,8 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
 const COMMANDS_DIR = path.join(REPO_ROOT, '.claude', 'commands');
+const CODEX_AGENTS_DIR = path.join(REPO_ROOT, 'codex-plugin', 'agents');
+const CODEX_SKILL_PATH = path.join(REPO_ROOT, 'codex-plugin', 'skills', 'pickle', 'SKILL.md');
 const CODEX_PLUGIN_ROOT = 'plugins/cache/pickle-rick/pickle-rick/local';
 
 function escapeRegExp(value) {
@@ -84,6 +87,38 @@ describe('host command registry parity', () => {
     assert.equal(paths.has(`${CODEX_PLUGIN_ROOT}/.codex-plugin/plugin.json`), true);
     assert.equal(paths.has(`${CODEX_PLUGIN_ROOT}/skills/pickle/SKILL.md`), true);
     assert.equal(paths.has(`${CODEX_PLUGIN_ROOT}/runtime_root`), true);
+    for (const agent of PICKLE_CODEX_AGENT_NAMES) {
+      assert.equal(paths.has(`agents/${agent}.toml`), true, `Codex must include global agent ${agent}`);
+      assert.equal(paths.has(`${CODEX_PLUGIN_ROOT}/agents/${agent}.toml`), true, `Codex plugin must include agent ${agent}`);
+    }
+  });
+
+  test('Codex agent definitions do not require Claude team primitives for completion', () => {
+    const agentFiles = readdirSync(CODEX_AGENTS_DIR).filter((file) => file.endsWith('.toml'));
+    assert.equal(agentFiles.length, PICKLE_CODEX_AGENT_NAMES.length);
+    for (const file of agentFiles) {
+      const text = readFileSync(path.join(CODEX_AGENTS_DIR, file), 'utf-8');
+      assert.doesNotMatch(text, /TaskUpdate|SendMessage/, `${file} should finish with a Codex final response`);
+    }
+  });
+
+  test('Codex skill marks Codex as the caller backend default', () => {
+    const text = readFileSync(CODEX_SKILL_PATH, 'utf-8');
+    assert.match(text, /PICKLE_HOST_BACKEND=codex/);
+  });
+
+  test('Codex skill can trigger PRD drafting and refinement commands', () => {
+    const text = readFileSync(CODEX_SKILL_PATH, 'utf-8');
+    assert.match(text, /\/pickle-prd/);
+    assert.match(text, /\/pickle-refine-prd/);
+  });
+
+  test('PRD commands preserve caller-host backend defaults for downstream resume', () => {
+    const prd = readFileSync(path.join(COMMANDS_DIR, 'pickle-prd.md'), 'utf-8');
+    const refine = readFileSync(path.join(COMMANDS_DIR, 'pickle-refine-prd.md'), 'utf-8');
+    assert.match(prd, /PICKLE_HOST_BACKEND/);
+    assert.match(refine, /PICKLE_HOST_BACKEND/);
+    assert.match(refine, /Refinement workers still force claude/);
   });
 
   test('Gemini TOML renderer uses registry descriptions, markdown targets, and args placeholder', () => {
@@ -92,6 +127,7 @@ describe('host command registry parity', () => {
       const rendered = renderGeminiToml(name, markdownPath);
       assert.match(rendered, new RegExp(`description = ${escapeRegExp(JSON.stringify(description))}`));
       assert.match(rendered, new RegExp(escapeRegExp(markdownPath)));
+      assert.match(rendered, /PICKLE_HOST_BACKEND=gemini/);
       assert.match(rendered, /\{\{args\}\}/);
     }
   });

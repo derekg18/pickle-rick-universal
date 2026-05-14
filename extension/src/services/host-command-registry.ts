@@ -19,6 +19,23 @@ export const REQUIRED_PICKLE_COMMANDS = [
   'pickle-pipeline',
 ] as const;
 
+export const PICKLE_CODEX_AGENT_NAMES = [
+  'morty-course-corrector',
+  'morty-debater-architect',
+  'morty-debater-implementer',
+  'morty-debater-researcher',
+  'morty-debater-skeptic',
+  'morty-gate-remediator',
+  'morty-implementer',
+  'morty-phase-implementer',
+  'morty-phase-planner',
+  'morty-phase-researcher',
+  'morty-phase-reviewer',
+  'morty-phase-simplifier',
+  'morty-phase-verifier',
+  'morty-reviewer',
+] as const;
+
 export const PICKLE_COMMAND_SPECS: readonly HostCommandSpec[] = [
   { name: 'add-to-pickle-jar', description: 'Queue a PRD for later batch execution.', hosts: BACKENDS },
   { name: 'anatomy-park', description: 'Run the Anatomy Park subsystem review loop.', hosts: BACKENDS },
@@ -77,6 +94,8 @@ export function renderGeminiToml(commandName: string, commandMarkdownPath: strin
     'prompt = """',
     'Read the Pickle Rick command source at:',
     commandMarkdownPath,
+    '',
+    'Before running any setup command, set PICKLE_HOST_BACKEND=gemini unless the user explicitly passes --backend.',
     '',
     "Then execute it with the user's arguments:",
     '{{args}}',
@@ -148,7 +167,9 @@ export function expectedAdapterRelativePaths(host: Backend): string[] {
       `${pluginRoot}/skills/pickle/SKILL.md`,
       `${pluginRoot}/persona.md`,
       `${pluginRoot}/runtime_root`,
+      ...PICKLE_CODEX_AGENT_NAMES.map((name) => `agents/${name}.toml`),
       ...commands.map((name) => `prompts/pickle-rick/${name}.md`),
+      ...PICKLE_CODEX_AGENT_NAMES.map((name) => `${pluginRoot}/agents/${name}.toml`),
       ...commands.map((name) => `${pluginRoot}/commands/${name}.md`),
     ];
   }
