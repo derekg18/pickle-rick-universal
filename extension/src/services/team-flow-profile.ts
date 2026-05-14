@@ -213,8 +213,13 @@ export function evaluateTeamFlowGate(
     };
   }
 
-  const requiredInputs = phase.id === 'qa_acceptance' && hasDeterministicNoSensitivePathsClassifier(sessionRoot)
-    ? phase.requiredInputs.filter((artifactPath) => artifactPath !== path.join(TEAM_FLOW_DIR, 'security_risk_report.md'))
+  const requiredInputs = phase.id === 'qa_acceptance'
+    && hasDeterministicNoSensitivePathsClassifier(sessionRoot)
+    && !artifactExists(sessionRoot, path.join(TEAM_FLOW_DIR, 'security_risk_report.md'))
+    ? [
+        path.join(TEAM_FLOW_DIR, 'review_comments.json'),
+        path.join(TEAM_FLOW_DIR, 'review_comments.md'),
+      ]
     : phase.requiredInputs;
   const missingArtifacts = unique(requiredInputs.filter((artifactPath) => !artifactExists(sessionRoot, artifactPath)));
 

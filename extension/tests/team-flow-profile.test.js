@@ -153,9 +153,29 @@ describe('team-flow profile', () => {
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  test('qa gate accepts deterministic security skip classifier as prior security output', () => {
+  test('qa gate requires review artifacts when deterministic classifier replaces security output', () => {
     const root = tmpDir();
     const profile = fullProfile(root);
+    writeArtifact(root, 'team-flow/security_classifier.json', JSON.stringify({
+      classifier: 'deterministic_no_sensitive_paths',
+      sensitivePathChanges: false,
+    }));
+
+    const gate = evaluateTeamFlowGate(profile, 'qa_acceptance', root);
+
+    assert.equal(gate.status, 'fail');
+    assert.deepEqual(gate.missingArtifacts, [
+      'team-flow/review_comments.json',
+      'team-flow/review_comments.md',
+    ]);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  test('qa gate accepts deterministic security skip only after review artifacts exist', () => {
+    const root = tmpDir();
+    const profile = fullProfile(root);
+    writeArtifact(root, 'team-flow/review_comments.json', '{}');
+    writeArtifact(root, 'team-flow/review_comments.md');
     writeArtifact(root, 'team-flow/security_classifier.json', JSON.stringify({
       classifier: 'deterministic_no_sensitive_paths',
       sensitivePathChanges: false,
