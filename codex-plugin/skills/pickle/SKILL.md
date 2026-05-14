@@ -14,3 +14,5 @@ This skill is the Codex plugin bridge for Pickle Rick. Treat the user's request 
 5. Before running any setup command, set `PICKLE_HOST_BACKEND=codex` unless the user explicitly passes `--backend`.
 
 The `commands/` directory is installed beside this skill so Codex plugin and prompt surfaces can resolve the same command source.
+
+For `/pickle-pipeline --team-flow full`, follow the installed command source and preserve the opt-in flag. Full SDLC Team Flow uses the ordered phases `product_intake`, `ready_gate`, `architecture_review`, `implementation`, `test_engineering`, `ci_simulation`, `code_review`, `security_risk_review`, `qa_acceptance`, `release_management`, and `retrospective`, with durable artifacts under `${SESSION_ROOT}/team-flow/`.

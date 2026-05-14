@@ -108,9 +108,12 @@ From `$ARGUMENTS`:
 **Phase control:**
 - `--refine` → force refinement before pipeline (already consumed in Step 0)
 - `--no-refine` → suppress auto-inferred refinement (already consumed in Step 0)
+- `--team-flow full` → opt in to the Full SDLC Team Flow artifact gate profile; omit for standard pipeline behavior
 - `--skip-anatomy` → remove anatomy-park from pipeline
 - `--skip-szechuan` → remove szechuan-sauce from pipeline
 - `--target <path>` → TARGET for review phases (default: current working directory)
+
+Full SDLC Team Flow phases are `product_intake`, `ready_gate`, `architecture_review`, `implementation`, `test_engineering`, `ci_simulation`, `code_review`, `security_risk_review`, `qa_acceptance`, `release_management`, and `retrospective`. Full mode reads and writes durable artifacts under `${SESSION_ROOT}/team-flow/`; missing required artifacts fail the gate with remediation before continuing.
 
 **Scope flags (optional):**
 - `--scope <flag>` → SCOPE_FLAG (values: `branch`, `branch:one-hop`, `diff:<ref>`, `diff:<ref>:one-hop`, `paths:<glob,...>`)
@@ -165,6 +168,7 @@ Optional keys — include each ONLY when the corresponding flag was set, and use
 - `scope` (string) — add when `--scope` was passed
 - `scope_base` (string) — add when `--scope-base` was passed
 - `backend` (string: `"claude"` or `"codex"`) — add when `--backend` was passed; omit the key entirely otherwise
+- `team_flow` (string: `"full"`) — add only when `--team-flow full` was passed; omit otherwise so standard mode remains default
 
 ## Step 5: tmux Session
 

@@ -26,6 +26,7 @@ import { logActivity } from '../services/activity-logger.js';
 import { emitBundleLinearComments } from '../services/linear-integration.js';
 import { readRecoverableJsonObject } from '../services/microverse-state.js';
 import { runAcPhaseGate } from '../services/ac-phase-gate.js';
+import { evaluateTeamFlowGate, resolveTeamFlowProfile, } from '../services/team-flow-profile.js';
 import { resolveScope, refreshScope, filterBySubsystem, ScopeError, } from '../services/scope-resolver.js';
 import { runCitadelAudit } from '../services/citadel/audit-runner.js';
 import { notifySessionEvent } from '../services/notification-dispatcher.js';
@@ -41,6 +42,13 @@ function parsePositiveInteger(value, fallback) {
     const parsed = Number(value);
     return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
+function parseTeamFlowMode(raw) {
+    if (raw === undefined || raw === null || raw === '')
+        return 'standard';
+    if (raw === 'standard' || raw === 'full')
+        return raw;
+    throw new Error(`Unknown --team-flow mode: ${String(raw)}. Expected "standard" or "full".`);
+}
 export function parsePipelineConfig(raw) {
     const rawBackend = raw.backend;
     const backend = typeof rawBackend === 'string' && BACKENDS.includes(rawBackend)
@@ -50,6 +58,7 @@ export function parsePipelineConfig(raw) {
     const ignore_dirty_paths = Array.isArray(rawIgnore) && rawIgnore.every((p) => typeof p === 'string')
         ? rawIgnore
         : [...DEFAULT_IGNORE_DIRTY_PATHS];
+    const teamFlowMode = parseTeamFlowMode(raw.team_flow ?? raw.teamFlow ?? raw.teamFlowMode);
     return {
         phases: normalizePipelinePhases(raw.phases),
         target: raw.target || '',
@@ -61,6 +70,7 @@ export function parsePipelineConfig(raw) {
         szechuan_max_iterations: parsePositiveInteger(raw.szechuan_max_iterations, 50),
         citadel_strict: raw.citadel_strict === true || raw.strict === true,
         backend,
+        teamFlowMode,
         ignore_dirty_paths,
     };
 }
@@ -291,6 +301,7 @@ export function writePipelineStatus(sessionDir, status, details = {}) {
         skipped_phases: details.skipped_phases ?? 0,
         total_phases: details.total_phases ?? 0,
         updated_at: new Date().toISOString(),
+        ...(details.team_flow ? { team_flow: details.team_flow } : {}),
     };
     const statusPath = path.join(sessionDir, 'pipeline-status.json');
     const tmpPath = `${statusPath}.tmp.${process.pid}`;
@@ -1040,6 +1051,8 @@ function loadPipelineRuntime(sessionDir, opts, log) {
             throw new Error('pipeline.json did not contain an object');
         pipelineRaw = recoveredPipeline;
         config = parsePipelineConfig(pipelineRaw);
+        if (opts.teamFlowMode)
+            config.teamFlowMode = opts.teamFlowMode;
     }
     catch (err) {
         throw new Error(`Cannot read pipeline.json: ${safeErrorMessage(err)}`);
@@ -1075,6 +1088,13 @@ function loadPipelineRuntime(sessionDir, opts, log) {
         ...backendEnvOverrides(backend),
     };
     log(`backend resolved: ${backend} (source: ${source})`);
+    const teamFlowProfile = resolveTeamFlowProfile({
+        mode: config.teamFlowMode,
+        backend,
+        sessionRoot: sessionDir,
+        workingDir,
+    });
+    log(`team-flow resolved: ${teamFlowProfile.mode}`);
     // Pre-flight: refuse to start on a dirty tree. Downstream phases auto-commit
     // on their own, which would roll the user's unrelated WIP into a pipeline
     // commit and obscure which phase changed what. `ignore_dirty_paths` (default
@@ -1103,6 +1123,7 @@ function loadPipelineRuntime(sessionDir, opts, log) {
         workingDir,
         backend,
         phaseEnv,
+        teamFlowProfile,
         log,
     };
 }
@@ -1149,6 +1170,37 @@ function writeRunningStatus(runtime, counters, currentPhase) {
         skipped_phases: counters.skipped,
         total_phases: runtime.config.phases.length,
     });
+}
+function runTeamFlowPreflight(runtime) {
+    if (runtime.teamFlowProfile.mode !== 'full')
+        return { ok: true, completed: 0, skipped: 0 };
+    let completed = 0;
+    let skipped = 0;
+    for (const phase of runtime.teamFlowProfile.phases) {
+        const gate = evaluateTeamFlowGate(runtime.teamFlowProfile, phase.id, runtime.sessionDir);
+        if (gate.status === 'pass') {
+            completed++;
+            continue;
+        }
+        if (gate.status === 'skipped') {
+            skipped++;
+            runtime.log(`team-flow ${phase.id}: skipped by deterministic no-sensitive-path classifier`);
+            continue;
+        }
+        runtime.log(`team-flow ${phase.id}: missing ${gate.missingArtifacts.join(', ') || 'required artifact'} - ${gate.remediation ?? 'no remediation'}`);
+        writePipelineStatus(runtime.sessionDir, 'failed', {
+            current_phase: phase.id,
+            completed_phases: completed,
+            skipped_phases: skipped,
+            total_phases: runtime.teamFlowProfile.phases.length,
+            team_flow: {
+                mode: runtime.teamFlowProfile.mode,
+                failed_gate: gate,
+            },
+        });
+        return { ok: false, completed, skipped };
+    }
+    return { ok: true, completed, skipped };
 }
 function logPhaseStart(runtime, phase, index) {
     const phaseLabel = `${index + 1}/${runtime.config.phases.length}`;
@@ -1223,6 +1275,12 @@ export async function main(sessionDir, opts = {}) {
     const startTime = Date.now();
     phaseRunnerContext = { sessionDir, extensionRoot: runtime.extensionRoot };
     writeRunningStatus(runtime, counters, null);
+    const teamFlowPreflight = runTeamFlowPreflight(runtime);
+    if (!teamFlowPreflight.ok) {
+        phaseRunnerContext = null;
+        cleanupShutdownHandlers();
+        process.exit(1);
+    }
     try {
         for (let i = 0; i < runtime.config.phases.length; i++) {
             const rawPhase = runtime.config.phases[i];
@@ -1294,15 +1352,24 @@ function findPositional(argv, valuedFlags) {
 }
 if (process.argv[1] && path.basename(process.argv[1]) === 'pipeline-runner.js') {
     const argv = process.argv.slice(2);
-    const valuedFlags = new Set(['--scope', '--scope-base']);
+    const valuedFlags = new Set(['--scope', '--scope-base', '--team-flow']);
     const sessionDir = findPositional(argv, valuedFlags);
     if (!sessionDir || !fs.existsSync(path.join(sessionDir, 'state.json'))) {
-        console.error('Usage: node pipeline-runner.js <session-dir> [--scope <flag>] [--scope-base <ref>]');
+        console.error('Usage: node pipeline-runner.js <session-dir> [--scope <flag>] [--scope-base <ref>] [--team-flow <standard|full>]');
         process.exit(1);
     }
     const scopeFlag = parseArgvFlag(argv, '--scope');
     const scopeBase = parseArgvFlag(argv, '--scope-base');
-    main(sessionDir, { scopeFlag, scopeBase }).catch((err) => {
+    let teamFlowMode;
+    try {
+        const rawTeamFlowMode = parseArgvFlag(argv, '--team-flow');
+        teamFlowMode = rawTeamFlowMode === undefined ? undefined : parseTeamFlowMode(rawTeamFlowMode);
+    }
+    catch (err) {
+        console.error(`${Style.RED}[FATAL] ${safeErrorMessage(err)}${Style.RESET}`);
+        process.exit(1);
+    }
+    main(sessionDir, { scopeFlag, scopeBase, teamFlowMode }).catch((err) => {
         try {
             writePipelineStatus(sessionDir, 'failed');
         }

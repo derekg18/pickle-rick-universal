@@ -39,6 +39,14 @@ import { emitBundleLinearComments } from '../services/linear-integration.js';
 import { readRecoverableJsonObject } from '../services/microverse-state.js';
 import { runAcPhaseGate } from '../services/ac-phase-gate.js';
 import {
+  evaluateTeamFlowGate,
+  resolveTeamFlowProfile,
+  type TeamFlowGateResult,
+  type TeamFlowMode,
+  type TeamFlowPhaseId,
+  type TeamFlowProfile,
+} from '../services/team-flow-profile.js';
+import {
   resolveScope,
   refreshScope,
   filterBySubsystem,
@@ -70,6 +78,7 @@ interface PipelineConfig {
   szechuan_max_iterations: number;
   citadel_strict: boolean;
   backend?: Backend;
+  teamFlowMode: TeamFlowMode;
   ignore_dirty_paths: string[];
 }
 
@@ -80,11 +89,15 @@ type PipelineStatusKind = 'running' | 'completed' | 'failed' | 'cancelled';
 
 interface PipelineStatus {
   status: PipelineStatusKind;
-  current_phase: PipelinePhase | null;
+  current_phase: PipelinePhase | TeamFlowPhaseId | null;
   completed_phases: number;
   skipped_phases: number;
   total_phases: number;
   updated_at: string;
+  team_flow?: {
+    mode: TeamFlowMode;
+    failed_gate?: TeamFlowGateResult;
+  };
 }
 
 export interface SetupArgs {
@@ -124,6 +137,12 @@ function parsePositiveInteger(value: unknown, fallback: number): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseTeamFlowMode(raw: unknown): TeamFlowMode {
+  if (raw === undefined || raw === null || raw === '') return 'standard';
+  if (raw === 'standard' || raw === 'full') return raw;
+  throw new Error(`Unknown --team-flow mode: ${String(raw)}. Expected "standard" or "full".`);
+}
+
 export function parsePipelineConfig(raw: Record<string, unknown>): PipelineConfig {
   const rawBackend = raw.backend;
   const backend: Backend | undefined =
@@ -134,6 +153,7 @@ export function parsePipelineConfig(raw: Record<string, unknown>): PipelineConfi
   const ignore_dirty_paths = Array.isArray(rawIgnore) && rawIgnore.every((p) => typeof p === 'string')
     ? (rawIgnore as string[])
     : [...DEFAULT_IGNORE_DIRTY_PATHS];
+  const teamFlowMode = parseTeamFlowMode(raw.team_flow ?? raw.teamFlow ?? raw.teamFlowMode);
   return {
     phases: normalizePipelinePhases(raw.phases),
     target: (raw.target as string) || '',
@@ -145,6 +165,7 @@ export function parsePipelineConfig(raw: Record<string, unknown>): PipelineConfi
     szechuan_max_iterations: parsePositiveInteger(raw.szechuan_max_iterations, 50),
     citadel_strict: raw.citadel_strict === true || raw.strict === true,
     backend,
+    teamFlowMode,
     ignore_dirty_paths,
   };
 }
@@ -395,6 +416,7 @@ export function writePipelineStatus(
     skipped_phases: details.skipped_phases ?? 0,
     total_phases: details.total_phases ?? 0,
     updated_at: new Date().toISOString(),
+    ...(details.team_flow ? { team_flow: details.team_flow } : {}),
   };
   const statusPath = path.join(sessionDir, 'pipeline-status.json');
   const tmpPath = `${statusPath}.tmp.${process.pid}`;
@@ -1039,6 +1061,7 @@ interface PipelineRuntime {
   workingDir: string;
   backend: Backend;
   phaseEnv: NodeJS.ProcessEnv;
+  teamFlowProfile: TeamFlowProfile;
   log: (msg: string) => void;
 }
 
@@ -1266,6 +1289,7 @@ async function runConfiguredPhase(
 export interface MainOpts {
   scopeFlag?: string;
   scopeBase?: string;
+  teamFlowMode?: TeamFlowMode;
 }
 
 function createPipelineLog(sessionDir: string): (msg: string) => void {
@@ -1298,6 +1322,7 @@ function loadPipelineRuntime(sessionDir: string, opts: MainOpts, log: (msg: stri
     if (!recoveredPipeline) throw new Error('pipeline.json did not contain an object');
     pipelineRaw = recoveredPipeline as Record<string, unknown>;
     config = parsePipelineConfig(pipelineRaw);
+    if (opts.teamFlowMode) config.teamFlowMode = opts.teamFlowMode;
   } catch (err) {
     throw new Error(`Cannot read pipeline.json: ${safeErrorMessage(err)}`);
   }
@@ -1335,6 +1360,13 @@ function loadPipelineRuntime(sessionDir: string, opts: MainOpts, log: (msg: stri
     ...backendEnvOverrides(backend),
   };
   log(`backend resolved: ${backend} (source: ${source})`);
+  const teamFlowProfile = resolveTeamFlowProfile({
+    mode: config.teamFlowMode,
+    backend,
+    sessionRoot: sessionDir,
+    workingDir,
+  });
+  log(`team-flow resolved: ${teamFlowProfile.mode}`);
 
   // Pre-flight: refuse to start on a dirty tree. Downstream phases auto-commit
   // on their own, which would roll the user's unrelated WIP into a pipeline
@@ -1366,6 +1398,7 @@ function loadPipelineRuntime(sessionDir: string, opts: MainOpts, log: (msg: stri
     workingDir,
     backend,
     phaseEnv,
+    teamFlowProfile,
     log,
   };
 }
@@ -1409,6 +1442,39 @@ function writeRunningStatus(runtime: PipelineRuntime, counters: PhaseCounters, c
     skipped_phases: counters.skipped,
     total_phases: runtime.config.phases.length,
   });
+}
+
+function runTeamFlowPreflight(runtime: PipelineRuntime): { ok: boolean; completed: number; skipped: number } {
+  if (runtime.teamFlowProfile.mode !== 'full') return { ok: true, completed: 0, skipped: 0 };
+
+  let completed = 0;
+  let skipped = 0;
+  for (const phase of runtime.teamFlowProfile.phases) {
+    const gate = evaluateTeamFlowGate(runtime.teamFlowProfile, phase.id, runtime.sessionDir);
+    if (gate.status === 'pass') {
+      completed++;
+      continue;
+    }
+    if (gate.status === 'skipped') {
+      skipped++;
+      runtime.log(`team-flow ${phase.id}: skipped by deterministic no-sensitive-path classifier`);
+      continue;
+    }
+
+    runtime.log(`team-flow ${phase.id}: missing ${gate.missingArtifacts.join(', ') || 'required artifact'} - ${gate.remediation ?? 'no remediation'}`);
+    writePipelineStatus(runtime.sessionDir, 'failed', {
+      current_phase: phase.id,
+      completed_phases: completed,
+      skipped_phases: skipped,
+      total_phases: runtime.teamFlowProfile.phases.length,
+      team_flow: {
+        mode: runtime.teamFlowProfile.mode,
+        failed_gate: gate,
+      },
+    });
+    return { ok: false, completed, skipped };
+  }
+  return { ok: true, completed, skipped };
 }
 
 function logPhaseStart(runtime: PipelineRuntime, phase: PhaseName, index: number): void {
@@ -1494,6 +1560,12 @@ export async function main(sessionDir: string, opts: MainOpts = {}): Promise<voi
   const startTime = Date.now();
   phaseRunnerContext = { sessionDir, extensionRoot: runtime.extensionRoot };
   writeRunningStatus(runtime, counters, null);
+  const teamFlowPreflight = runTeamFlowPreflight(runtime);
+  if (!teamFlowPreflight.ok) {
+    phaseRunnerContext = null;
+    cleanupShutdownHandlers();
+    process.exit(1);
+  }
 
   try {
     for (let i = 0; i < runtime.config.phases.length; i++) {
@@ -1566,15 +1638,23 @@ function findPositional(argv: string[], valuedFlags: Set<string>): string | unde
 
 if (process.argv[1] && path.basename(process.argv[1]) === 'pipeline-runner.js') {
   const argv = process.argv.slice(2);
-  const valuedFlags = new Set(['--scope', '--scope-base']);
+  const valuedFlags = new Set(['--scope', '--scope-base', '--team-flow']);
   const sessionDir = findPositional(argv, valuedFlags);
   if (!sessionDir || !fs.existsSync(path.join(sessionDir, 'state.json'))) {
-    console.error('Usage: node pipeline-runner.js <session-dir> [--scope <flag>] [--scope-base <ref>]');
+    console.error('Usage: node pipeline-runner.js <session-dir> [--scope <flag>] [--scope-base <ref>] [--team-flow <standard|full>]');
     process.exit(1);
   }
   const scopeFlag = parseArgvFlag(argv, '--scope');
   const scopeBase = parseArgvFlag(argv, '--scope-base');
-  main(sessionDir, { scopeFlag, scopeBase }).catch((err) => {
+  let teamFlowMode: TeamFlowMode | undefined;
+  try {
+    const rawTeamFlowMode = parseArgvFlag(argv, '--team-flow');
+    teamFlowMode = rawTeamFlowMode === undefined ? undefined : parseTeamFlowMode(rawTeamFlowMode);
+  } catch (err) {
+    console.error(`${Style.RED}[FATAL] ${safeErrorMessage(err)}${Style.RESET}`);
+    process.exit(1);
+  }
+  main(sessionDir, { scopeFlag, scopeBase, teamFlowMode }).catch((err) => {
     try {
       writePipelineStatus(sessionDir, 'failed');
     } catch { /* best effort */ }

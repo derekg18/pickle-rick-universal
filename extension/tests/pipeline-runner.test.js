@@ -761,6 +761,29 @@ describe('parsePipelineConfig', () => {
     assert.equal(config.backend, undefined);
   });
 
+  test('defaults team-flow mode to standard when omitted', () => {
+    const config = parsePipelineConfig({ phases: ['pickle'], target: '/tmp' });
+    assert.equal(config.teamFlowMode, 'standard');
+    assert.deepEqual(config.phases, ['pickle']);
+  });
+
+  test('parses team-flow full mode from pipeline config', () => {
+    const config = parsePipelineConfig({ phases: ['pickle'], target: '/tmp', team_flow: 'full' });
+    assert.equal(config.teamFlowMode, 'full');
+  });
+
+  test('parses teamFlowMode camelCase full mode', () => {
+    const config = parsePipelineConfig({ phases: [], target: '', teamFlowMode: 'full' });
+    assert.equal(config.teamFlowMode, 'full');
+  });
+
+  test('rejects unknown team-flow mode with usage error', () => {
+    assert.throws(
+      () => parsePipelineConfig({ phases: [], target: '', team_flow: 'ceremonial' }),
+      /Unknown --team-flow mode/,
+    );
+  });
+
   test('defaults ignore_dirty_paths to ["prds","docs"]', () => {
     const config = parsePipelineConfig({ phases: [], target: '' });
     assert.deepEqual(config.ignore_dirty_paths, ['prds', 'docs']);
