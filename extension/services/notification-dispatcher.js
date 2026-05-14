@@ -51,15 +51,14 @@ export function loadNotificationSettings(settingsRoot = getExtensionRoot()) {
     const raw = loadPickleSettings({ extensionRoot: settingsRoot });
     return normalizeSettings(raw?.notifications);
 }
-function defaultOsProbe(forceDarwin) {
+function defaultOsProbe(forceDarwin, spawnSyncFn = spawnSync) {
     const isDarwin = forceDarwin ?? process.platform === 'darwin';
     if (!isDarwin)
         return false;
     try {
-        const result = spawnSync('command', ['-v', 'osascript'], {
+        const result = spawnSyncFn('osascript', ['-e', 'return 0'], {
             timeout: NOTIFICATION_TIMEOUT_MS,
             encoding: 'utf-8',
-            shell: true,
         });
         return result.status === 0;
     }
@@ -118,7 +117,7 @@ export function notifySessionEvent(event, opts = {}) {
             ? terminalFallback(event, 'os_disabled', terminalWrite)
             : { delivered: false, channel: 'suppressed', reason: 'os_disabled' };
     }
-    const canUseOs = opts.osProbe ? opts.osProbe() : defaultOsProbe(opts.forceDarwin);
+    const canUseOs = opts.osProbe ? opts.osProbe() : defaultOsProbe(opts.forceDarwin, opts.osProbeSpawn);
     if (!canUseOs) {
         return settings.terminal_fallback
             ? terminalFallback(event, 'os_unavailable', terminalWrite)

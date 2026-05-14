@@ -3,9 +3,9 @@ import assert from 'node:assert/strict';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { parseClaudeTokenUsageFile } from '../services/token-accounting/claude-parser.js';
-import { parseCodexTokenUsageFile } from '../services/token-accounting/codex-parser.js';
-import { parseGeminiTokenUsageFile } from '../services/token-accounting/gemini-parser.js';
+import { parseClaudeTokenUsage, parseClaudeTokenUsageFile } from '../services/token-accounting/claude-parser.js';
+import { parseCodexTokenUsage, parseCodexTokenUsageFile } from '../services/token-accounting/codex-parser.js';
+import { parseGeminiTokenUsage, parseGeminiTokenUsageFile } from '../services/token-accounting/gemini-parser.js';
 import {
   buildTokenUsageSummary,
   finalizeTokenAccounting,
@@ -85,6 +85,41 @@ describe('token accounting parsers', () => {
       assert.equal(result.records[0].total_tokens, null);
     });
   }
+
+  test('malformed backend log content returns unknown records without throwing', () => {
+    const malformedCases = [
+      {
+        backend: 'claude',
+        parse: parseClaudeTokenUsage,
+        content: /** @type {any} */ ({ message: { usage: { input_tokens: 1 } } }),
+        expectedNote: /Claude transcript had no assistant usage records/,
+      },
+      {
+        backend: 'codex',
+        parse: parseCodexTokenUsage,
+        content: /** @type {any} */ (null),
+        expectedNote: /Codex log had no token usage records/,
+      },
+      {
+        backend: 'gemini',
+        parse: parseGeminiTokenUsage,
+        content: /** @type {any} */ (['not', 'a', 'log']),
+        expectedNote: /Gemini log had no token usage records/,
+      },
+    ];
+
+    for (const { backend, parse, content, expectedNote } of malformedCases) {
+      let result;
+      assert.doesNotThrow(() => {
+        result = parse(content, `malformed-${backend}.log`);
+      });
+      assert.equal(result.records.length, 1);
+      assert.equal(result.records[0].source, 'unknown');
+      assert.equal(result.records[0].backend, backend);
+      assert.equal(result.records[0].total_tokens, null);
+      assert.match(result.warnings[0], expectedNote);
+    }
+  });
 });
 
 test('renderTokenAccountingMarkdown: unknown numeric values are rendered as unknown', () => {

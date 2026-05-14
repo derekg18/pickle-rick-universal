@@ -56,6 +56,38 @@ describe('notifySessionEvent', () => {
     assert.match(lines.join(''), /Run Complete: 5 iterations/);
   });
 
+  test('default OS probe is bounded, shell-free, and never receives notification text', () => {
+    const probeCalls = [];
+    const delivered = [];
+    const maliciousEvent = {
+      ...baseEvent,
+      title: 'done"; do shell script "touch /tmp/pickle-pwned',
+      body: 'body $(touch /tmp/pickle-body)',
+    };
+
+    const result = notifySessionEvent(maliciousEvent, {
+      forceDarwin: true,
+      osProbeSpawn: (cmd, args, opts) => {
+        probeCalls.push({ cmd, args, opts });
+        return /** @type {any} */ ({ status: 0 });
+      },
+      osNotifier: (event) => {
+        delivered.push(event);
+      },
+      nowMs: 1,
+    });
+
+    assert.deepEqual(result, { delivered: true, channel: 'os' });
+    assert.equal(probeCalls.length, 1);
+    assert.equal(probeCalls[0].cmd, 'osascript');
+    assert.deepEqual(probeCalls[0].args, ['-e', 'return 0']);
+    assert.equal(probeCalls[0].opts.shell, undefined);
+    assert.equal(probeCalls[0].opts.timeout > 0, true);
+    assert.equal(JSON.stringify(probeCalls[0]).includes('pickle-pwned'), false);
+    assert.equal(JSON.stringify(probeCalls[0]).includes('pickle-body'), false);
+    assert.equal(delivered.length, 1);
+  });
+
   test('OS notifier failure returns terminal fallback and never throws', () => {
     const lines = [];
     let result;

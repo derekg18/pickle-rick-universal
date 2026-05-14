@@ -42,6 +42,8 @@ export function readTextFile(filePath) {
     }
 }
 export function parseJsonLines(content) {
+    if (typeof content !== 'string')
+        return [];
     const parsed = [];
     for (const rawLine of content.split(/\r?\n/)) {
         const line = rawLine.trim();

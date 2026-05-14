@@ -46,6 +46,7 @@ export interface NotifySessionEventOptions {
   forceDarwin?: boolean;
   timeoutMs?: number;
   osNotifier?: (event: NotificationEvent, timeoutMs: number) => void;
+  osProbeSpawn?: typeof spawnSync;
   osProbe?: () => boolean;
   terminalWrite?: (line: string) => void;
 }
@@ -111,14 +112,13 @@ export function loadNotificationSettings(settingsRoot = getExtensionRoot()): Not
   return normalizeSettings(raw?.notifications);
 }
 
-function defaultOsProbe(forceDarwin?: boolean): boolean {
+function defaultOsProbe(forceDarwin?: boolean, spawnSyncFn: typeof spawnSync = spawnSync): boolean {
   const isDarwin = forceDarwin ?? process.platform === 'darwin';
   if (!isDarwin) return false;
   try {
-    const result = spawnSync('command', ['-v', 'osascript'], {
+    const result = spawnSyncFn('osascript', ['-e', 'return 0'], {
       timeout: NOTIFICATION_TIMEOUT_MS,
       encoding: 'utf-8',
-      shell: true,
     }) as SpawnSyncReturns<string>;
     return result.status === 0;
   } catch {
@@ -192,7 +192,7 @@ export function notifySessionEvent(
       : { delivered: false, channel: 'suppressed', reason: 'os_disabled' };
   }
 
-  const canUseOs = opts.osProbe ? opts.osProbe() : defaultOsProbe(opts.forceDarwin);
+  const canUseOs = opts.osProbe ? opts.osProbe() : defaultOsProbe(opts.forceDarwin, opts.osProbeSpawn);
   if (!canUseOs) {
     return settings.terminal_fallback
       ? terminalFallback(event, 'os_unavailable', terminalWrite)

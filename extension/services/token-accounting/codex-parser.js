@@ -36,7 +36,8 @@ export function parseCodexTokenUsage(content, sourcePath) {
             cost_confidence: 'unknown',
         });
     }
-    for (const rawLine of content.split(/\r?\n/)) {
+    const textContent = typeof content === 'string' ? content : '';
+    for (const rawLine of textContent.split(/\r?\n/)) {
         const match = rawLine.match(TOKENS_USED_RE);
         if (!match?.groups)
             continue;
