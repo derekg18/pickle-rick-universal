@@ -79,6 +79,8 @@ interface LogSpec {
   source: string;
 }
 
+type RuntimeResultPayload = Omit<PickleCommandResult, 'command' | 'status' | 'summary' | 'remediation' | 'artifact'>;
+
 const COMMANDS: readonly RuntimeObservabilityCommand[] = [
   'interdimensional-cable',
   'mr-poopybutthole',
@@ -163,6 +165,21 @@ function failed(
   };
 }
 
+function succeeded(
+  command: RuntimeObservabilityCommand,
+  summary: string,
+  ctx: RuntimeObservabilityContext,
+  payload: RuntimeResultPayload = {},
+): PickleCommandResult {
+  return {
+    command,
+    status: 'success',
+    summary,
+    ...payload,
+    artifact: defaultArtifact(command, ctx),
+  };
+}
+
 function runInterdimensionalCable(
   args: readonly string[],
   ctx: RuntimeObservabilityContext,
@@ -197,13 +214,12 @@ function runInterdimensionalCable(
     preview: readPreview(spec.source, ctx),
   }));
 
-  return {
-    command: 'interdimensional-cable',
-    status: 'success',
-    summary: `Supervising ${pane_config.length} service log stream${pane_config.length === 1 ? '' : 's'}.`,
-    pane_config,
-    artifact: defaultArtifact('interdimensional-cable', ctx),
-  };
+  return succeeded(
+    'interdimensional-cable',
+    `Supervising ${pane_config.length} service log stream${pane_config.length === 1 ? '' : 's'}.`,
+    ctx,
+    { pane_config },
+  );
 }
 
 function requireSession(
@@ -222,17 +238,13 @@ function requireSession(
 function runCompanion(ctx: RuntimeObservabilityContext): PickleCommandResult {
   const sessionDir = requireSession('mr-poopybutthole', ctx);
   if (typeof sessionDir !== 'string') return sessionDir;
-  return {
-    command: 'mr-poopybutthole',
-    status: 'success',
-    summary: 'Companion runtime session summary is ready.',
+  return succeeded('mr-poopybutthole', 'Companion runtime session summary is ready.', ctx, {
     companion: {
       role: 'companion',
       session_dir: sessionDir,
       activity_source: path.join(sessionDir, 'activity.jsonl'),
     },
-    artifact: defaultArtifact('mr-poopybutthole', ctx),
-  };
+  });
 }
 
 function runFocus(args: readonly string[], ctx: RuntimeObservabilityContext): PickleCommandResult {
@@ -246,17 +258,13 @@ function runFocus(args: readonly string[], ctx: RuntimeObservabilityContext): Pi
     );
   }
   const focus = args.find((arg) => !arg.startsWith('--')) ?? 'runtime';
-  return {
-    command: 'glorzo',
-    status: 'success',
-    summary: `Focus runtime view prepared for ${focus}.`,
+  return succeeded('glorzo', `Focus runtime view prepared for ${focus}.`, ctx, {
     focus: {
       role: 'focus',
       workspace_dir: workspaceDir,
       focus,
     },
-    artifact: defaultArtifact('glorzo', ctx),
-  };
+  });
 }
 
 function runAudit(ctx: RuntimeObservabilityContext): PickleCommandResult {
@@ -269,32 +277,24 @@ function runAudit(ctx: RuntimeObservabilityContext): PickleCommandResult {
       ctx,
     );
   }
-  return {
-    command: 'galactic-federation',
-    status: 'success',
-    summary: 'Runtime audit skeleton is ready.',
+  return succeeded('galactic-federation', 'Runtime audit skeleton is ready.', ctx, {
     audit: {
       role: 'audit',
       workspace_dir: workspaceDir,
       checks: ['process-source', 'log-source', 'session-summary'],
     },
-    artifact: defaultArtifact('galactic-federation', ctx),
-  };
+  });
 }
 
 function runGhost(ctx: RuntimeObservabilityContext): PickleCommandResult {
-  return {
-    command: 'ghost-in-a-jar',
-    status: 'success',
-    summary: 'Persistence command is skeleton-only in v1.',
+  return succeeded('ghost-in-a-jar', 'Persistence command is skeleton-only in v1.', ctx, {
     persistence: {
       role: 'persistence',
       skeleton_only: true,
       action: 'none',
       started: false,
     },
-    artifact: defaultArtifact('ghost-in-a-jar', ctx),
-  };
+  });
 }
 
 export function runRuntimeObservabilityCommand(
@@ -322,13 +322,12 @@ export function runRuntimeObservabilityCommandByName(
   ctx: RuntimeObservabilityContext = {},
 ): PickleCommandResult {
   if (!isRuntimeObservabilityCommand(command)) {
-    return {
-      command: 'galactic-federation',
-      status: 'failed',
-      summary: `Unknown runtime observability command: ${command}`,
-      remediation: `Use one of: ${COMMANDS.join(', ')}.`,
-      artifact: defaultArtifact('galactic-federation', ctx),
-    };
+    return failed(
+      'galactic-federation',
+      `Unknown runtime observability command: ${command}`,
+      `Use one of: ${COMMANDS.join(', ')}.`,
+      ctx,
+    );
   }
   return runRuntimeObservabilityCommand(command, args, ctx);
 }

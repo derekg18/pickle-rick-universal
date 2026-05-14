@@ -111,6 +111,8 @@ interface ConsumeResult {
   error?: PerformanceFrontendResult;
 }
 
+type PerformanceFrontendPayload = Omit<PerformanceFrontendResult, 'command' | 'status' | 'summary' | 'artifact'>;
+
 const COMMANDS: readonly PerformanceFrontendCommand[] = [
   'get-schwifty',
   'tiny-rick',
@@ -287,13 +289,9 @@ function invalidViewportResult(value: string): PerformanceFrontendResult {
     viewports: [...DEFAULT_VIEWPORTS],
     externalTargetExplicit: false,
   };
-  return {
-    command: 'rickmobile',
-    status: 'failed',
-    summary: `Invalid viewport "${value}".`,
+  return commandResult('rickmobile', parsed, {}, [], 'failed', `Invalid viewport "${value}".`, {
     remediation: 'Use viewport dimensions as <name>=<width>x<height> or <width>x<height>.',
-    artifact: defaultArtifact('rickmobile', parsed, {}, []),
-  };
+  });
 }
 
 function defaultArtifact(
@@ -318,6 +316,24 @@ function defaultArtifact(
   };
 }
 
+function commandResult(
+  command: PerformanceFrontendCommand,
+  parsed: ParsedArgs,
+  ctx: PerformanceFrontendContext,
+  metrics: MetricRow[],
+  status: PerformanceFrontendStatus,
+  summary: string,
+  payload: PerformanceFrontendPayload = {},
+): PerformanceFrontendResult {
+  return {
+    command,
+    status,
+    summary,
+    ...payload,
+    artifact: defaultArtifact(command, parsed, ctx, metrics),
+  };
+}
+
 export function metric(name: string, unit: string, source: string, threshold: number | null = null): MetricRow {
   return { name, unit, source, threshold };
 }
@@ -329,18 +345,14 @@ function missingTool(
   tool: PerformanceFrontendTool,
   metrics: MetricRow[],
 ): PerformanceFrontendResult {
-  return {
-    command,
-    status: 'needs_followup',
-    summary: `/${command} requires ${tool} before a report plan can be completed.`,
+  return commandResult(command, parsed, ctx, metrics, 'needs_followup', `/${command} requires ${tool} before a report plan can be completed.`, {
     remediation: TOOL_INSTALL_COMMANDS[tool],
     followup: {
       code: 'MISSING_EXTERNAL_TOOL',
       tool,
       install_command: TOOL_INSTALL_COMMANDS[tool],
     },
-    artifact: defaultArtifact(command, parsed, ctx, metrics),
-  };
+  });
 }
 
 function hasRequiredTool(command: PerformanceFrontendCommand, ctx: PerformanceFrontendContext): boolean {
@@ -382,13 +394,9 @@ export function runPerformanceFrontendCommand(
   }
 
   if (command === 'get-schwifty' && parsed.target && isExternalUrl(parsed.target) && !parsed.externalTargetExplicit) {
-    return {
-      command,
-      status: 'needs_followup',
-      summary: 'External URL load-test target was not explicit, so no load test was started.',
+    return commandResult(command, parsed, ctx, metrics, 'needs_followup', 'External URL load-test target was not explicit, so no load test was started.', {
       remediation: 'Pass the external URL with --target or --url after confirming the target is authorized.',
-      artifact: defaultArtifact(command, parsed, ctx, metrics),
-    };
+    });
   }
 
   switch (command) {
@@ -410,18 +418,14 @@ function runBenchmarkPlan(
   metrics: MetricRow[],
 ): PerformanceFrontendResult {
   const target = parsed.target ?? parsed.appPath;
-  return {
-    command,
-    status: 'success',
-    summary: `Benchmark report plan emitted for ${target}.`,
+  return commandResult(command, parsed, ctx, metrics, 'success', `Benchmark report plan emitted for ${target}.`, {
     benchmark: {
       role: 'benchmark-plan',
       target,
       plan: ['resolve target', 'capture baseline metrics', 'write benchmark report artifact'],
       load_test_started: false,
     },
-    artifact: defaultArtifact(command, parsed, ctx, metrics),
-  };
+  });
 }
 
 function runBuildPlan(
@@ -431,18 +435,14 @@ function runBuildPlan(
   metrics: MetricRow[],
 ): PerformanceFrontendResult {
   const changed_files = fixtureChangedFiles(ctx);
-  return {
-    command,
-    status: 'success',
-    summary: `Build report plan emitted with ${changed_files.length} changed file fixture${changed_files.length === 1 ? '' : 's'}.`,
+  return commandResult(command, parsed, ctx, metrics, 'success', `Build report plan emitted with ${changed_files.length} changed file fixture${changed_files.length === 1 ? '' : 's'}.`, {
     build: {
       role: 'build-optimization',
       changed_files,
       build_set: buildSet(changed_files),
       skipped: skippedSet(changed_files),
     },
-    artifact: defaultArtifact(command, parsed, ctx, metrics),
-  };
+  });
 }
 
 function runAuditPlan(
@@ -453,17 +453,13 @@ function runAuditPlan(
 ): PerformanceFrontendResult {
   const target = parsed.target ?? parsed.appPath;
   const audits = command === 'ants-in-my-eyes-johnson' ? ['accessibility', 'keyboard', 'contrast'] : ['layout', 'performance'];
-  return {
-    command,
-    status: 'success',
-    summary: `Frontend audit matrix emitted for ${target}.`,
+  return commandResult(command, parsed, ctx, metrics, 'success', `Frontend audit matrix emitted for ${target}.`, {
     audit: {
       role: 'frontend-audit',
       target,
       matrix: parsed.viewports.map((viewport) => ({ ...viewport, audits })),
     },
-    artifact: defaultArtifact(command, parsed, ctx, metrics),
-  };
+  });
 }
 
 function metricsForCommand(command: PerformanceFrontendCommand): MetricRow[] {
@@ -508,13 +504,9 @@ export function runPerformanceFrontendCommandByName(
       viewports: [...DEFAULT_VIEWPORTS],
       externalTargetExplicit: false,
     };
-    return {
-      command: 'get-schwifty',
-      status: 'failed',
-      summary: `Unknown performance/frontend command: ${command}`,
+    return commandResult('get-schwifty', parsed, ctx, [], 'failed', `Unknown performance/frontend command: ${command}`, {
       remediation: `Use one of: ${COMMANDS.join(', ')}.`,
-      artifact: defaultArtifact('get-schwifty', parsed, ctx, []),
-    };
+    });
   }
   return runPerformanceFrontendCommand(command, args, ctx);
 }

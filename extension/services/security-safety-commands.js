@@ -75,6 +75,15 @@ function failed(command, parsed, ctx, summary, remediation) {
         artifact: defaultArtifact(command, parsed, ctx),
     };
 }
+function succeeded(command, parsed, ctx, summary, payload = {}) {
+    return {
+        command,
+        status: 'success',
+        summary,
+        ...payload,
+        artifact: defaultArtifact(command, parsed, ctx),
+    };
+}
 function unsafeRequestFailure(command, parsed, ctx) {
     if (parsed.unsafe.length === 0)
         return null;
@@ -89,10 +98,7 @@ function runEvilMorty(args, ctx) {
     if (unsafe)
         return unsafe;
     const target = targetOrWorkspace(parsed, ctx);
-    return {
-        command: 'evil-morty',
-        status: 'success',
-        summary: `Prepared non-destructive security review plan for ${target}.`,
+    return succeeded('evil-morty', parsed, ctx, `Prepared non-destructive security review plan for ${target}.`, {
         review: {
             role: 'security-review',
             target,
@@ -104,8 +110,7 @@ function runEvilMorty(args, ctx) {
             ],
             evidence_sources: ['diff', 'tests', 'configuration', 'dependency metadata'],
         },
-        artifact: defaultArtifact('evil-morty', parsed, ctx),
-    };
+    });
 }
 function runScaryTerry(args, ctx) {
     const parsed = parseArgs(args);
@@ -113,10 +118,7 @@ function runScaryTerry(args, ctx) {
     if (unsafe)
         return unsafe;
     const target = targetOrWorkspace(parsed, ctx);
-    return {
-        command: 'scary-terry',
-        status: 'success',
-        summary: `Prepared non-destructive API fuzz plan for ${target}.`,
+    return succeeded('scary-terry', parsed, ctx, `Prepared non-destructive API fuzz plan for ${target}.`, {
         fuzz: {
             role: 'api-fuzz-plan',
             target,
@@ -127,8 +129,7 @@ function runScaryTerry(args, ctx) {
                 { category: 'rate-limit', payload: 'burst request schedule', expected_check: 'documented throttling or backpressure' },
             ],
         },
-        artifact: defaultArtifact('scary-terry', parsed, ctx),
-    };
+    });
 }
 function runInterdimensionalCustoms(args, ctx) {
     const parsed = parseArgs(args);
@@ -136,10 +137,7 @@ function runInterdimensionalCustoms(args, ctx) {
     if (unsafe)
         return unsafe;
     const target = targetOrWorkspace(parsed, ctx);
-    return {
-        command: 'interdimensional-customs',
-        status: 'success',
-        summary: `Prepared non-destructive downstream safety plan for ${target}.`,
+    return succeeded('interdimensional-customs', parsed, ctx, `Prepared non-destructive downstream safety plan for ${target}.`, {
         downstream: {
             role: 'downstream-safety',
             target,
@@ -150,18 +148,14 @@ function runInterdimensionalCustoms(args, ctx) {
                 'produce remediation notes without applying rollback actions',
             ],
         },
-        artifact: defaultArtifact('interdimensional-customs', parsed, ctx),
-    };
+    });
 }
 function runSkeleton(command, reason, args, ctx) {
     const parsed = parseArgs(args);
     const unsafe = unsafeRequestFailure(command, parsed, ctx);
     if (unsafe)
         return unsafe;
-    return {
-        command,
-        status: 'success',
-        summary: `/${command} is skeleton-only in v1; no safety action was started.`,
+    return succeeded(command, parsed, ctx, `/${command} is skeleton-only in v1; no safety action was started.`, {
         skeleton: {
             role: 'skeleton',
             skeleton_only: true,
@@ -170,8 +164,7 @@ function runSkeleton(command, reason, args, ctx) {
             started: false,
             blocked_actions: BLOCKED_ACTIONS,
         },
-        artifact: defaultArtifact(command, parsed, ctx),
-    };
+    });
 }
 export function runSecuritySafetyCommand(command, args = [], ctx = {}) {
     switch (command) {
