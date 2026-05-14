@@ -24,10 +24,71 @@ export interface SpawnGateRemediatorOpts {
   stderr?: (msg: string) => void;
 }
 
+type ReadFileFn = (p: string, enc: 'utf-8') => string;
+type WriteFileFn = (p: string, data: string, enc: 'utf-8') => void;
+type MkdirSyncFn = (p: string, opts: { recursive: boolean }) => void;
+type OpenSyncFn = (p: string, flags: number) => number;
+type CloseSyncFn = (fd: number) => void;
+type UnlinkSyncFn = (p: string) => void;
+type ExistsSyncFn = (p: string) => boolean;
+type OutputFn = (msg: string) => void;
+
+interface RemediatorDeps {
+  readFile: ReadFileFn;
+  writeFile: WriteFileFn;
+  mkdirSync: MkdirSyncFn;
+  openSync: OpenSyncFn;
+  closeSync: CloseSyncFn;
+  unlinkSync: UnlinkSyncFn;
+  existsSync: ExistsSyncFn;
+  stdout: OutputFn;
+  stderr: OutputFn;
+  hasInjectedReadFile: boolean;
+}
+
+interface ParsedArgs {
+  gateResultPath: string;
+  sessionRoot: string;
+  reason: string;
+}
+
 function parseFlag(argv: string[], flag: string): string | undefined {
   const idx = argv.indexOf(flag);
   if (idx === -1 || idx + 1 >= argv.length) return undefined;
   return argv[idx + 1];
+}
+
+function resolveDeps(opts: SpawnGateRemediatorOpts): RemediatorDeps {
+  return {
+    readFile: opts.readFileFn ?? ((p: string, enc: 'utf-8') => fs.readFileSync(p, enc)),
+    writeFile: opts.writeFileFn ?? ((p: string, data: string, enc: 'utf-8') => fs.writeFileSync(p, data, enc)),
+    mkdirSync: opts.mkdirSyncFn ?? ((p: string, o: { recursive: boolean }) => fs.mkdirSync(p, o)),
+    openSync: opts.openSyncFn ?? ((p: string, flags: number) => fs.openSync(p, flags)),
+    closeSync: opts.closeSyncFn ?? ((fd: number) => fs.closeSync(fd)),
+    unlinkSync: opts.unlinkSyncFn ?? ((p: string) => fs.unlinkSync(p)),
+    existsSync: opts.existsSyncFn ?? ((p: string) => fs.existsSync(p)),
+    stdout: opts.stdout ?? ((msg: string) => process.stdout.write(msg + '\n')),
+    stderr: opts.stderr ?? ((msg: string) => process.stderr.write(msg + '\n')),
+    hasInjectedReadFile: typeof opts.readFileFn === 'function',
+  };
+}
+
+function parseArgs(argv: string[], stderr: OutputFn): ParsedArgs | undefined {
+  const gateResultPath = parseFlag(argv, '--gate-result');
+  const sessionRoot = parseFlag(argv, '--session-root');
+  const reason = parseFlag(argv, '--reason');
+
+  if (!gateResultPath || !sessionRoot || !reason) {
+    stderr(`Missing required flags.\n${USAGE}`);
+    return undefined;
+  }
+
+  if (!VALID_REASONS.has(reason)) {
+    stderr(`--reason must be strict|per-iteration, got: ${reason}`);
+    return undefined;
+  }
+
+  return { gateResultPath, sessionRoot, reason };
 }
 
 const VALID_GATE_STATUSES = new Set<string>(['green', 'red', 'green-with-known-flake-warnings']);
@@ -56,6 +117,150 @@ function isGateResult(v: unknown): v is GateResult {
     Array.isArray(obj['failures']) && obj['failures'].every(isGateFailure) &&
     typeof obj['elapsed_ms'] === 'number'
   );
+}
+
+function readGateResult(args: ParsedArgs, deps: RemediatorDeps): GateResult | undefined {
+  try {
+    const raw = !deps.hasInjectedReadFile
+      ? readRecoverableJsonObject(args.gateResultPath)
+      : JSON.parse(deps.readFile(args.gateResultPath, 'utf-8'));
+    if (raw === null) {
+      throw new Error('gate-result JSON is missing, malformed, or not an object');
+    }
+    if (!isGateResult(raw)) {
+      deps.stderr(`gate-result JSON at ${args.gateResultPath} is not a valid GateResult`);
+      return undefined;
+    }
+    return raw;
+  } catch (e) {
+    deps.stderr(`Failed to read --gate-result ${args.gateResultPath}: ${safeErrorMessage(e)}`);
+    return undefined;
+  }
+}
+
+function createGateDir(sessionRoot: string, deps: RemediatorDeps): string | undefined {
+  const gateDir = path.join(sessionRoot, 'gate');
+  try {
+    deps.mkdirSync(gateDir, { recursive: true });
+    return gateDir;
+  } catch (e) {
+    deps.stderr(`Failed to create gate dir ${gateDir}: ${safeErrorMessage(e)}`);
+    return undefined;
+  }
+}
+
+function writeConcurrentLockout(opts: {
+  gateDir: string;
+  lockfilePath: string;
+  sessionRoot: string;
+  reason: string;
+  iso: string;
+  deps: RemediatorDeps;
+}): void {
+  const { gateDir, lockfilePath, sessionRoot, reason, iso, deps } = opts;
+  const lockoutPath = path.join(gateDir, `remediator_concurrent_lockout_${iso}.md`);
+  const lockoutContent = [
+    `# Concurrent Remediator Lockout`,
+    ``,
+    `A remediator is already running (lockfile present at \`${lockfilePath}\`).`,
+    ``,
+    `**Timestamp**: ${iso}`,
+    `**Session root**: ${sessionRoot}`,
+    `**Reason requested**: ${reason}`,
+    ``,
+    `This invocation exited cleanly without performing any work. The active remediator will complete and release the lock.`,
+  ].join('\n');
+
+  try {
+    deps.writeFile(lockoutPath, lockoutContent, 'utf-8');
+    deps.stdout(`LOCKOUT_PATH=${lockoutPath}`);
+  } catch { /* best-effort */ }
+}
+
+function acquireRemediatorLock(opts: {
+  gateDir: string;
+  sessionRoot: string;
+  reason: string;
+  iso: string;
+  deps: RemediatorDeps;
+}): { status: 'acquired'; lockfilePath: string } | { status: 'lockout' } | { status: 'error' } {
+  const { gateDir, sessionRoot, reason, iso, deps } = opts;
+  const lockfilePath = path.join(gateDir, LOCKFILE_NAME);
+
+  try {
+    const fd = deps.openSync(lockfilePath, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY);
+    deps.closeSync(fd);
+    return { status: 'acquired', lockfilePath };
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'EEXIST') {
+      writeConcurrentLockout({ gateDir, lockfilePath, sessionRoot, reason, iso, deps });
+      return { status: 'lockout' };
+    }
+    deps.stderr(`Failed to acquire lockfile ${lockfilePath}: ${safeErrorMessage(e)}`);
+    return { status: 'error' };
+  }
+}
+
+function removeLockfile(lockfilePath: string, deps: RemediatorDeps): void {
+  try {
+    if (deps.existsSync(lockfilePath)) deps.unlinkSync(lockfilePath);
+  } catch { /* already gone */ }
+}
+
+function collectFailingFileContents(gateResult: GateResult, readFile: ReadFileFn): Map<string, string> {
+  const failingFileContents = new Map<string, string>();
+  const failingFiles = [...new Set(gateResult.failures.map(f => f.file))];
+
+  for (const filePath of failingFiles) {
+    try {
+      const raw = readFile(filePath, 'utf-8');
+      failingFileContents.set(filePath, raw.length > MAX_FILE_BYTES ? '__OVERSIZED__' : raw);
+    } catch {
+      failingFileContents.set(filePath, '__UNREADABLE__');
+    }
+  }
+
+  return failingFileContents;
+}
+
+function loadTrapDoorSection(extensionClaudeMdContent: string | undefined, readFile: ReadFileFn): string {
+  if (extensionClaudeMdContent) return extensionClaudeMdContent;
+
+  const claudeMdPath = path.join(
+    path.dirname(path.dirname(new URL(import.meta.url).pathname)),
+    'CLAUDE.md'
+  );
+  try {
+    return readFile(claudeMdPath, 'utf-8');
+  } catch {
+    return '_CLAUDE.md trap-door section not available at brief-prep time. Read extension/CLAUDE.md before editing._';
+  }
+}
+
+function writeRemediationBrief(opts: {
+  gateDir: string;
+  gateResult: GateResult;
+  sessionRoot: string;
+  reason: string;
+  iso: string;
+  extensionClaudeMdContent?: string;
+  deps: RemediatorDeps;
+}): void {
+  const { gateDir, gateResult, sessionRoot, reason, iso, extensionClaudeMdContent, deps } = opts;
+  const failingFileContents = collectFailingFileContents(gateResult, deps.readFile);
+  const trapDoorSection = loadTrapDoorSection(extensionClaudeMdContent, deps.readFile);
+  const briefContent = buildBriefContent({
+    gateResult,
+    sessionRoot,
+    reason,
+    iso,
+    failingFileContents,
+    trapDoorSection,
+  });
+  const briefPath = path.join(gateDir, `remediation_${iso}_brief.md`);
+
+  deps.writeFile(briefPath, briefContent, 'utf-8');
+  deps.stdout(`BRIEF_PATH=${briefPath}`);
 }
 
 function formatFailuresTable(failures: GateFailure[]): string {
@@ -147,148 +352,37 @@ The abort file must contain: reason, affected file:line, what fix was requested,
 }
 
 export async function spawnGateRemediatorMain(opts: SpawnGateRemediatorOpts): Promise<number> {
-  const {
-    argv,
-    isoOverride,
-    extensionClaudeMdContent,
-    stdout = (msg: string) => process.stdout.write(msg + '\n'),
-    stderr = (msg: string) => process.stderr.write(msg + '\n'),
-  } = opts;
+  const deps = resolveDeps(opts);
+  const args = parseArgs(opts.argv, deps.stderr);
+  if (!args) return 1;
 
-  const hasInjectedReadFile = typeof opts.readFileFn === 'function';
-  const readFile = opts.readFileFn ?? ((p: string, enc: 'utf-8') => fs.readFileSync(p, enc));
-  const writeFile = opts.writeFileFn ?? ((p: string, data: string, enc: 'utf-8') => fs.writeFileSync(p, data, enc));
-  const mkdirSync = opts.mkdirSyncFn ?? ((p: string, o: { recursive: boolean }) => fs.mkdirSync(p, o));
-  const openSync = opts.openSyncFn ?? ((p: string, flags: number) => fs.openSync(p, flags));
-  const closeSync = opts.closeSyncFn ?? ((fd: number) => fs.closeSync(fd));
-  const unlinkSync = opts.unlinkSyncFn ?? ((p: string) => fs.unlinkSync(p));
-  const existsSync = opts.existsSyncFn ?? ((p: string) => fs.existsSync(p));
+  const gateResult = readGateResult(args, deps);
+  if (!gateResult) return 1;
 
-  const gateResultPath = parseFlag(argv, '--gate-result');
-  const sessionRoot = parseFlag(argv, '--session-root');
-  const reason = parseFlag(argv, '--reason');
+  const iso = opts.isoOverride ?? isoCompactStamp();
+  const gateDir = createGateDir(args.sessionRoot, deps);
+  if (!gateDir) return 1;
 
-  if (!gateResultPath || !sessionRoot || !reason) {
-    stderr(`Missing required flags.\n${USAGE}`);
-    return 1;
-  }
+  const lock = acquireRemediatorLock({ gateDir, sessionRoot: args.sessionRoot, reason: args.reason, iso, deps });
+  if (lock.status === 'lockout') return 0;
+  if (lock.status === 'error') return 1;
 
-  if (!VALID_REASONS.has(reason)) {
-    stderr(`--reason must be strict|per-iteration, got: ${reason}`);
-    return 1;
-  }
-
-  let gateResult: GateResult;
-  try {
-    const raw = !hasInjectedReadFile
-      ? readRecoverableJsonObject(gateResultPath)
-      : JSON.parse(readFile(gateResultPath, 'utf-8'));
-    if (raw === null) {
-      throw new Error('gate-result JSON is missing, malformed, or not an object');
-    }
-    if (!isGateResult(raw)) {
-      stderr(`gate-result JSON at ${gateResultPath} is not a valid GateResult`);
-      return 1;
-    }
-    gateResult = raw;
-  } catch (e) {
-    stderr(`Failed to read --gate-result ${gateResultPath}: ${safeErrorMessage(e)}`);
-    return 1;
-  }
-
-  const iso = isoOverride ?? isoCompactStamp();
-  const gateDir = path.join(sessionRoot, 'gate');
-
-  try {
-    mkdirSync(gateDir, { recursive: true });
-  } catch (e) {
-    stderr(`Failed to create gate dir ${gateDir}: ${safeErrorMessage(e)}`);
-    return 1;
-  }
-
-  const lockfilePath = path.join(gateDir, LOCKFILE_NAME);
-
-  try {
-    const fd = openSync(lockfilePath, fs.constants.O_CREAT | fs.constants.O_EXCL | fs.constants.O_WRONLY);
-    closeSync(fd);
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'EEXIST') {
-      const lockoutPath = path.join(gateDir, `remediator_concurrent_lockout_${iso}.md`);
-      const lockoutContent = [
-        `# Concurrent Remediator Lockout`,
-        ``,
-        `A remediator is already running (lockfile present at \`${lockfilePath}\`).`,
-        ``,
-        `**Timestamp**: ${iso}`,
-        `**Session root**: ${sessionRoot}`,
-        `**Reason requested**: ${reason}`,
-        ``,
-        `This invocation exited cleanly without performing any work. The active remediator will complete and release the lock.`,
-      ].join('\n');
-      try {
-        writeFile(lockoutPath, lockoutContent, 'utf-8');
-        stdout(`LOCKOUT_PATH=${lockoutPath}`);
-      } catch { /* best-effort */ }
-      return 0;
-    }
-    stderr(`Failed to acquire lockfile ${lockfilePath}: ${safeErrorMessage(e)}`);
-    return 1;
-  }
-
-  const cleanup = () => {
-    try {
-      if (existsSync(lockfilePath)) unlinkSync(lockfilePath);
-    } catch { /* already gone */ }
-  };
+  const cleanup = () => removeLockfile(lock.lockfilePath, deps);
   process.on('exit', cleanup);
 
   try {
-    const failingFiles = [...new Set(gateResult.failures.map(f => f.file))];
-    const failingFileContents = new Map<string, string>();
-
-    for (const filePath of failingFiles) {
-      try {
-        const raw = readFile(filePath, 'utf-8');
-        if (raw.length > MAX_FILE_BYTES) {
-          failingFileContents.set(filePath, '__OVERSIZED__');
-        } else {
-          failingFileContents.set(filePath, raw);
-        }
-      } catch {
-        failingFileContents.set(filePath, '__UNREADABLE__');
-      }
-    }
-
-    let trapDoorSection = extensionClaudeMdContent ?? '';
-    if (!trapDoorSection) {
-      const claudeMdPath = path.join(
-        path.dirname(path.dirname(new URL(import.meta.url).pathname)),
-        'CLAUDE.md'
-      );
-      try {
-        trapDoorSection = readFile(claudeMdPath, 'utf-8');
-      } catch {
-        trapDoorSection = '_CLAUDE.md trap-door section not available at brief-prep time. Read extension/CLAUDE.md before editing._';
-      }
-    }
-
-    const briefContent = buildBriefContent({
+    writeRemediationBrief({
+      gateDir,
       gateResult,
-      sessionRoot,
-      reason,
+      sessionRoot: args.sessionRoot,
+      reason: args.reason,
       iso,
-      failingFileContents,
-      trapDoorSection,
+      extensionClaudeMdContent: opts.extensionClaudeMdContent,
+      deps,
     });
-
-    const briefFileName = `remediation_${iso}_brief.md`;
-    const briefPath = path.join(gateDir, briefFileName);
-
-    writeFile(briefPath, briefContent, 'utf-8');
-    stdout(`BRIEF_PATH=${briefPath}`);
     return 0;
   } catch (e) {
-    stderr(`spawn-gate-remediator error: ${safeErrorMessage(e)}`);
+    deps.stderr(`spawn-gate-remediator error: ${safeErrorMessage(e)}`);
     return 1;
   } finally {
     cleanup();
