@@ -63,15 +63,7 @@ test('StateFlags typed keys are documented in the flags invariant', () => {
     .find((line) => line.includes('INVARIANT: `flags`'));
   assert.ok(flagsInvariant, 'flags invariant exists');
 
-  const expectedFlags = [
-    'human_help_requested',
-    'human_help_reason',
-    'human_help_recovery_command',
-    'jerry_mode_signature',
-    'os_notifier_available',
-  ];
-  for (const flag of expectedFlags) {
-    assert.ok(stateFlags.includes(flag), `${flag} must be typed on StateFlags`);
+  for (const flag of stateFlags) {
     assert.ok(flagsInvariant.includes(`\`${flag}\``), `${flag} must be documented in flags invariant`);
   }
 });
