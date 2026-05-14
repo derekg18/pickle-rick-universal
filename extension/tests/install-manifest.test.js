@@ -5,7 +5,12 @@ import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { PICKLE_CODEX_AGENT_NAMES, canonicalCommandNames } from '../services/host-command-registry.js';
+import {
+  PICKLE_CODEX_AGENT_NAMES,
+  canonicalCommandNames,
+  commandsForHost,
+  expectedAdapterRelativePaths,
+} from '../services/host-command-registry.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..');
@@ -36,6 +41,17 @@ function assertManifestIncludesCommands(files, suffixPrefix, host) {
     assert.ok(
       files.some((file) => file.endsWith(`${suffixPrefix}${command}.md`)),
       `${host} manifest must include /${command}`,
+    );
+  }
+}
+
+function assertInstalledCommandAdapterPaths(files, host) {
+  const expectedPaths = expectedAdapterRelativePaths(host)
+    .filter((relativePath) => commandsForHost(host).some(({ name }) => relativePath.endsWith(`/${name}.md`)));
+  for (const expectedPath of expectedPaths) {
+    assert.ok(
+      files.some((file) => file.endsWith(expectedPath)),
+      `${host} manifest must include adapter path ${expectedPath}`,
     );
   }
 }
@@ -118,6 +134,7 @@ test('install manifest records package, roots, checksums, host status, counts, f
     assert.equal(manifest.hosts.claude.command_count, COMMAND_COUNT);
     assert.equal(manifest.hosts.claude.agent_count, 14);
     assertManifestIncludesCommands(manifest.hosts.claude.files_written, '/commands/', 'Claude');
+    assertInstalledCommandAdapterPaths(manifest.hosts.claude.files_written, 'claude');
     const claudeRuntimeMarker = manifest.hosts.claude.files_written.find((file) => file.endsWith('/runtime_root'));
     assert.equal(readFileSync(claudeRuntimeMarker, 'utf8').trim(), runtimeRoot);
     assert.match(manifest.hosts.claude.file_checksums[claudeRuntimeMarker], /^[a-f0-9]{64}$/);
@@ -136,6 +153,7 @@ test('install manifest records package, roots, checksums, host status, counts, f
       '/plugins/cache/pickle-rick/pickle-rick/local/commands/',
       'Codex plugin',
     );
+    assertInstalledCommandAdapterPaths(manifest.hosts.codex.files_written, 'codex');
     const codexRuntimeMarker = manifest.hosts.codex.files_written.find((file) => file.endsWith('/pickle-rick/runtime_root'));
     assert.equal(readFileSync(codexRuntimeMarker, 'utf8').trim(), runtimeRoot);
     assert.match(manifest.hosts.codex.file_checksums[codexRuntimeMarker], /^[a-f0-9]{64}$/);
