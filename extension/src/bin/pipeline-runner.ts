@@ -30,7 +30,6 @@ import {
   printMinimalPanel,
   safeErrorMessage,
   ensureMonitorWindow,
-  displayMacNotification,
   writeStateFile,
   collectTickets,
 } from '../services/pickle-utils.js';
@@ -48,6 +47,7 @@ import {
 } from '../services/scope-resolver.js';
 import { runCitadelAudit } from '../services/citadel/audit-runner.js';
 import type { CitadelFinding, CitadelJsonReport, CitadelSeverity } from '../services/citadel/reporter.js';
+import { notifySessionEvent } from '../services/notification-dispatcher.js';
 
 const sm = new StateManager();
 
@@ -1449,13 +1449,14 @@ function finalizePipeline(
     mode: 'tmux',
   });
 
-  // macOS notification — helper applies NOTIFICATION_TIMEOUT_MS and swallows
-  // errors so a wedged UI server cannot block the exit path.
   const allDone = (counters.completed + counters.skipped) === runtime.config.phases.length;
-  displayMacNotification(
-    allDone ? '🧪 Pipeline Complete' : '🧪 Pipeline Stopped',
-    `${phasesSummary} phases, ${formatTime(totalElapsed)}`,
-  );
+  notifySessionEvent({
+    kind: 'pipeline_session_end',
+    session: path.basename(runtime.sessionDir),
+    severity: allDone ? 'info' : 'error',
+    title: allDone ? '🧪 Pipeline Complete' : '🧪 Pipeline Stopped',
+    body: `${phasesSummary} phases, ${formatTime(totalElapsed)}`,
+  });
 
   // Clean up cancel marker
   try { fs.unlinkSync(cancelMarker); } catch { /* may not exist */ }

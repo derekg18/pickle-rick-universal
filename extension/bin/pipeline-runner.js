@@ -20,7 +20,7 @@ import { execFileSync, spawn } from 'child_process';
 import { BACKENDS } from '../types/index.js';
 import { StateManager, safeDeactivate, assertSchemaVersionDeployParity, SchemaVersionDeployDriftError } from '../services/state-manager.js';
 import { backendEnvOverrides, isBackend } from '../services/backend-spawn.js';
-import { getExtensionRoot, Style, formatTime, printMinimalPanel, safeErrorMessage, ensureMonitorWindow, displayMacNotification, writeStateFile, collectTickets, } from '../services/pickle-utils.js';
+import { getExtensionRoot, Style, formatTime, printMinimalPanel, safeErrorMessage, ensureMonitorWindow, writeStateFile, collectTickets, } from '../services/pickle-utils.js';
 import { isWorkingTreeDirty } from '../services/git-utils.js';
 import { logActivity } from '../services/activity-logger.js';
 import { emitBundleLinearComments } from '../services/linear-integration.js';
@@ -28,6 +28,7 @@ import { readRecoverableJsonObject } from '../services/microverse-state.js';
 import { runAcPhaseGate } from '../services/ac-phase-gate.js';
 import { resolveScope, refreshScope, filterBySubsystem, ScopeError, } from '../services/scope-resolver.js';
 import { runCitadelAudit } from '../services/citadel/audit-runner.js';
+import { notifySessionEvent } from '../services/notification-dispatcher.js';
 const sm = new StateManager();
 const DEFAULT_IGNORE_DIRTY_PATHS = ['prds', 'docs'];
 const CODEX_REQUIRED_BACKEND = 'codex-required';
@@ -1176,10 +1177,14 @@ function finalizePipeline(runtime, counters, cancelMarker, startTime) {
         duration_min: Math.round(totalElapsed / 60),
         mode: 'tmux',
     });
-    // macOS notification — helper applies NOTIFICATION_TIMEOUT_MS and swallows
-    // errors so a wedged UI server cannot block the exit path.
     const allDone = (counters.completed + counters.skipped) === runtime.config.phases.length;
-    displayMacNotification(allDone ? '🧪 Pipeline Complete' : '🧪 Pipeline Stopped', `${phasesSummary} phases, ${formatTime(totalElapsed)}`);
+    notifySessionEvent({
+        kind: 'pipeline_session_end',
+        session: path.basename(runtime.sessionDir),
+        severity: allDone ? 'info' : 'error',
+        title: allDone ? '🧪 Pipeline Complete' : '🧪 Pipeline Stopped',
+        body: `${phasesSummary} phases, ${formatTime(totalElapsed)}`,
+    });
     // Clean up cancel marker
     try {
         fs.unlinkSync(cancelMarker);

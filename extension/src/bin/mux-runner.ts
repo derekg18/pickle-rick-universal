@@ -3,7 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { spawn, spawnSync } from 'child_process';
-import { printMinimalPanel, Style, formatTime, getExtensionRoot, getDataRoot, buildHandoffSummary, buildTicketHandoffNotes, sleep, writeStateFile, markTicketDone, markTicketSkipped, collectTickets, runCmd, safeErrorMessage, ensureMonitorWindow, displayMacNotification, type TicketInfo } from '../services/pickle-utils.js';
+import { printMinimalPanel, Style, formatTime, getExtensionRoot, getDataRoot, buildHandoffSummary, buildTicketHandoffNotes, sleep, writeStateFile, markTicketDone, markTicketSkipped, collectTickets, runCmd, safeErrorMessage, ensureMonitorWindow, type TicketInfo } from '../services/pickle-utils.js';
 import { State, PromiseTokens, hasToken, VALID_STEPS, Defaults, FALSE_EPIC_THRESHOLD, hasLifecycleArtifact, type Backend, type RateLimitInfo, type IterationExitResult, type IterationOutcome, type RateLimitAction, type WorkerRole, type ActivityEvent, type ActivityEventType } from '../types/index.js';
 import { StateManager, safeDeactivate, writeActivityEntry, writeTimeoutStub, assertSchemaVersionDeployParity, SchemaVersionDeployDriftError } from '../services/state-manager.js';
 import { logActivity } from '../services/activity-logger.js';
@@ -25,6 +25,7 @@ import {
 import { extractAssistantContent } from '../services/classifier-utils.js';
 import { assertAdaptersFresh } from '../services/adapter-preflight.js';
 import { getHeadSha, isWorkingTreeDirty } from '../services/git-utils.js';
+import { notifySessionEvent } from '../services/notification-dispatcher.js';
 export { extractAssistantContent } from '../services/classifier-utils.js';
 
 const sm = new StateManager();
@@ -2282,7 +2283,14 @@ async function runMuxRunnerMain() {
   log(`mux-runner finished. ${iteration} iterations, ${formatTime(totalElapsed)}`);
 
   const notif = buildTmuxNotification(exitReason, finalStep, iteration, totalElapsed);
-  displayMacNotification(notif.title, notif.body, notif.subtitle);
+  notifySessionEvent({
+    kind: 'mux_session_end',
+    session: path.basename(sessionDir),
+    severity: isFailedExit ? 'error' : 'info',
+    title: notif.title,
+    body: notif.body,
+    subtitle: notif.subtitle,
+  });
 
   // Explicit exit code so parent processes (pipeline-runner) can detect failure.
   // Matches microverse-runner.ts pattern.

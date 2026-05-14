@@ -35,6 +35,15 @@
   "enable_config_protection": true,
   "enable_model_tiers": true,
   "enable_backend_routing_heuristic": false,
+  "notifications": {
+    "os_enabled": true,
+    "terminal_fallback": true,
+    "dedup_window_ms": 60000,
+    "kinds": {
+      "mux_session_end": true,
+      "pipeline_session_end": true
+    }
+  },
   "bmad_hardening": {
     "archaeology_refresh_threshold_pct": 10,
     "debate_max_rounds": 5,
