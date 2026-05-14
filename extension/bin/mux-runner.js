@@ -7,7 +7,7 @@ import { printMinimalPanel, Style, formatTime, getExtensionRoot, getDataRoot, bu
 import { PromiseTokens, hasToken, VALID_STEPS, Defaults, FALSE_EPIC_THRESHOLD, hasLifecycleArtifact } from '../types/index.js';
 import { StateManager, safeDeactivate, writeActivityEntry, writeTimeoutStub, assertSchemaVersionDeployParity, SchemaVersionDeployDriftError } from '../services/state-manager.js';
 import { logActivity } from '../services/activity-logger.js';
-import { loadSettings, initCircuitBreaker, canExecute, detectProgress, extractErrorSignature, recordIterationResult, resetCircuitBreaker } from '../services/circuit-breaker.js';
+import { loadSettings, initCircuitBreaker, canExecute, detectProgress, extractErrorSignature, recordIterationResult, resetCircuitBreaker, evaluateJerryMode, pauseForHumanHelp } from '../services/circuit-breaker.js';
 import { backendSupportsCommitPendingProbe, backendSupportsDefaultClaudeModels, backendSupportsManagerErrorRelaunch, buildManagerInvocation, resolveBackend, resolveBackendFromStateFile, backendEnvOverrides, } from '../services/backend-spawn.js';
 import { readRecoverableJsonObject } from '../services/microverse-state.js';
 import { evaluateCodexManagerRelaunch, recordCodexManagerRelaunch, } from '../services/codex-manager-relaunch.js';
@@ -1224,6 +1224,19 @@ function recordCircuitBreakerOutcome(state, result, ctx) {
     cbState.last_known_ticket = postIterState.current_ticket;
     if (ctx.cbPath)
         writeLoopState(ctx, ctx.cbPath, cbState);
+    const jerryDecision = evaluateJerryModeForRunner(ctx, postIterState);
+    if (jerryDecision.action === 'pause_for_human') {
+        logJerryModePause(ctx, jerryDecision);
+        pauseForHumanHelp({
+            sessionDir: ctx.sessionDir,
+            backend: resolveBackend(postIterState),
+            currentTicket: postIterState.current_ticket || null,
+            circuitBreakerPath: ctx.cbPath,
+            thresholds: { sameErrorThreshold: ctx.cbSettings.sameErrorThreshold },
+            warn: msg => ctx.log(`WARN: ${msg}`),
+        }, jerryDecision);
+        return { kind: 'break', reason: 'circuit_open', cbState };
+    }
     if (prevCBState !== 'OPEN' && cbState.state === 'OPEN') {
         logActivity({ event: 'circuit_open', source: 'pickle', session: path.basename(ctx.sessionDir), error: cbState.reason });
         ctx.log(`Circuit breaker tripped: ${cbState.reason}`);
@@ -1235,6 +1248,32 @@ function recordCircuitBreakerOutcome(state, result, ctx) {
         ctx.log('Circuit breaker recovered (HALF_OPEN → CLOSED)');
     }
     return { kind: 'noop', cbState };
+}
+function evaluateJerryModeForRunner(ctx, state) {
+    return evaluateJerryMode({
+        sessionDir: ctx.sessionDir,
+        backend: resolveBackend(state),
+        currentTicket: state.current_ticket || null,
+        circuitBreakerPath: ctx.cbPath,
+        thresholds: { sameErrorThreshold: ctx.cbSettings?.sameErrorThreshold },
+        warn: msg => ctx.log(`WARN: ${msg}`),
+    });
+}
+function logJerryModePause(ctx, decision) {
+    let ticket;
+    try {
+        ticket = ctxReadState(ctx).current_ticket || undefined;
+    }
+    catch { /* keep event best-effort */ }
+    logActivity({
+        event: 'jerry_mode_pause',
+        source: 'pickle',
+        session: path.basename(ctx.sessionDir),
+        ticket,
+        error: decision.reason,
+        action: decision.recoveryCommand,
+    });
+    ctx.log(`Jerry Mode paused for human help: ${decision.reason}. Recovery: ${decision.recoveryCommand}`);
 }
 function readCircuitBreakerErrorSignature(ctx) {
     try {
@@ -1810,6 +1849,43 @@ async function runMuxRunnerMain() {
                 cbState.last_known_step = postIterState.step;
                 cbState.last_known_ticket = postIterState.current_ticket;
                 writeStateFile(cbPath, cbState);
+            }
+            const currentStateForJerry = (() => {
+                try {
+                    return readRunnerState(statePath);
+                }
+                catch {
+                    return state;
+                }
+            })();
+            const jerryDecision = evaluateJerryMode({
+                sessionDir,
+                backend,
+                currentTicket: currentStateForJerry.current_ticket || null,
+                circuitBreakerPath: cbPath,
+                thresholds: { sameErrorThreshold: cbSettings.sameErrorThreshold },
+                warn: msg => log(`WARN: ${msg}`),
+            });
+            if (jerryDecision.action === 'pause_for_human') {
+                logActivity({
+                    event: 'jerry_mode_pause',
+                    source: 'pickle',
+                    session: path.basename(sessionDir),
+                    ticket: currentStateForJerry.current_ticket || undefined,
+                    error: jerryDecision.reason,
+                    action: jerryDecision.recoveryCommand,
+                });
+                log(`Jerry Mode paused for human help: ${jerryDecision.reason}. Recovery: ${jerryDecision.recoveryCommand}`);
+                pauseForHumanHelp({
+                    sessionDir,
+                    backend,
+                    currentTicket: currentStateForJerry.current_ticket || null,
+                    circuitBreakerPath: cbPath,
+                    thresholds: { sameErrorThreshold: cbSettings.sameErrorThreshold },
+                    warn: msg => log(`WARN: ${msg}`),
+                }, jerryDecision);
+                exitReason = 'circuit_open';
+                break;
             }
             if (prevCBState !== 'OPEN' && cbState.state === 'OPEN') {
                 logActivity({ event: 'circuit_open', source: 'pickle', session: path.basename(sessionDir), error: cbState.reason });

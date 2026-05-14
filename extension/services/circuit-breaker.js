@@ -29,12 +29,7 @@ function freshState() {
         history: [],
     };
 }
-function isCircuitState(value) {
-    return value === 'CLOSED' || value === 'HALF_OPEN' || value === 'OPEN';
-}
-export function readCircuitBreakerState(sessionDir) {
-    const cbPath = path.join(sessionDir, 'circuit_breaker.json');
-    const raw = readRecoverableJsonObject(cbPath);
+function coerceCircuitBreakerState(raw) {
     if (!raw || !isCircuitState(raw.state))
         return null;
     return {
@@ -52,6 +47,96 @@ export function readCircuitBreakerState(sessionDir) {
         opened_at: raw.opened_at ?? null,
         history: Array.isArray(raw.history) ? raw.history : [],
     };
+}
+function isCircuitState(value) {
+    return value === 'CLOSED' || value === 'HALF_OPEN' || value === 'OPEN';
+}
+export function readCircuitBreakerState(sessionDir) {
+    const cbPath = path.join(sessionDir, 'circuit_breaker.json');
+    const raw = readRecoverableJsonObject(cbPath);
+    return coerceCircuitBreakerState(raw);
+}
+export function readCircuitBreakerStateAtPath(cbPath) {
+    const raw = readRecoverableJsonObject(cbPath);
+    return coerceCircuitBreakerState(raw);
+}
+function parsePositiveInteger(value) {
+    const n = Number(value);
+    return Number.isInteger(n) && n > 0 ? n : null;
+}
+function resolveJerryModePauseThreshold(input) {
+    const rawSameError = input.thresholds?.sameErrorThreshold;
+    const sameErrorThreshold = parsePositiveInteger(rawSameError) ?? 5;
+    const rawJerry = input.thresholds?.jerry_mode_pause_threshold ?? input.thresholds?.jerryModePauseThreshold;
+    const parsedJerry = rawJerry === undefined ? sameErrorThreshold : parsePositiveInteger(rawJerry);
+    if (parsedJerry === null || parsedJerry > sameErrorThreshold) {
+        input.warn?.(`[jerry-mode] Invalid jerry_mode_pause_threshold=${String(rawJerry)}; using ${sameErrorThreshold}`);
+        return sameErrorThreshold;
+    }
+    return parsedJerry;
+}
+function buildJerryRecoveryCommand(ticket) {
+    return ticket ? `/pickle-retry ${ticket}` : '/pickle-retry';
+}
+export function evaluateJerryMode(input) {
+    const threshold = resolveJerryModePauseThreshold(input);
+    const cbPath = input.circuitBreakerPath || path.join(input.sessionDir, 'circuit_breaker.json');
+    const cbState = readCircuitBreakerStateAtPath(cbPath);
+    const consecutiveSameError = cbState?.consecutive_same_error ?? 0;
+    const signature = cbState?.last_error_signature ?? null;
+    if (signature && consecutiveSameError >= threshold) {
+        const recoveryCommand = buildJerryRecoveryCommand(input.currentTicket);
+        return {
+            action: 'pause_for_human',
+            threshold,
+            consecutiveSameError,
+            signature,
+            recoveryCommand,
+            reason: `Same error repeated ${consecutiveSameError} times: ${signature}`,
+        };
+    }
+    return { action: 'continue', threshold, consecutiveSameError, signature };
+}
+export function pauseForHumanHelp(input, decision) {
+    if (decision.action !== 'pause_for_human')
+        return;
+    const statePath = path.join(input.sessionDir, 'state.json');
+    sm.update(statePath, state => {
+        const flags = state.flags && typeof state.flags === 'object' ? state.flags : {};
+        const existingPause = flags.jerry_mode_pause;
+        state.active = false;
+        state.flags = {
+            ...flags,
+            human_help_requested: true,
+            jerry_mode_pause: {
+                requested: true,
+                ticket: input.currentTicket,
+                backend: input.backend,
+                reason: decision.reason,
+                signature: decision.signature,
+                consecutive_same_error: decision.consecutiveSameError,
+                threshold: decision.threshold,
+                recovery_command: decision.recoveryCommand,
+            },
+        };
+        if (!existingPause) {
+            const existingActivity = Array.isArray(state.activity) ? state.activity : [];
+            state.activity = [
+                ...existingActivity,
+                {
+                    event: 'jerry_mode_pause',
+                    paused_at: new Date().toISOString(),
+                    ticket: input.currentTicket,
+                    backend: input.backend,
+                    reason: decision.reason,
+                    signature: decision.signature,
+                    consecutive_same_error: decision.consecutiveSameError,
+                    threshold: decision.threshold,
+                    recovery_command: decision.recoveryCommand,
+                },
+            ];
+        }
+    });
 }
 function transition(state, to, reason, iteration) {
     const from = state.state;

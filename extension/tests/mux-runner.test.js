@@ -2413,6 +2413,7 @@ test('writeHandoffAtomic: both rename and fallback fail, error logged, does not 
 // ---------------------------------------------------------------------------
 import {
     processCompletionBranch as processCompletionBranchForRelaunch,
+    processIterationOutcome as processIterationOutcomeForJerry,
 } from '../bin/mux-runner.js';
 import {
     evaluateCodexManagerRelaunch as evaluateCodexManagerRelaunchUnit,
@@ -2478,6 +2479,98 @@ function readRelaunchActivityEvents(dataRoot) {
     }
     return events;
 }
+
+test('mux-runner jerry mode: equal threshold pauses before circuit_open activity', async () => {
+    const sessionDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-jerry-runner-')));
+    const dataRoot = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-jerry-data-')));
+    try {
+        await withRelaunchDataRoot(dataRoot, async () => {
+            const statePath = path.join(sessionDir, 'state.json');
+            const cbPath = path.join(sessionDir, 'circuit_breaker.json');
+            const iterLogFile = path.join(sessionDir, 'tmux_iteration_5.log');
+            const signature = 'Repeated manager failure';
+            const state = {
+                active: true,
+                working_dir: sessionDir,
+                step: 'implement',
+                iteration: 5,
+                max_iterations: 100,
+                max_time_minutes: 720,
+                worker_timeout_seconds: 1200,
+                start_time_epoch: Math.floor(Date.now() / 1000),
+                completion_promise: null,
+                original_prompt: 'test jerry mode',
+                current_ticket: 'jerry-ticket',
+                history: [],
+                started_at: new Date().toISOString(),
+                session_dir: sessionDir,
+                backend: 'codex',
+            };
+            const cbState = {
+                state: 'CLOSED',
+                last_change: new Date().toISOString(),
+                consecutive_no_progress: 0,
+                consecutive_same_error: 4,
+                last_error_signature: signature,
+                last_known_head: 'same-head',
+                last_known_step: 'implement',
+                last_known_ticket: 'jerry-ticket',
+                last_progress_iteration: 4,
+                total_opens: 0,
+                reason: '',
+                opened_at: null,
+                history: [],
+            };
+            fs.writeFileSync(statePath, JSON.stringify(state, null, 2));
+            fs.writeFileSync(cbPath, JSON.stringify(cbState, null, 2));
+            fs.writeFileSync(iterLogFile, [
+                JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: signature }] } }),
+                JSON.stringify({ type: 'result', subtype: 'error_during_execution' }),
+            ].join('\n'));
+
+            const logs = [];
+            const action = await processIterationOutcomeForJerry(state, {
+                completion: 'continue',
+                timedOut: false,
+                exitCode: 0,
+                wallSeconds: 1,
+            }, {
+                sessionDir,
+                statePath,
+                extensionRoot: path.resolve('.'),
+                iteration: 5,
+                log: msg => logs.push(msg),
+                iterLogFile,
+                cbEnabled: true,
+                cbState,
+                cbSettings: {
+                    enabled: true,
+                    noProgressThreshold: 5,
+                    sameErrorThreshold: 5,
+                    halfOpenAfter: 2,
+                },
+                cbPath,
+            });
+
+            assert.equal(action.kind, 'break');
+            assert.equal(action.reason, 'circuit_open');
+            const persisted = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+            assert.equal(persisted.active, false);
+            assert.equal(persisted.flags.human_help_requested, true);
+            assert.equal(persisted.flags.jerry_mode_pause.signature, signature);
+            const statePauseEvents = persisted.activity.filter(e => e.event === 'jerry_mode_pause');
+            assert.equal(statePauseEvents.length, 1);
+
+            const events = readRelaunchActivityEvents(dataRoot);
+            assert.equal(events.filter(e => e.event === 'jerry_mode_pause').length, 1);
+            assert.equal(events.filter(e => e.event === 'circuit_open').length, 0);
+            assert.ok(logs.some(line => line.includes('Jerry Mode paused for human help')));
+        });
+    } finally {
+        fs.rmSync(sessionDir, { recursive: true, force: true });
+        fs.rmSync(dataRoot, { recursive: true, force: true });
+    }
+});
 
 test('mux-runner relaunch: processCompletionBranch returns relaunch action with side effects', async () => {
     const session = makeCodexRelaunchSession({

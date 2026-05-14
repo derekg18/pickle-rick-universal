@@ -12,8 +12,10 @@ import {
     countFilesChanged,
     detectProgress,
     extractErrorSignature,
+    evaluateJerryMode,
     isConstraintDiscoverySignature,
     normalizeErrorSignature,
+    pauseForHumanHelp,
     recordIterationResult,
     resetCircuitBreaker,
 } from '../services/circuit-breaker.js';
@@ -59,6 +61,27 @@ function makeFreshState(overrides = {}) {
         reason: '',
         opened_at: null,
         history: [],
+        ...overrides,
+    };
+}
+
+function makeRunnerState(overrides = {}) {
+    return {
+        active: true,
+        working_dir: '/tmp',
+        step: 'implement',
+        iteration: 1,
+        max_iterations: 10,
+        max_time_minutes: 60,
+        worker_timeout_seconds: 1200,
+        start_time_epoch: Math.floor(Date.now() / 1000),
+        completion_promise: null,
+        original_prompt: 'test task',
+        current_ticket: 'TICKET-1',
+        history: [],
+        started_at: new Date().toISOString(),
+        session_dir: '/tmp/session',
+        flags: {},
         ...overrides,
     };
 }
@@ -264,6 +287,101 @@ test('initCircuitBreaker: promotes newer orphan circuit_breaker tmp before decid
         assert.equal(state.consecutive_no_progress, 5);
         assert.equal(fs.existsSync(tmpPath), false, 'promoted tmp should be consumed');
         assert.equal(JSON.parse(fs.readFileSync(cbPath, 'utf-8')).state, 'OPEN');
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+// ---------------------------------------------------------------------------
+// Jerry Mode
+// ---------------------------------------------------------------------------
+
+test('evaluateJerryMode: reads circuit_breaker.json as source of truth', () => {
+    const tmpDir = makeTmpDir('jerry-source-');
+    try {
+        const signature = 'TypeError: cannot read property id';
+        fs.writeFileSync(path.join(tmpDir, 'circuit_breaker.json'), JSON.stringify(makeFreshState({
+            state: 'OPEN',
+            consecutive_same_error: 5,
+            last_error_signature: signature,
+            reason: 'Same error repeated 5 times',
+        })));
+
+        const decision = evaluateJerryMode({
+            sessionDir: tmpDir,
+            backend: 'codex',
+            currentTicket: 'TICKET-1',
+            thresholds: { jerry_mode_pause_threshold: 5, sameErrorThreshold: 5 },
+        });
+
+        assert.equal(decision.action, 'pause_for_human');
+        assert.equal(decision.signature, signature);
+        assert.equal(decision.consecutiveSameError, 5);
+        assert.match(decision.recoveryCommand, /^\/[a-z-]+/);
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('evaluateJerryMode: invalid threshold falls back to breaker threshold and warns', () => {
+    const tmpDir = makeTmpDir('jerry-threshold-');
+    const warnings = [];
+    try {
+        fs.writeFileSync(path.join(tmpDir, 'circuit_breaker.json'), JSON.stringify(makeFreshState({
+            state: 'OPEN',
+            consecutive_same_error: 5,
+            last_error_signature: 'same failure',
+        })));
+
+        const decision = evaluateJerryMode({
+            sessionDir: tmpDir,
+            backend: 'claude',
+            currentTicket: 'TICKET-2',
+            thresholds: { jerry_mode_pause_threshold: 9, sameErrorThreshold: 5 },
+            warn: message => warnings.push(message),
+        });
+
+        assert.equal(decision.action, 'pause_for_human');
+        assert.equal(decision.threshold, 5);
+        assert.equal(warnings.length, 1);
+        assert.match(warnings[0], /Invalid jerry_mode_pause_threshold/);
+    } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+    }
+});
+
+test('pauseForHumanHelp: deactivates session, sets flags, and emits one state event', () => {
+    const tmpDir = makeTmpDir('jerry-pause-');
+    try {
+        const statePath = path.join(tmpDir, 'state.json');
+        fs.writeFileSync(statePath, JSON.stringify(makeRunnerState({
+            session_dir: tmpDir,
+            current_ticket: 'TICKET-3',
+        })));
+        fs.writeFileSync(path.join(tmpDir, 'circuit_breaker.json'), JSON.stringify(makeFreshState({
+            state: 'OPEN',
+            consecutive_same_error: 5,
+            last_error_signature: 'repeat failure',
+        })));
+        const input = {
+            sessionDir: tmpDir,
+            backend: 'gemini',
+            currentTicket: 'TICKET-3',
+            thresholds: { sameErrorThreshold: 5 },
+        };
+        const decision = evaluateJerryMode(input);
+
+        pauseForHumanHelp(input, decision);
+        pauseForHumanHelp(input, decision);
+
+        const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
+        assert.equal(state.active, false);
+        assert.equal(state.flags.human_help_requested, true);
+        assert.equal(state.flags.jerry_mode_pause.recovery_command, '/pickle-retry TICKET-3');
+        assert.equal(state.flags.jerry_mode_pause.signature, 'repeat failure');
+        const pauseEvents = state.activity.filter(entry => entry.event === 'jerry_mode_pause');
+        assert.equal(pauseEvents.length, 1);
+        assert.match(pauseEvents[0].recovery_command, /^\/[a-z-]+/);
     } finally {
         fs.rmSync(tmpDir, { recursive: true, force: true });
     }
