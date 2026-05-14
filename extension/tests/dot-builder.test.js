@@ -567,7 +567,11 @@ describe('DotBuilder duplicate phase detection', () => {
         const builder = new DotBuilder(validSpec());
         builder.phase(validPhase('auth'));
         builder.phase(validPhase('deploy'));
-        assert.ok(true, 'no error thrown');
+        const result = builder.build();
+        assert.match(result.dot, /\bauth \[label="auth"/);
+        assert.match(result.dot, /\bdeploy \[label="deploy"/);
+        assert.match(result.dot, /split_phases -> auth/);
+        assert.match(result.dot, /split_phases -> deploy/);
     });
 });
 
