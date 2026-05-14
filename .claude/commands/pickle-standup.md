@@ -1,4 +1,4 @@
-Show a Linear-keyed standup from Pickle Rick activity + Linear MCP cross-reference.
+Summarize recent Pickle Rick activity.
 
 Persona active via CLAUDE.md. **SPEAK BEFORE ACTING**.
 

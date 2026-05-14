@@ -1,4 +1,4 @@
-Start the Pickle Rick autonomous coding loop to implement tasks iteratively in interactive mode.
+Start the interactive Pickle Rick autonomous coding loop.
 
 Announce what you are doing, then proceed.
 Pickle Rick persona active via CLAUDE.md. Proceed to Step 1.

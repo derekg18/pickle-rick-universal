@@ -74,7 +74,7 @@ export const PICKLE_COMMAND_SPECS: readonly HostCommandSpec[] = [
   { name: 'pickle-jar-open', description: 'Run queued jar tasks.', hosts: BACKENDS, resultContract: MARKDOWN_RESULT_CONTRACT },
   { name: 'pickle-metrics', description: 'Show Pickle Rick metrics.', hosts: BACKENDS, resultContract: MARKDOWN_RESULT_CONTRACT },
   { name: 'pickle-microverse', description: 'Run a Microverse convergence loop.', hosts: BACKENDS, resultContract: MARKDOWN_RESULT_CONTRACT },
-  { name: 'pickle-pipeline', description: 'Run build, review, and cleanup pipeline.', hosts: BACKENDS, resultContract: MARKDOWN_RESULT_CONTRACT },
+  { name: 'pickle-pipeline', description: 'Full pipeline orchestrator: pickle-tmux build, anatomy-park, szechuan-sauce.', hosts: BACKENDS, resultContract: MARKDOWN_RESULT_CONTRACT },
   { name: 'pickle-prd', description: 'Draft a PRD for a requested feature.', hosts: BACKENDS, resultContract: MARKDOWN_RESULT_CONTRACT },
   { name: 'pickle-refine-prd', description: 'Refine a PRD and decompose it into tickets.', hosts: BACKENDS, resultContract: MARKDOWN_RESULT_CONTRACT },
   { name: 'pickle-retry', description: 'Retry a failed ticket.', hosts: BACKENDS, resultContract: MARKDOWN_RESULT_CONTRACT },

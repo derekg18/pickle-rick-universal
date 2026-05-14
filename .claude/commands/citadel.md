@@ -1,4 +1,4 @@
-Post-implementation conformance audit against the PRD, branch diff, and known trap doors.
+Run post-implementation conformance audit.
 
 # /citadel
 

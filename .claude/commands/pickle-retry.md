@@ -1,4 +1,4 @@
-You are retrying a failed or timed-out Pickle Rick ticket.
+Retry a failed ticket.
 
 > **Backend:** Inherited from the original session's `state.json` (`claude` or `codex`). The retry runs on the same backend the ticket originally used — there is no `--backend` override on retry.
 

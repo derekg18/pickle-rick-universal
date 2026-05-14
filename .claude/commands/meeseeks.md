@@ -1,4 +1,4 @@
-Launch a Mr. Meeseeks code review loop to iteratively clean and polish the codebase.
+Deprecated review command retained for compatibility.
 
 > **DEPRECATED**: Use `/szechuan-sauce` for principle-driven code quality review or `/anatomy-park` for deep subsystem bug hunting. Meeseeks review checks have been absorbed into szechuan-sauce principles (Dependency Health, Test Quality) and anatomy-park's Phase 1 checklist. This command still works but will be removed in a future release.
 

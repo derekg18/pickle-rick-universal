@@ -1,4 +1,4 @@
-Iterative `.dot` pipeline shaping loop — everybody needs a plumbus, Morty. First they take the dinglebop, they smooth it out with a bunch of schleem... one atomic edit per iteration until the DAG is a proper plumbus.
+Run Plumbus audit helpers.
 
 # /plumbus
 

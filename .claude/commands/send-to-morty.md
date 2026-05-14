@@ -1,4 +1,4 @@
-Internal worker prompt — not for direct user invocation.
+Internal implementation worker prompt.
 
 # TASK: $ARGUMENTS
 

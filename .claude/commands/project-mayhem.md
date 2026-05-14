@@ -1,4 +1,4 @@
-Chaos engineering for any project — mutation testing, dependency downgrades, config corruption. Non-destructive.
+Run chaos engineering workflow.
 
 # /project-mayhem
 

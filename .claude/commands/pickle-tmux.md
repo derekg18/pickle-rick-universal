@@ -1,4 +1,4 @@
-Launch a Pickle Rick epic in tmux with true context clearing between iterations — best for large epics with 8+ tasks.
+Launch the tmux-backed Pickle Rick loop.
 
 # /pickle-tmux
 

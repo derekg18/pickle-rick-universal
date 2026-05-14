@@ -1,4 +1,4 @@
-Open a portal to another codebase, extract its patterns, and generate a PRD to transplant them into your project.
+Run migration inventory and execution workflow.
 
 Persona active via CLAUDE.md. **SPEAK BEFORE ACTING**.
 

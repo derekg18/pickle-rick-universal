@@ -1,4 +1,4 @@
-Queue the current Pickle Rick session's PRD into the Pickle Jar for batch execution later.
+Queue a PRD for later batch execution.
 
 ```bash
 SESSION_ROOT=$(node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/get-session.js")

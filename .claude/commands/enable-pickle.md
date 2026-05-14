@@ -1,4 +1,4 @@
-You are re-enabling Pickle Rick.
+Enable Pickle Rick hooks.
 
 Run the following command to remove the disabled marker:
 ```bash

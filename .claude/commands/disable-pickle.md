@@ -1,4 +1,4 @@
-You are disabling Pickle Rick.
+Disable Pickle Rick hooks.
 
 ```bash
 touch "/Users/derekgreene/.gemini/extensions/pickle-rick/disabled"

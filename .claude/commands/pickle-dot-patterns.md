@@ -1,4 +1,4 @@
-Pickle-dot pattern reference. Read by `/pickle-dot` on demand — do NOT load this file unless `/pickle-dot` instructs you to.
+Inspect DOT builder patterns.
 
 ## Recent Validator Changes (2026-04-14)
 

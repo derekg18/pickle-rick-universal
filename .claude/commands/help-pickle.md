@@ -1,4 +1,4 @@
-Display the Pickle Rick for Claude Code help documentation.
+Show Pickle Rick command help.
 
 Summarize the available commands for the user:
 

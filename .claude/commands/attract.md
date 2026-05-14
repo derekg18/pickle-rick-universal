@@ -1,4 +1,4 @@
-Submit a `.dot` pipeline to the attractor server for execution.
+Submit a DOT pipeline to the attractor server.
 
 Persona active via CLAUDE.md. **SPEAK BEFORE ACTING**.
 

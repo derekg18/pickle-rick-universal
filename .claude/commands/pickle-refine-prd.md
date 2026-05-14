@@ -1,4 +1,4 @@
-Refine and decompose PRD into atomic tickets using parallel Morty analysis team.
+Refine a PRD and decompose it into tickets.
 
 > **Refinement backend:** Always claude. Refinement is planning, not implementation; codex is never used for refinement workers even if the session backend is codex. The session backend may still default from the caller host for downstream `/pickle --resume`.
 

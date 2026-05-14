@@ -1,4 +1,4 @@
-Internal review worker — not for direct user invocation.
+Internal review worker prompt.
 
 # REVIEW: $ARGUMENTS
 

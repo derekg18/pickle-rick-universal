@@ -1,4 +1,4 @@
-Start the Pickle Rick microverse convergence loop — optimize a metric through targeted, incremental changes. Defaults to tmux mode; use --interactive for inline.
+Run a Microverse convergence loop.
 
 # /pickle-microverse
 

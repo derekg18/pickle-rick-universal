@@ -1,4 +1,4 @@
-Launch a Council of Ricks stack review loop — iterative Graphite PR stack reviewer that generates agent-executable directives. Each round fans out category-scoped and branch-scoped subagents in parallel via the `Agent` tool, integrating szechuan P0–P4 principles, anatomy-park data flow rigor, and a Codex adversarial challenge.
+Run the Council of Ricks stack review.
 
 # /council-of-ricks
 

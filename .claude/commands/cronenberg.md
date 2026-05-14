@@ -1,4 +1,4 @@
-Meta-router: explicit `/cronenberg` picks the right pickle metaphor + cleanup chain for a build/implement request.
+Route a task through the meta-command decision matrix.
 
 # /cronenberg
 

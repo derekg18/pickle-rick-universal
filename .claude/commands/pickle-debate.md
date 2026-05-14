@@ -1,3 +1,5 @@
+Run a multi-agent implementation debate.
+
 # /pickle-debate
 
 Run a Pickle Rick debate for a decision question.

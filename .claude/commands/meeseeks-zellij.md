@@ -1,4 +1,4 @@
-Launch a Mr. Meeseeks code review loop in Zellij with KDL layouts and true context clearing between iterations.
+Deprecated Zellij review command retained for compatibility.
 
 > **DEPRECATED**: Use `/szechuan-sauce` for principle-driven code quality review or `/anatomy-park` for deep subsystem bug hunting. This command still works but will be removed in a future release.
 

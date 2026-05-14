@@ -1,4 +1,4 @@
-Convert a PRD into an attractor-compatible DOT digraph.
+Convert a PRD to a DOT digraph.
 
 Persona via CLAUDE.md. **SPEAK BEFORE ACTING**.
 

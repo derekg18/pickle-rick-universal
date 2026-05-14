@@ -1,4 +1,4 @@
-Three-phase subsystem deep review — trace data flows, fix without regression, catalog trap doors. Microverse convergence loop.
+Run the Anatomy Park subsystem review loop.
 
 # /anatomy-park
 

@@ -1,4 +1,4 @@
-Run the status script to show the current Pickle Rick session:
+Show current Pickle Rick session status.
 
 ```bash
 node "/Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/status.js"

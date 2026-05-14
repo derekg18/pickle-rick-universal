@@ -1,4 +1,4 @@
-Launch a Pickle Rick epic in Zellij with KDL layouts and true context clearing between iterations — best for large epics with 8+ tasks.
+Launch the Zellij-backed Pickle Rick loop.
 
 # /pickle-zellij
 

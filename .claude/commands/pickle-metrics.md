@@ -1,4 +1,4 @@
-Run the metrics reporter:
+Show Pickle Rick metrics.
 
 ```bash
 node /Users/derekgreene/.gemini/extensions/pickle-rick/extension/bin/metrics.js $ARGUMENTS
