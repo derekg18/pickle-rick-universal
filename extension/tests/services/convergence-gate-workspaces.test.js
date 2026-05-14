@@ -113,6 +113,48 @@ test('runGate: workspace fixture scope=full no allowedPaths runs all 3 packages'
   assert.equal(result.allowed_paths_used, false);
 });
 
+test('runGate: package-less repo root falls back to direct child package for baseline capture', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-package-root-fallback-'));
+  try {
+    const childDir = path.join(dir, 'extension');
+    const baselinePath = path.join(dir, 'gate', 'baseline.json');
+    const events = [];
+
+    fs.mkdirSync(childDir, { recursive: true });
+    fs.writeFileSync(path.join(childDir, 'package.json'), JSON.stringify({
+      name: 'child-package',
+      version: '1.0.0',
+      scripts: {
+        test: 'node -e "process.exit(0)"',
+      },
+    }, null, 2));
+
+    const result = await runGate({
+      workingDir: dir,
+      mode: 'baseline',
+      scope: 'full',
+      checks: ['tests'],
+      baselinePath,
+      onEvent: (event, data) => events.push({ event, data }),
+    });
+
+    assert.equal(result.status, 'green');
+    assert.equal(result.baseline_used, false);
+    assert.equal(fs.existsSync(baselinePath), true, 'baseline capture must write the session baseline');
+
+    const baseline = JSON.parse(fs.readFileSync(baselinePath, 'utf-8'));
+    assert.equal(baseline.working_dir, dir);
+    assert.equal(baseline.project_type, 'npm');
+    assert.deepEqual(baseline.checks, ['tests']);
+
+    const fallback = events.find(e => e.event === 'gate_project_root_fallback');
+    assert.ok(fallback, 'package root fallback event must be emitted');
+    assert.deepEqual(fallback.data.target_dirs, ['extension']);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('runGate: allowedPaths can exclude an otherwise-failing workspace package', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-workspace-'));
   try {

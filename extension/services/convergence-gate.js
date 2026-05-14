@@ -496,6 +496,78 @@ function selectGateTargetDirs(opts, emit, empty, start) {
     }
     return { targetDirs: [opts.workingDir] };
 }
+function getDirectPackageDirs(workingDir) {
+    let entries;
+    try {
+        entries = fs.readdirSync(workingDir, { withFileTypes: true });
+    }
+    catch {
+        return [];
+    }
+    return entries
+        .filter(entry => entry.isDirectory())
+        .filter(entry => !entry.name.startsWith('.') && entry.name !== 'node_modules')
+        .map(entry => path.join(workingDir, entry.name))
+        .filter(dir => fs.existsSync(path.join(dir, 'package.json')))
+        .sort();
+}
+function filterPackageDirsByChangedFiles(rootDir, candidates, changedFiles) {
+    if (affectsAllWorkspacePackages(changedFiles))
+        return candidates;
+    return candidates.filter(candidate => {
+        const relPackageDir = normalizeScopePath(path.relative(rootDir, candidate.dir));
+        return changedFiles.some(filePath => {
+            const normalized = normalizeScopePath(filePath);
+            return normalized === relPackageDir || normalized.startsWith(`${relPackageDir}/`);
+        });
+    });
+}
+function filterPackageDirsByAllowedPaths(rootDir, candidates, allowedPaths) {
+    if (!allowedPaths || allowedPaths.length === 0)
+        return candidates;
+    if (affectsAllWorkspacePackages(allowedPaths))
+        return candidates;
+    const relCandidates = candidates.map(candidate => normalizeScopePath(path.relative(rootDir, candidate.dir)));
+    const filtered = new Set(filterByScope(relCandidates, { scope: 'full', allowedPaths }));
+    return candidates.filter(candidate => filtered.has(normalizeScopePath(path.relative(rootDir, candidate.dir))));
+}
+function selectPackageRootFallbackTargets(opts, gateCommands, emit, empty, start) {
+    let candidates = getDirectPackageDirs(opts.workingDir)
+        .map(dir => {
+        const projectType = detectProjectType(dir);
+        const cmdMap = projectType ? gateCommands[projectType] : undefined;
+        return projectType && cmdMap ? { dir, projectType, cmdMap } : null;
+    })
+        .filter((candidate) => Boolean(candidate));
+    if (opts.scope === 'changed' && opts.since) {
+        const changedFiles = getChangedSince(opts.workingDir, opts.since);
+        if (changedFiles.length === 0) {
+            emit('gate_diff_scope_fallback', { since: opts.since, reason: 'no_changed_files' });
+            return { targetDirs: [], earlyResult: { ...empty, elapsed_ms: Date.now() - start } };
+        }
+        candidates = filterPackageDirsByChangedFiles(opts.workingDir, candidates, changedFiles);
+    }
+    candidates = filterPackageDirsByAllowedPaths(opts.workingDir, candidates, opts.allowedPaths);
+    if (candidates.length === 0)
+        return { targetDirs: [] };
+    const projectTypes = Array.from(new Set(candidates.map(candidate => candidate.projectType))).sort();
+    if (projectTypes.length !== 1) {
+        emit('gate_skipped', {
+            reason: 'ambiguous_direct_child_project_types',
+            detected_signals: projectTypes,
+            target_dirs: candidates.map(candidate => path.relative(opts.workingDir, candidate.dir)),
+        });
+        return { targetDirs: [], earlyResult: { ...empty, elapsed_ms: Date.now() - start } };
+    }
+    const projectType = projectTypes[0];
+    const cmdMap = candidates.find(candidate => candidate.projectType === projectType).cmdMap;
+    emit('gate_project_root_fallback', {
+        reason: 'direct_child_package',
+        project_type: projectType,
+        target_dirs: candidates.map(candidate => path.relative(opts.workingDir, candidate.dir)),
+    });
+    return { projectType, cmdMap, targetDirs: candidates.map(candidate => candidate.dir) };
+}
 function getDirtyWorktreeSkip(opts, emit, empty, start) {
     if (!opts.workerMode)
         return null;
@@ -744,18 +816,31 @@ export async function runGate(opts) {
     const emit = (event, data) => opts.onEvent?.(event, data);
     const finalize = createGateFinalizer(opts, emit);
     const empty = createEmptyGateResult();
-    const projectType = detectProjectType(opts.workingDir);
+    const gateCommands = loadGateCommands();
+    let projectType = detectProjectType(opts.workingDir);
+    let cmdMap;
+    let targetSelection;
     if (!projectType) {
-        emit('gate_skipped', { reason: 'no_project_type_detected' });
-        return { ...empty, elapsed_ms: Date.now() - start };
+        const fallbackSelection = selectPackageRootFallbackTargets(opts, gateCommands, emit, empty, start);
+        if (fallbackSelection.earlyResult)
+            return finalize(fallbackSelection.earlyResult);
+        projectType = fallbackSelection.projectType ?? null;
+        cmdMap = fallbackSelection.cmdMap;
+        targetSelection = { targetDirs: fallbackSelection.targetDirs };
+        if (!projectType || !cmdMap || targetSelection.targetDirs.length === 0) {
+            emit('gate_skipped', { reason: 'no_project_type_detected' });
+            return { ...empty, elapsed_ms: Date.now() - start };
+        }
     }
-    const cmdMap = loadGateCommands()[projectType];
-    if (!cmdMap) {
-        emit('gate_skipped', { reason: 'project_type_low_confidence', detected_signals: [projectType] });
-        return { ...empty, elapsed_ms: Date.now() - start };
+    else {
+        cmdMap = gateCommands[projectType];
+        if (!cmdMap) {
+            emit('gate_skipped', { reason: 'project_type_low_confidence', detected_signals: [projectType] });
+            return { ...empty, elapsed_ms: Date.now() - start };
+        }
+        targetSelection = selectGateTargetDirs(opts, emit, empty, start);
     }
     const allowedPathsUsed = Boolean(opts.allowedPaths && opts.allowedPaths.length > 0);
-    const targetSelection = selectGateTargetDirs(opts, emit, empty, start);
     if (targetSelection.earlyResult)
         return finalize(targetSelection.earlyResult);
     const dirtySkip = getDirtyWorktreeSkip(opts, emit, empty, start);
