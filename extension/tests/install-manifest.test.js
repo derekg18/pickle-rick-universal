@@ -27,6 +27,7 @@ function makeFixture() {
   const bin = path.join(dir, 'bin');
   mkdirSync(path.join(home, '.claude'), { recursive: true });
   mkdirSync(path.join(home, '.codex'), { recursive: true });
+  mkdirSync(path.join(home, '.gemini'), { recursive: true });
   mkdirSync(xdg, { recursive: true });
   mkdirSync(bin, { recursive: true });
   writeFileSync(path.join(home, '.claude', 'settings.json'), '{}');
@@ -45,9 +46,8 @@ function assertManifestIncludesCommands(files, suffixPrefix, host) {
   }
 }
 
-function assertInstalledCommandAdapterPaths(files, host) {
-  const expectedPaths = expectedAdapterRelativePaths(host)
-    .filter((relativePath) => commandsForHost(host).some(({ name }) => relativePath.endsWith(`/${name}.md`)));
+function assertInstalledAdapterPaths(files, host) {
+  const expectedPaths = expectedAdapterRelativePaths(host);
   for (const expectedPath of expectedPaths) {
     assert.ok(
       files.some((file) => file.endsWith(expectedPath)),
@@ -107,7 +107,7 @@ test('install manifest records package, roots, checksums, host status, counts, f
     assert.match(result.stdout, new RegExp(`Manifest: ${manifestPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
     assert.match(result.stdout, /Claude: installed/);
     assert.match(result.stdout, /Codex: installed/);
-    assert.match(result.stdout, /Gemini: skipped \(host root not found\)/);
+    assert.match(result.stdout, /Gemini: installed/);
     assert.equal(existsSync(manifestPath), true);
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     const pkg = JSON.parse(readFileSync(path.join(REPO_ROOT, 'extension', 'package.json'), 'utf8'));
@@ -134,7 +134,7 @@ test('install manifest records package, roots, checksums, host status, counts, f
     assert.equal(manifest.hosts.claude.command_count, COMMAND_COUNT);
     assert.equal(manifest.hosts.claude.agent_count, 14);
     assertManifestIncludesCommands(manifest.hosts.claude.files_written, '/commands/', 'Claude');
-    assertInstalledCommandAdapterPaths(manifest.hosts.claude.files_written, 'claude');
+    assertInstalledAdapterPaths(manifest.hosts.claude.files_written, 'claude');
     const claudeRuntimeMarker = manifest.hosts.claude.files_written.find((file) => file.endsWith('/runtime_root'));
     assert.equal(readFileSync(claudeRuntimeMarker, 'utf8').trim(), runtimeRoot);
     assert.match(manifest.hosts.claude.file_checksums[claudeRuntimeMarker], /^[a-f0-9]{64}$/);
@@ -153,7 +153,7 @@ test('install manifest records package, roots, checksums, host status, counts, f
       '/plugins/cache/pickle-rick/pickle-rick/local/commands/',
       'Codex plugin',
     );
-    assertInstalledCommandAdapterPaths(manifest.hosts.codex.files_written, 'codex');
+    assertInstalledAdapterPaths(manifest.hosts.codex.files_written, 'codex');
     const codexRuntimeMarker = manifest.hosts.codex.files_written.find((file) => file.endsWith('/pickle-rick/runtime_root'));
     assert.equal(readFileSync(codexRuntimeMarker, 'utf8').trim(), runtimeRoot);
     assert.match(manifest.hosts.codex.file_checksums[codexRuntimeMarker], /^[a-f0-9]{64}$/);
@@ -186,10 +186,18 @@ test('install manifest records package, roots, checksums, host status, counts, f
       path: './plugins/pickle-rick',
     });
 
-    assert.equal(manifest.hosts.gemini.status, 'skipped');
-    assert.equal(manifest.hosts.gemini.reason, 'host root not found');
-    assert.deepEqual(manifest.hosts.gemini.files_written, []);
-    assert.deepEqual(manifest.hosts.gemini.file_checksums, {});
+    assert.equal(manifest.hosts.gemini.status, 'installed');
+    assert.equal(manifest.hosts.gemini.command_count, COMMAND_COUNT);
+    assert.equal(manifest.hosts.gemini.agent_count, 0);
+    assert.equal(manifest.hosts.gemini.settings_file, path.join(fixture.home, '.gemini', 'settings.json'));
+    assertManifestIncludesCommands(manifest.hosts.gemini.files_written, '/extensions/pickle-rick/commands-md/', 'Gemini markdown');
+    assertInstalledAdapterPaths(manifest.hosts.gemini.files_written, 'gemini');
+    const geminiRuntimeMarker = manifest.hosts.gemini.files_written.find((file) => file.endsWith('/extensions/pickle-rick/runtime_root'));
+    assert.equal(readFileSync(geminiRuntimeMarker, 'utf8').trim(), runtimeRoot);
+    assert.match(manifest.hosts.gemini.file_checksums[geminiRuntimeMarker], /^[a-f0-9]{64}$/);
+    const geminiToml = manifest.hosts.gemini.files_written.find((file) => file.endsWith('/extensions/pickle-rick/commands/pickle.toml'));
+    assert.match(readFileSync(geminiToml, 'utf8'), /PICKLE_HOST_BACKEND=gemini/);
+    assert.match(manifest.hosts.gemini.file_checksums[geminiToml], /^[a-f0-9]{64}$/);
   } finally {
     rmSync(fixture.dir, { recursive: true, force: true });
   }

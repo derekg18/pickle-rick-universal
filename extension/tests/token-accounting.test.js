@@ -22,18 +22,21 @@ const parserCases = [
   {
     backend: 'claude',
     file: 'claude.jsonl',
+    missingFile: 'claude-missing.jsonl',
     parse: parseClaudeTokenUsageFile,
     expected: { input_tokens: 1000, output_tokens: 250, total_tokens: 1250 },
   },
   {
     backend: 'codex',
     file: 'codex.log',
+    missingFile: 'codex-missing.log',
     parse: parseCodexTokenUsageFile,
     expected: { input_tokens: 1200, output_tokens: 300, total_tokens: 1500 },
   },
   {
     backend: 'gemini',
     file: 'gemini.jsonl',
+    missingFile: 'gemini-missing.jsonl',
     parse: parseGeminiTokenUsageFile,
     expected: { input_tokens: 900, output_tokens: 100, total_tokens: 1000 },
   },
@@ -52,7 +55,7 @@ function readActivityEvents(activityDir) {
 }
 
 describe('token accounting parsers', () => {
-  for (const { backend, file, parse, expected } of parserCases) {
+  for (const { backend, file, missingFile, parse, expected } of parserCases) {
     test(`${backend}: exact fixture follows shared schema`, () => {
       const result = parse(path.join(FIXTURES, file));
       assert.equal(result.records.length, 1);
@@ -77,12 +80,15 @@ describe('token accounting parsers', () => {
     });
 
     test(`${backend}: missing fixture produces unknown record`, () => {
-      const result = parse(path.join(FIXTURES, `${backend}-missing.log`));
+      const fixturePath = path.join(FIXTURES, missingFile);
+      assert.equal(fs.existsSync(fixturePath), true, `${backend} missing fixture must exist`);
+      const result = parse(fixturePath);
       assert.equal(result.records.length, 1);
       assert.equal(result.records[0].source, 'unknown');
       assert.equal(result.records[0].backend, backend);
       assert.equal(result.records[0].input_tokens, null);
       assert.equal(result.records[0].total_tokens, null);
+      assert.equal(result.records[0].source_path, fixturePath);
     });
   }
 

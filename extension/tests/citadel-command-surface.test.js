@@ -8,6 +8,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '../..');
 const commandsDir = path.resolve(__dirname, '../../.claude/commands');
+const fixturesDir = path.resolve(__dirname, 'fixtures');
 
 function readCommand(filename) {
   return fs.readFileSync(path.join(commandsDir, filename), 'utf8');
@@ -17,6 +18,10 @@ function readRepoFile(filename) {
   return fs.readFileSync(path.join(repoRoot, filename), 'utf8');
 }
 
+function readFixture(filename) {
+  return JSON.parse(fs.readFileSync(path.join(fixturesDir, filename), 'utf8'));
+}
+
 const citadel = readCommand('citadel.md');
 const helpPickle = readCommand('help-pickle.md');
 const pickle = readCommand('pickle.md');
@@ -24,11 +29,23 @@ const cronenberg = readCommand('cronenberg.md');
 const readme = readRepoFile('README.md');
 const commandReference = readRepoFile('COMMANDS.md');
 const prdGuide = readRepoFile('PRD_GUIDE.md');
+const compatibility = readFixture('citadel-cronenberg-strict-superset.json');
 
 describe('citadel command surface', () => {
   test('citadel slash command exists and documents primary flags', () => {
     assert.match(citadel, /^# \/citadel$/m);
     for (const flag of ['--prd <prd_path>', '--diff <base..head>', '--strict', '--report <path>', '--print-stubs']) {
+      assert.match(citadel, new RegExp(flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    }
+  });
+
+  test('compatibility fixture locks citadel strict superset command surface', () => {
+    const expected = compatibility.citadel;
+    assert.equal(expected.command, '/citadel');
+    for (const snippet of expected.mustContain) {
+      assert.match(citadel, new RegExp(snippet));
+    }
+    for (const flag of expected.strictSupersetFlags) {
       assert.match(citadel, new RegExp(flag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
     }
   });
@@ -47,6 +64,20 @@ describe('citadel command surface', () => {
     const anatomyRouteIndex = cronenberg.indexOf('| `SUBSYSTEM_TOUCHES ≥ 2` | `/anatomy-park` |');
     assert.ok(citadelRouteIndex > 0, 'missing CITADEL_RISK followup row');
     assert.ok(anatomyRouteIndex > citadelRouteIndex, 'citadel must run before anatomy-park');
+  });
+
+  test('compatibility fixture locks cronenberg strict superset routing behavior', () => {
+    const expected = compatibility.cronenberg;
+    assert.equal(expected.command, '/cronenberg');
+    for (const snippet of expected.mustContain) {
+      assert.match(cronenberg, new RegExp(snippet));
+    }
+    for (const [before, after] of expected.orderedPairs) {
+      const beforeIndex = cronenberg.indexOf(before);
+      const afterIndex = cronenberg.indexOf(after);
+      assert.ok(beforeIndex >= 0, `missing compatibility phrase: ${before}`);
+      assert.ok(afterIndex > beforeIndex, `${after} must appear after ${before}`);
+    }
   });
 
   test('cronenberg plan prints the conformance signal label', () => {

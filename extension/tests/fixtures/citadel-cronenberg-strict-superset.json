@@ -1,0 +1,41 @@
+{
+  "citadel": {
+    "command": "/citadel",
+    "strictSupersetFlags": [
+      "--prd <prd_path>",
+      "--diff <base..head>",
+      "--strict",
+      "--report <path>",
+      "--print-stubs",
+      "--env <name>",
+      "--service <name>",
+      "--env-var KEY=VALUE",
+      "--seed <name>"
+    ],
+    "mustContain": [
+      "status`, `summary`, `artifact`, and `plan`",
+      "Exit non-zero on High findings as well as Critical findings",
+      "The command surfaces findings only; it does not auto-edit source files"
+    ]
+  },
+  "cronenberg": {
+    "command": "/cronenberg",
+    "mustContain": [
+      "Everything else \\(flags \\+ free text\\) .* passed through verbatim",
+      "CITADEL_RISK",
+      "conformance=<y/n>",
+      "chosen metaphor is `/pickle-pipeline`",
+      "Forward any flag"
+    ],
+    "orderedPairs": [
+      [
+        "| `CITADEL_RISK` | `/citadel --prd <prd_path>` |",
+        "| `SUBSYSTEM_TOUCHES \u2265 2` | `/anatomy-park` |"
+      ],
+      [
+        "## Step 4: Pick Followups",
+        "## Step 5: Print Plan"
+      ]
+    ]
+  }
+}
