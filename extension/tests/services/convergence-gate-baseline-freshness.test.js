@@ -69,6 +69,29 @@ test('assertBaselineFresh: throws BaselineStaleError when current_iteration >= m
   }
 });
 
+test('assertBaselineFresh: throws BaselineStaleError when baseline schema is corrupt', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-fresh-corrupt-'));
+  try {
+    const baselinePath = path.join(dir, 'baseline.json');
+    fs.mkdirSync(path.dirname(baselinePath), { recursive: true });
+    fs.writeFileSync(baselinePath, JSON.stringify({
+      schema_version: 1,
+      captured_at: new Date().toISOString(),
+      working_dir: '/tmp',
+      project_type: 'npm',
+      checks: [],
+      // failures omitted: this used to pass freshness and crash the later gate subtraction.
+    }));
+
+    assert.throws(
+      () => assertBaselineFresh(baselinePath, { max_age_iterations: 30, max_age_seconds: 14400, current_iteration: 0 }),
+      (err) => err instanceof BaselineStaleError
+    );
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('assertBaselineFresh: does not throw for fresh baseline', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cg-fresh-ok-'));
   try {

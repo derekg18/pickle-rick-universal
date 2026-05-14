@@ -144,6 +144,10 @@ export function assertBaselineFresh(
     );
     throw new BaselineMissingError(baselinePath);
   }
+  const raw = readRecoverableJsonObject(baselinePath) as unknown;
+  if (!validateBaselineStructure(raw)) {
+    throw new BaselineStaleError(`Baseline at ${baselinePath} is corrupt or invalid`);
+  }
   const stat = fs.statSync(baselinePath);
   const ageMs = Date.now() - stat.mtimeMs;
   if (ageMs > opts.max_age_seconds * 1000) {

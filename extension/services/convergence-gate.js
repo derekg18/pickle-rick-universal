@@ -121,6 +121,10 @@ export function assertBaselineFresh(baselinePath, opts) {
         fs.writeFileSync(path.join(dir, `baseline_missing_${iso}.md`), `# Baseline Missing\n\nPath: \`${baselinePath}\`\nCaptured: ${now}\n`);
         throw new BaselineMissingError(baselinePath);
     }
+    const raw = readRecoverableJsonObject(baselinePath);
+    if (!validateBaselineStructure(raw)) {
+        throw new BaselineStaleError(`Baseline at ${baselinePath} is corrupt or invalid`);
+    }
     const stat = fs.statSync(baselinePath);
     const ageMs = Date.now() - stat.mtimeMs;
     if (ageMs > opts.max_age_seconds * 1000) {
