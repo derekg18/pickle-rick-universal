@@ -7,6 +7,13 @@ import { State, Defaults } from '../types/index.js';
 
 const sm = new StateManager();
 
+interface RetryTicketPaths {
+  sessionDir: string;
+  statePath: string;
+  ticketDir: string;
+  ticketFile: string;
+}
+
 function positiveIntegerOrDefault(value: unknown, fallback: number): number {
   if (typeof value === 'number') {
     return Number.isSafeInteger(value) && value > 0 ? value : fallback;
@@ -19,35 +26,56 @@ function positiveIntegerOrDefault(value: unknown, fallback: number): number {
 }
 
 export function retryTicket(ticketId: string, cwd: string): void {
-  // Validate ticketId to prevent path traversal
+  const paths = resolveRetryTicketPaths(ticketId, cwd);
+  archivePartialArtifacts(paths.ticketDir);
+  resetTicketToTodo(paths.ticketFile);
+  reactivateSession(paths.statePath, paths.sessionDir, ticketId);
+  const finalState = readFinalState(paths.statePath, paths.sessionDir);
+  const spawnCmd = buildSpawnCommand(finalState, paths.sessionDir, ticketId);
+  console.log(`\n✅ Ticket ${ticketId} reset to Todo. Run this command to re-spawn Morty:\n\n${spawnCmd}\n`);
+}
+
+function resolveRetryTicketPaths(ticketId: string, cwd: string): RetryTicketPaths {
+  validateTicketId(ticketId);
+  const sessionDir = requireActiveSession(cwd);
+  const statePath = path.join(sessionDir, 'state.json');
+  readInitialState(statePath, sessionDir);
+  const ticketDir = path.join(sessionDir, ticketId);
+  const ticketFile = path.join(ticketDir, `linear_ticket_${ticketId}.md`);
+  requireTicketFiles(ticketId, sessionDir, ticketDir, ticketFile);
+  return { sessionDir, statePath, ticketDir, ticketFile };
+}
+
+function validateTicketId(ticketId: string): void {
   if (!/^[a-zA-Z0-9_-]+$/.test(ticketId)) {
     throw new Error(`Invalid ticket ID: ${ticketId}`);
   }
+}
 
+function requireActiveSession(cwd: string): string {
   const sessionPath = findSessionPathForCwd(cwd);
   if (!sessionPath || !fs.existsSync(sessionPath)) {
     throw new Error('No active session found for this directory.');
   }
+  return sessionPath;
+}
 
-  const statePath = path.join(sessionPath, 'state.json');
+function readInitialState(statePath: string, sessionDir: string): void {
   try {
     sm.read(statePath);
   } catch {
-    throw new Error(`state.json is corrupt or unreadable in ${sessionPath}`);
+    throw new Error(`state.json is corrupt or unreadable in ${sessionDir}`);
   }
-  const sessionDir = sessionPath;
+}
 
-  const ticketDir = path.join(sessionDir, ticketId);
-  const ticketFile = path.join(ticketDir, `linear_ticket_${ticketId}.md`);
+function requireTicketFiles(ticketId: string, sessionDir: string, ticketDir: string, ticketFile: string): void {
   if (!fs.existsSync(ticketDir) || !fs.existsSync(ticketFile)) {
     throw new Error(`Ticket ${ticketId} not found in session ${sessionDir}`);
   }
+}
 
-  // Archive partial artifacts
-  const artifacts = fs.readdirSync(ticketDir).filter(f =>
-    /^research_.*\.md$/.test(f) || f === 'research_review.md' ||
-    /^plan_.*\.md$/.test(f) || f === 'plan_review.md'
-  );
+function archivePartialArtifacts(ticketDir: string): void {
+  const artifacts = fs.readdirSync(ticketDir).filter(isRetryArtifact);
   if (artifacts.length > 0) {
     const archiveDir = path.join(ticketDir, `_retry_${Date.now()}`);
     fs.mkdirSync(archiveDir, { recursive: true });
@@ -56,17 +84,16 @@ export function retryTicket(ticketId: string, cwd: string): void {
     }
     console.log(`📦 Archived ${artifacts.length} artifact(s) to ${path.basename(archiveDir)}/`);
   }
+}
 
-  // Reset ticket status to Todo — scope replacement to YAML frontmatter only
+function isRetryArtifact(fileName: string): boolean {
+  return /^research_.*\.md$/.test(fileName) || fileName === 'research_review.md' ||
+    /^plan_.*\.md$/.test(fileName) || fileName === 'plan_review.md';
+}
+
+function resetTicketToTodo(ticketFile: string): void {
   const ticketContent = fs.readFileSync(ticketFile, 'utf-8');
-  const fmResult = extractFrontmatter(ticketContent);
-  let updatedContent: string;
-  if (fmResult) {
-    const fmSection = ticketContent.slice(0, fmResult.end).replace(/^status:.*$/m, 'status: "Todo"');
-    updatedContent = clearTicketResolutionTimestamps(fmSection) + ticketContent.slice(fmResult.end);
-  } else {
-    updatedContent = ticketContent.replace(/^status:.*$/m, 'status: "Todo"');
-  }
+  const updatedContent = resetTicketStatus(ticketContent);
   const tmpTicket = ticketFile + `.tmp.${process.pid}`;
   try {
     fs.writeFileSync(tmpTicket, updatedContent);
@@ -75,33 +102,42 @@ export function retryTicket(ticketId: string, cwd: string): void {
     try { fs.unlinkSync(tmpTicket); } catch { /* ignore cleanup failure */ }
     throw err;
   }
+}
 
-  // Re-activate session and set current ticket
+function resetTicketStatus(ticketContent: string): string {
+  const fmResult = extractFrontmatter(ticketContent);
+  if (!fmResult) {
+    return ticketContent.replace(/^status:.*$/m, 'status: "Todo"');
+  }
+  const fmSection = ticketContent.slice(0, fmResult.end).replace(/^status:.*$/m, 'status: "Todo"');
+  return clearTicketResolutionTimestamps(fmSection) + ticketContent.slice(fmResult.end);
+}
+
+function reactivateSession(statePath: string, sessionDir: string, ticketId: string): void {
   sm.update(statePath, s => {
     s.active = true;
-    s.session_dir = sessionPath;
+    s.session_dir = sessionDir;
   });
   updateState('current_ticket', ticketId, sessionDir);
+}
 
-  // Read final state for timeout/prompt values
-  let finalState: State;
+function readFinalState(statePath: string, sessionDir: string): State {
   try {
-    finalState = sm.read(statePath);
+    return sm.read(statePath);
   } catch {
-    throw new Error(`state.json became unreadable after update in ${sessionPath}`);
+    throw new Error(`state.json became unreadable after update in ${sessionDir}`);
   }
+}
+
+function buildSpawnCommand(finalState: State, sessionDir: string, ticketId: string): string {
   const timeout = positiveIntegerOrDefault(finalState.worker_timeout_seconds, Defaults.WORKER_TIMEOUT_SECONDS);
 
-  // Shell-safe escaping: single-quote escaping + collapse newlines to spaces
   const safePrompt = (finalState.original_prompt || '')
     .replace(/[\r\n]+/g, ' ')
     .replace(/'/g, "'\\''");
 
-  // Task is first positional arg (spawn-morty.js:13 expects args[0] as task)
-  // Use single-quoting for sessionDir to prevent shell expansion of $, `, etc.
   const safeSessionDir = sessionDir.replace(/'/g, "'\\''");
-  const spawnCmd = `node "${getExtensionRoot()}/extension/bin/spawn-morty.js" '${safePrompt}' --ticket-id '${ticketId}' --ticket-path '${safeSessionDir}/${ticketId}/' --ticket-file '${safeSessionDir}/${ticketId}/linear_ticket_${ticketId}.md' --timeout ${timeout}`;
-  console.log(`\n✅ Ticket ${ticketId} reset to Todo. Run this command to re-spawn Morty:\n\n${spawnCmd}\n`);
+  return `node "${getExtensionRoot()}/extension/bin/spawn-morty.js" '${safePrompt}' --ticket-id '${ticketId}' --ticket-path '${safeSessionDir}/${ticketId}/' --ticket-file '${safeSessionDir}/${ticketId}/linear_ticket_${ticketId}.md' --timeout ${timeout}`;
 }
 
 if (process.argv[1] && path.basename(process.argv[1]) === 'retry-ticket.js') {
