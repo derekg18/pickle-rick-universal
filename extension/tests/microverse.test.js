@@ -1224,6 +1224,67 @@ test('microverse-runner relaunches codex manager subprocess below cap', async ()
     );
 });
 
+test('executeMainLoop preserves worker-mode state when a clean worker pass returns the same object', async () => {
+    const workingDir = createTempGitRepo();
+    const session = createSessionDir(workingDir, {
+        key_metric: { type: 'none', description: 'worker managed', validation: '', timeout_seconds: 0, tolerance: 0 },
+        convergence: undefined,
+        convergence_mode: 'worker',
+        convergence_file: 'anatomy-park.json',
+        allowed_paths: ['extension'],
+        baseline_score: 0,
+    });
+    const statePath = path.join(session.dir, 'state.json');
+    fs.writeFileSync(path.join(session.dir, 'anatomy-park.json'), JSON.stringify({ converged: false }, null, 2));
+    const logs = [];
+    const ctx = {
+        sessionDir: session.dir,
+        extensionRoot: path.resolve('.'),
+        statePath,
+        workingDir,
+        startTime: Date.now(),
+        initialIteration: 0,
+        enableFailureClassification: false,
+        cgSettings: {
+            enabled_convergence_files: [],
+            regression_warning_threshold: 5,
+            remediator_timeout_s: 600,
+            baseline_max_age_iterations: 30,
+            baseline_max_age_seconds: 14_400,
+        },
+        rateLimitWaitMinutes: 0,
+        maxRateLimitRetries: 0,
+        log: (msg) => logs.push(msg),
+        currentRunnerState: session.state,
+        iteration: 0,
+        consecutiveRateLimits: 0,
+    };
+
+    try {
+        let calls = 0;
+        const result = await withMicroverseLoopDeps({
+            runIteration: async () => {
+                calls += 1;
+                return calls === 1
+                    ? { completion: 'success', timedOut: false, exitCode: 0, wallSeconds: 1 }
+                    : { completion: 'inactive', timedOut: false, exitCode: 0, wallSeconds: 1 };
+            },
+        }, () => executeMainLoop(session.mvState, ctx));
+
+        assert.equal(calls, 2, 'worker clean pass should continue to the next loop iteration');
+        assert.equal(result.exitReason, 'stopped');
+        assert.equal(result.state.convergence_mode, 'worker');
+        assert.equal(result.state.convergence_file, 'anatomy-park.json');
+        assert.ok(
+            logs.some(msg => msg.includes('worker convergence: not yet')),
+            `expected worker convergence log, got ${JSON.stringify(logs)}`,
+        );
+    } finally {
+        fs.rmSync(session.dir, { recursive: true, force: true });
+        fs.rmSync(workingDir, { recursive: true, force: true });
+    }
+});
+
 test('microverse-runner honors codex manager relaunch cap', async () => {
     const outcome = await runMicroverseRelaunchScenario({
         backend: 'codex',

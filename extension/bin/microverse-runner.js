@@ -718,6 +718,8 @@ export function deactivateRunnerState(statePath) {
     safeDeactivate(statePath);
 }
 function replaceMicroverseState(target, next) {
+    if (target === next)
+        return;
     for (const key of Object.keys(target)) {
         delete target[key];
     }

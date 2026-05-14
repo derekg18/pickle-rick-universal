@@ -1040,6 +1040,7 @@ export function deactivateRunnerState(statePath: string): void {
 }
 
 function replaceMicroverseState(target: MicroverseState, next: MicroverseState): void {
+  if (target === next) return;
   for (const key of Object.keys(target) as Array<keyof MicroverseState>) {
     delete target[key];
   }
