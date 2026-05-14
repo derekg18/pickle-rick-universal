@@ -17,6 +17,15 @@ const MX = {
 } as const;
 const sm = new StateManager();
 
+type RawMortyRuntime = {
+  sessionDir: string;
+  currentLog: string | null;
+  offset: number;
+  lineBuf: string;
+  emit: (text: string) => void;
+  sep: () => string;
+};
+
 function randomRainChar(): string {
   return RAIN_CHARS[Math.floor(Math.random() * RAIN_CHARS.length)];
 }
@@ -132,74 +141,116 @@ export function processLineRaw(line: string): string | null {
 }
 
 // ── Main loop ───────────────────────────────────────────────────
-async function main() {
+function requireSessionDir(): string {
   const sessionDir = process.argv[2];
   // eslint-disable-next-line pickle/no-sync-in-async -- intentional blocking call
   if (!sessionDir || sessionDir.startsWith('--') || !fs.existsSync(sessionDir)) {
     console.error('Usage: node raw-morty.js <session-dir>');
     process.exit(1);
   }
+  return sessionDir;
+}
 
+function installSignalHandlers(): void {
   process.on('SIGINT', () => {
     process.stdout.write(`\n${MX.DIM}Feed disconnected.${MX.R}\n`);
     process.exit(0);
   });
+}
 
+function renderStartupBanner(): () => string {
   const width = () => Math.min((process.stdout.columns || 60) - 2, 80);
   const sep = () => matrixSeparator(width());
 
   process.stdout.write('\x1b[2J\x1b[H');
   process.stdout.write(matrixBanner(width()) + '\n');
   process.stdout.write(sep() + '\n');
+  return sep;
+}
 
-  const emit = (text: string) => {
-    process.stdout.write(text + '\n');
-  };
+function isSessionActive(sessionDir: string): boolean {
+  try {
+    const state = sm.read(path.join(sessionDir, 'state.json'));
+    return state.active === true;
+  } catch {
+    return true;
+  }
+}
 
-  let currentLog: string | null = null;
-  let offset = 0;
-  let lineBuf = '';
+function writeTerminationBanner(sep: () => string): void {
+  process.stdout.write(`\n${sep()}\n${MX.BRIGHT}◤ FEED TERMINATED ◢${MX.R}\n`);
+}
 
+async function awaitNextLog(runtime: RawMortyRuntime): Promise<boolean> {
+  if (!isSessionActive(runtime.sessionDir)) {
+    writeTerminationBanner(runtime.sep);
+    return false;
+  }
+
+  process.stdout.write(`\r${MX.DIM}Awaiting signal...${MX.R}\x1b[K`);
+  await sleep(1000);
+  return true;
+}
+
+function rotateIterationLog(runtime: RawMortyRuntime, log: string): void {
+  if (log === runtime.currentLog) return;
+
+  runtime.currentLog = log;
+  runtime.offset = 0;
+  runtime.lineBuf = '';
+  const n = path.basename(log, '.log').replace('tmux_iteration_', '');
+  process.stdout.write(`\n${runtime.sep()}\n${MX.BRIGHT}▸ ITERATION ${n}${MX.R}\n${runtime.sep()}\n`);
+}
+
+function drainCurrentLog(runtime: RawMortyRuntime): void {
+  if (!runtime.currentLog) return;
+  const result = drainStreamJsonLines(
+    runtime.currentLog,
+    runtime.offset,
+    runtime.lineBuf,
+    processLineRaw,
+    runtime.emit,
+  );
+  runtime.offset = result.offset;
+  runtime.lineBuf = result.lineBuf;
+}
+
+async function finishIfInactive(runtime: RawMortyRuntime): Promise<boolean> {
+  if (isSessionActive(runtime.sessionDir)) return false;
+
+  await sleep(2000);
+  drainCurrentLog(runtime);
+  writeTerminationBanner(runtime.sep);
+  return true;
+}
+
+async function followRawMortyFeed(runtime: RawMortyRuntime): Promise<void> {
   while (true) {
-    const log = latestIterationLog(sessionDir);
-
+    const log = latestIterationLog(runtime.sessionDir);
     if (!log) {
-      try {
-        const state = sm.read(path.join(sessionDir, 'state.json'));
-        if (state.active !== true) {
-          process.stdout.write(`\n${sep()}\n${MX.BRIGHT}◤ FEED TERMINATED ◢${MX.R}\n`);
-          break;
-        }
-      } catch { /* */ }
-      process.stdout.write(`\r${MX.DIM}Awaiting signal...${MX.R}\x1b[K`);
-      await sleep(1000);
-      continue;
+      if (await awaitNextLog(runtime)) continue;
+      break;
     }
 
-    if (log !== currentLog) {
-      currentLog = log;
-      offset = 0;
-      lineBuf = '';
-      const n = path.basename(log, '.log').replace('tmux_iteration_', '');
-      process.stdout.write(`\n${sep()}\n${MX.BRIGHT}▸ ITERATION ${n}${MX.R}\n${sep()}\n`);
-    }
-
-    const result = drainStreamJsonLines(currentLog, offset, lineBuf, processLineRaw, emit);
-    offset = result.offset;
-    lineBuf = result.lineBuf;
-
-    try {
-      const state = sm.read(path.join(sessionDir, 'state.json'));
-      if (state.active !== true) {
-        await sleep(2000);
-        drainStreamJsonLines(currentLog, offset, lineBuf, processLineRaw, emit);
-        process.stdout.write(`\n${sep()}\n${MX.BRIGHT}◤ FEED TERMINATED ◢${MX.R}\n`);
-        break;
-      }
-    } catch { /* */ }
-
+    rotateIterationLog(runtime, log);
+    drainCurrentLog(runtime);
+    if (await finishIfInactive(runtime)) break;
     await sleep(500);
   }
+}
+
+async function main() {
+  const sessionDir = requireSessionDir();
+  installSignalHandlers();
+  const sep = renderStartupBanner();
+  await followRawMortyFeed({
+    sessionDir,
+    currentLog: null,
+    offset: 0,
+    lineBuf: '',
+    emit: (text: string) => process.stdout.write(text + '\n'),
+    sep,
+  });
 }
 
 if (process.argv[1] && path.basename(process.argv[1]) === 'raw-morty.js') {
