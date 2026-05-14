@@ -113,6 +113,8 @@ describe('team-flow profile', () => {
     assert.equal(gate.status, 'pass');
 
     fs.rmSync(path.join(root, 'team-flow'), { recursive: true, force: true });
+    writeArtifact(root, 'team-flow/review_comments.json', '{}');
+    writeArtifact(root, 'team-flow/review_comments.md');
     writeArtifact(root, 'team-flow/security_classifier.json', JSON.stringify({
       classifier: 'deterministic_no_sensitive_paths',
       sensitivePathChanges: false,
@@ -130,6 +132,24 @@ describe('team-flow profile', () => {
     assert.equal(gate.status, 'fail');
     assert.equal(hasDeterministicNoSensitivePathsClassifier(root), false);
 
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+
+  test('security skip still requires review artifacts from the previous phase', () => {
+    const root = tmpDir();
+    const profile = fullProfile(root);
+    writeArtifact(root, 'team-flow/security_classifier.json', JSON.stringify({
+      classifier: 'deterministic_no_sensitive_paths',
+      sensitivePathChanges: false,
+    }));
+
+    const gate = evaluateTeamFlowGate(profile, 'security_risk_review', root);
+
+    assert.equal(gate.status, 'fail');
+    assert.deepEqual(gate.missingArtifacts, [
+      'team-flow/review_comments.json',
+      'team-flow/review_comments.md',
+    ]);
     fs.rmSync(root, { recursive: true, force: true });
   });
 

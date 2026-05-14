@@ -140,15 +140,16 @@ export function evaluateTeamFlowGate(profile, phaseId, sessionRoot) {
             remediation: `Unknown team-flow phase: ${phaseId}`,
         };
     }
-    if (phase.canSkip === 'deterministic_no_sensitive_paths'
-        && !artifactExists(sessionRoot, path.join(TEAM_FLOW_DIR, 'security_risk_report.md'))
-        && hasDeterministicNoSensitivePathsClassifier(sessionRoot)) {
-        return { phaseId, status: 'skipped', missingArtifacts: [], remediation: null };
-    }
     const requiredInputs = phase.id === 'qa_acceptance' && hasDeterministicNoSensitivePathsClassifier(sessionRoot)
         ? phase.requiredInputs.filter((artifactPath) => artifactPath !== path.join(TEAM_FLOW_DIR, 'security_risk_report.md'))
         : phase.requiredInputs;
     const missingArtifacts = unique(requiredInputs.filter((artifactPath) => !artifactExists(sessionRoot, artifactPath)));
+    if (phase.canSkip === 'deterministic_no_sensitive_paths'
+        && missingArtifacts.length === 0
+        && !artifactExists(sessionRoot, path.join(TEAM_FLOW_DIR, 'security_risk_report.md'))
+        && hasDeterministicNoSensitivePathsClassifier(sessionRoot)) {
+        return { phaseId, status: 'skipped', missingArtifacts: [], remediation: null };
+    }
     if (missingArtifacts.length > 0) {
         return {
             phaseId,

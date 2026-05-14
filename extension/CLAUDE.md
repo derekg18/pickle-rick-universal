@@ -6,6 +6,7 @@
 
 - `microverse-state.ts` — INVARIANT: worker-mode reads always restore a convergence_file. BREAKS: runner crashes before reading phase convergence. ENFORCE: `readMicroverseState restores default convergence_file for legacy worker-mode none metric`. PATTERN_SHAPE: `convergence_mode === 'worker' && typeof convergence_file !== 'string'`.
 - `convergence-gate.ts` — INVARIANT: existing gate baselines must validate schema during freshness checks. BREAKS: corrupt baseline survives pre-iteration refresh and crashes subtraction after worker commit. ENFORCE: `assertBaselineFresh: throws BaselineStaleError when baseline schema is corrupt`. PATTERN_SHAPE: `assertBaselineFresh\(baselinePath.*\)` without `validateBaselineStructure(readRecoverableJsonObject(baselinePath))`.
+- `team-flow-profile.ts` — INVARIANT: skip classifiers cannot bypass prior phase input artifacts. BREAKS: full team-flow accepts missing review artifacts before security/QA. ENFORCE: `security skip still requires review artifacts from the previous phase`. PATTERN_SHAPE: `canSkip.*deterministic_no_sensitive_paths` before `missingArtifacts` evaluation.
 
 ## state.json Field Invariants
 
