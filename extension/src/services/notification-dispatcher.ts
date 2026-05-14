@@ -1,4 +1,3 @@
-import * as path from 'path';
 import { spawnSync, type SpawnSyncReturns } from 'child_process';
 import {
   displayMacNotification,
@@ -6,7 +5,7 @@ import {
   NOTIFICATION_TIMEOUT_MS,
   safeErrorMessage,
 } from './pickle-utils.js';
-import { readRecoverableJsonObject } from './microverse-state.js';
+import { loadPickleSettings } from './pickle-settings.js';
 
 export const NOTIFICATION_KINDS = [
   'mux_session_end',
@@ -105,8 +104,7 @@ function normalizeSettings(raw: unknown): NotificationSettings {
 }
 
 export function loadNotificationSettings(settingsRoot = getExtensionRoot()): NotificationSettings {
-  const settingsPath = path.join(settingsRoot, 'pickle_settings.json');
-  const raw = readRecoverableJsonObject(settingsPath) as Record<string, unknown> | null;
+  const raw = loadPickleSettings({ extensionRoot: settingsRoot });
   return normalizeSettings(raw?.notifications);
 }
 

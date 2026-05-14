@@ -106,6 +106,11 @@ export interface CourseCorrectionRecord {
 
 export interface StateFlags {
   strict_teams?: boolean;
+  human_help_requested?: boolean;
+  human_help_reason?: string;
+  human_help_recovery_command?: string;
+  jerry_mode_signature?: string;
+  os_notifier_available?: boolean;
   [key: string]: unknown;
 }
 

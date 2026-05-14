@@ -9,6 +9,8 @@ import {
   notifySessionEvent,
   resetNotificationDedupForTests,
 } from '../services/notification-dispatcher.js';
+import { loadSettings as loadCircuitBreakerSettings } from '../services/circuit-breaker.js';
+import { loadPickleSettings, resolvePickleSettingsPath } from '../services/pickle-settings.js';
 
 const baseEvent = {
   kind: 'mux_session_end',
@@ -180,6 +182,74 @@ test('loadNotificationSettings reads notification block with defaults', () => {
       },
     });
   } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('settings loaders share canonical pickle_settings.json path', () => {
+  const tmpDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'shared-settings-')));
+  try {
+    const settingsPath = resolvePickleSettingsPath({ extensionRoot: tmpDir });
+    assert.equal(settingsPath, path.join(tmpDir, 'pickle_settings.json'));
+    fs.writeFileSync(settingsPath, JSON.stringify({
+      default_circuit_breaker_enabled: false,
+      default_cb_no_progress_threshold: 11,
+      default_cb_same_error_threshold: 9,
+      default_cb_half_open_after: 3,
+      notifications: {
+        os_enabled: false,
+        terminal_fallback: false,
+        dedup_window_ms: 12345,
+      },
+    }));
+
+    assert.equal(loadPickleSettings({ extensionRoot: tmpDir }).default_cb_no_progress_threshold, 11);
+    assert.deepEqual(loadNotificationSettings(tmpDir), {
+      os_enabled: false,
+      terminal_fallback: false,
+      dedup_window_ms: 12345,
+      kinds: {
+        mux_session_end: true,
+        pipeline_session_end: true,
+      },
+    });
+    assert.deepEqual(loadCircuitBreakerSettings(tmpDir), {
+      enabled: false,
+      noProgressThreshold: 11,
+      sameErrorThreshold: 9,
+      halfOpenAfter: 3,
+    });
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
+test('malformed shared settings warn and fall back to defaults', () => {
+  const tmpDir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'bad-settings-')));
+  const originalWarn = console.warn;
+  const warnings = [];
+  console.warn = (message) => warnings.push(String(message));
+  try {
+    fs.writeFileSync(resolvePickleSettingsPath({ extensionRoot: tmpDir }), 'not json');
+
+    assert.deepEqual(loadNotificationSettings(tmpDir), {
+      os_enabled: true,
+      terminal_fallback: true,
+      dedup_window_ms: 60_000,
+      kinds: {
+        mux_session_end: true,
+        pipeline_session_end: true,
+      },
+    });
+    assert.deepEqual(loadCircuitBreakerSettings(tmpDir), {
+      enabled: true,
+      noProgressThreshold: 5,
+      sameErrorThreshold: 5,
+      halfOpenAfter: 2,
+    });
+    assert.ok(warnings.some((line) => line.includes('Malformed settings')));
+  } finally {
+    console.warn = originalWarn;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });

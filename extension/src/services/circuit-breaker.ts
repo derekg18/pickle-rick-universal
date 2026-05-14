@@ -2,6 +2,7 @@ import * as path from 'path';
 import { runCmd, writeStateFile, safeErrorMessage } from './pickle-utils.js';
 import { StateManager } from './state-manager.js';
 import { readRecoverableJsonObject } from './microverse-state.js';
+import { loadPickleSettings } from './pickle-settings.js';
 import type { Backend } from '../types/index.js';
 
 // ---------------------------------------------------------------------------
@@ -207,6 +208,9 @@ export function pauseForHumanHelp(input: JerryModeInput, decision: JerryModeDeci
     state.flags = {
       ...flags,
       human_help_requested: true,
+      human_help_reason: decision.reason,
+      human_help_recovery_command: decision.recoveryCommand,
+      jerry_mode_signature: decision.signature,
       jerry_mode_pause: {
         requested: true,
         ticket: input.currentTicket,
@@ -270,8 +274,7 @@ export function loadSettings(extensionRoot: string): CircuitBreakerConfig {
   };
 
   try {
-    const settingsPath = path.join(extensionRoot, 'pickle_settings.json');
-    const raw = readRecoverableJsonObject(settingsPath) as Record<string, unknown> | null;
+    const raw = loadPickleSettings({ extensionRoot });
     if (!raw) return config;
 
     if (typeof raw.default_circuit_breaker_enabled === 'boolean') {

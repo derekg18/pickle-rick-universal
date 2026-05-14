@@ -377,6 +377,9 @@ test('pauseForHumanHelp: deactivates session, sets flags, and emits one state ev
         const state = JSON.parse(fs.readFileSync(statePath, 'utf-8'));
         assert.equal(state.active, false);
         assert.equal(state.flags.human_help_requested, true);
+        assert.equal(state.flags.human_help_reason, 'Same error repeated 5 times: repeat failure');
+        assert.equal(state.flags.human_help_recovery_command, '/pickle-retry TICKET-3');
+        assert.equal(state.flags.jerry_mode_signature, 'repeat failure');
         assert.equal(state.flags.jerry_mode_pause.recovery_command, '/pickle-retry TICKET-3');
         assert.equal(state.flags.jerry_mode_pause.signature, 'repeat failure');
         const pauseEvents = state.activity.filter(entry => entry.event === 'jerry_mode_pause');

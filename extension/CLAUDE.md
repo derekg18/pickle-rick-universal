@@ -42,7 +42,7 @@
 - INVARIANT: `tickets_version` increments when course correction changes ticket state. ENFORCE: extension/tests/state-field-invariants.test.js.
 - INVARIANT: `last_course_correction` stores nullable metadata for latest correction. ENFORCE: extension/tests/state-field-invariants.test.js.
 - INVARIANT: `phase_personas_active` records whether phase persona files are installed for the active session. ENFORCE: extension/tests/state-field-invariants.test.js.
-- INVARIANT: `flags` stores optional feature flags with typed known keys and unknown-key preservation. ENFORCE: extension/tests/state-field-invariants.test.js.
+- INVARIANT: `flags` stores optional feature flags with typed known keys (`human_help_requested`, `human_help_reason`, `human_help_recovery_command`, `jerry_mode_signature`, `os_notifier_available`) and unknown-key preservation. ENFORCE: extension/tests/state-field-invariants.test.js.
 - INVARIANT: `readiness` stores nullable readiness-cycle state read through StateManager recovery. ENFORCE: extension/tests/state-field-invariants.test.js.
 - INVARIANT: `codex_version_seen` records the codex CLI version observed during setup, when available. ENFORCE: extension/tests/state-field-invariants.test.js.
 - INVARIANT: `last_tool_error_retry_count` tracks bounded retries for repeated tool-use errors. ENFORCE: extension/tests/state-field-invariants.test.js.
