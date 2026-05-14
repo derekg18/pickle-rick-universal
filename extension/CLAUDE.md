@@ -2,6 +2,10 @@
 
 - `src/services/pickle-utils.ts` `restartDeadWatcherPanes` INVARIANT: monitor window recovery must respawn dead watcher panes without touching healthy panes. BREAKS: monitor window has stale watcher panes for the rest of the pipeline lifetime; user has to manually relaunch each watcher. ENFORCE: `restartDeadWatcherPanes: respawns dead pickle watcher panes 1, 2, and 3`; `restartDeadWatcherPanes: all watcher panes already running node is a no-op`; `restartDeadWatcherPanes: inactive session skips pane probing and respawn`.
 
+## Trap Doors
+
+- `microverse-state.ts` — INVARIANT: worker-mode reads always restore a convergence_file. BREAKS: runner crashes before reading phase convergence. ENFORCE: `readMicroverseState restores default convergence_file for legacy worker-mode none metric`. PATTERN_SHAPE: `convergence_mode === 'worker' && typeof convergence_file !== 'string'`.
+
 ## state.json Field Invariants
 
 - INVARIANT: `active` is session liveness flag; owners set deliberately; recovery demotes dead owners. ENFORCE: extension/tests/state-field-invariants.test.js.

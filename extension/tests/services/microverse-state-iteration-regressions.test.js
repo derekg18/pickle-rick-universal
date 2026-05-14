@@ -54,6 +54,31 @@ test('readMicroverseState defaults iteration_regressions to 0 and flag to false 
   }
 });
 
+test('readMicroverseState restores default convergence_file for legacy worker-mode none metric', () => {
+  const dir = makeTempDir();
+  try {
+    const legacy = {
+      status: 'iterating',
+      prd_path: '/tmp/test.md',
+      key_metric: { description: 'worker-managed', validation: '', type: 'none', timeout_seconds: 0, tolerance: 0 },
+      gap_analysis_path: '',
+      failed_approaches: [],
+      baseline_score: 0,
+      failure_history: [],
+      approach_exhaustion_fired: false,
+    };
+    fs.writeFileSync(path.join(dir, 'microverse.json'), JSON.stringify(legacy));
+
+    const state = readMicroverseState(dir);
+
+    assert.notEqual(state, null);
+    assert.equal(state.convergence_mode, 'worker');
+    assert.equal(state.convergence_file, 'phase_state.json');
+  } finally {
+    fs.rmSync(dir, { recursive: true });
+  }
+});
+
 test('writeMicroverseState preserves modified iteration_regressions across round-trip', () => {
   const dir = makeTempDir();
   try {

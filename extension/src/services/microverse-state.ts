@@ -269,6 +269,12 @@ export function readMicroverseState(
         parsed.convergence_mode = 'metric';
       }
     }
+    if (
+      parsed.convergence_mode === 'worker' &&
+      typeof parsed.convergence_file !== 'string'
+    ) {
+      parsed.convergence_file = 'phase_state.json';
+    }
 
     return parsed as MicroverseSessionState;
   } catch (err) {
