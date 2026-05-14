@@ -4,39 +4,121 @@ All Pickle Rick slash commands and their flags. For workflow narrative and tool 
 
 ## Commands
 
-| Command | Description |
-|---|---|
-| `/pickle "task"` † | Start the full autonomous loop — PRD → breakdown → 8-phase execution |
-| `/pickle prd.md` † | Pick up an existing PRD, skip drafting |
-| `/pickle-tmux "task"` † | Same loop with context clearing via tmux. Best for long epics (8+ iterations) |
-| `/pickle-zellij "task"` | Same loop in Zellij with KDL layouts. Requires Zellij >= 0.40.0 |
-| `/pickle-refine-prd [path]` | Refine PRD with 3 parallel analysts → decompose into tickets |
-| `/pickle-refine-prd --run [path]` | Refine + decompose + auto-launch unlimited tmux session |
-| `/pickle-microverse` † | Metric convergence loop. `--metric` for numeric, `--goal` for LLM judge |
-| `/szechuan-sauce [target]` † | Principle-driven deslopping. `--dry-run`, `--focus`, `--domain` |
-| `/anatomy-park` † | Three-phase deep subsystem review with trap door cataloging |
-| `/citadel --prd <path>` | Post-implementation conformance audit against PRD acceptance criteria, branch diff, and trap doors |
-| `/pickle-pipeline "task"` † | Full lifecycle: pickle-tmux → citadel → anatomy-park → szechuan-sauce in one tmux session |
-| `/cronenberg "task"` | Meta-router — deterministic decision matrix picks the right metaphor + cleanup chain, and decides whether to run `/pickle-refine-prd` first based on PRD shape signals. Executes by default; `--dry-run` to preview only. Forwards all non-cronenberg flags through |
-| `/plumbus <file.dot>` | Iterative DAG shaping on a single `.dot` file. `--dry-run`, `--focus`, `--no-validator` |
-| `/council-of-ricks` | Graphite PR stack review — szechuan principles + anatomy data-flow tracing + Codex adversarial challenge. Directives only, never fixes code. `--no-codex` to disable, `--gitnexus` for graph queries |
-| `/portal-gun <source>` | Gene transfusion from another codebase |
-| `/pickle-dot [path]` | Convert PRD → attractor-compatible DOT digraph |
-| `/attract [file.dot]` | Submit pipeline to attractor server |
-| `/pickle-prd` | Draft a PRD standalone (no execution) |
-| `/pickle-metrics` | Token usage, commits, LOC. `--days N`, `--weekly`, `--json` |
-| `/pickle-standup` | Linear-keyed standup: cross-references activity logs with Linear MCP, drops internal churn |
-| `/pickle-status` | Current session phase, iteration, ticket status |
-| `/eat-pickle` | Cancel the active loop |
-| `/pickle-retry <ticket-id>` | Re-attempt a failed ticket |
-| `/add-to-pickle-jar` | Queue session for Night Shift |
-| `/pickle-jar-open` | Run all Jar tasks sequentially |
-| `/disable-pickle` | Disable the stop hook globally |
-| `/enable-pickle` | Re-enable the stop hook |
-| `/help-pickle` | Show all commands and flags |
-| `/meeseeks` | **Deprecated** — superseded by `/anatomy-park` and `/szechuan-sauce` |
+Status legend: **implemented** commands run the described workflow; **preview/report-plan** commands inspect inputs and emit plans or reports but avoid risky side effects by default; **skeleton-only** commands return typed non-destructive contracts and do not perform deploy, cloud, destructive rollback, secret rotation, persistence, or sandbox actions; **deprecated** commands route users to replacements; **internal** commands are worker prompts, not operator entrypoints.
+
+### Core Lifecycle
+
+| Command | Status | Description |
+|---|---|---|
+| `/pickle "task"` † | implemented | Start the full autonomous loop: PRD, breakdown, and 8-phase execution |
+| `/pickle prd.md` † | implemented | Pick up an existing PRD and skip drafting |
+| `/pickle-tmux "task"` † | implemented | Same loop with context clearing via tmux. Best for long epics. Requires `tmux` |
+| `/pickle-zellij "task"` | implemented | Same loop in Zellij with KDL layouts. Requires Zellij >= 0.40.0 |
+| `/pickle-pipeline "task"` † | implemented | Full lifecycle: pickle-tmux, Citadel, Anatomy Park, and Szechuan Sauce in one tmux session |
+| `/pickle-prd` | implemented | Draft a PRD standalone |
+| `/pickle-refine-prd [path]` | implemented | Refine a PRD with parallel analysts and decompose it into tickets |
+| `/pickle-refine-prd --run [path]` | implemented | Refine, decompose, and auto-launch a tmux session |
+| `/pickle-retry <ticket-id>` | implemented | Re-attempt a failed ticket; also used by Jerry Mode recovery handoff |
+| `/eat-pickle` | implemented | Cancel the active loop |
+| `/pickle-status` | implemented | Show current session phase, iteration, ticket status, and pause state |
+| `/pickle-standup` | implemented | Linear-keyed standup from activity logs |
+| `/pickle-metrics` | implemented | Token usage, commits, LOC, and machine-readable metrics |
+| `/help-pickle` | implemented | Show all commands, flags, MVP tiers, and handoff settings |
+
+### Review And Quality
+
+| Command | Status | Description |
+|---|---|---|
+| `/anatomy-park [target]` † | implemented | Deep subsystem review: trace data flows, fix bugs, and catalog trap doors |
+| `/szechuan-sauce [target]` † | implemented | Principle-driven code-quality review and remediation |
+| `/citadel --prd <path>` | implemented | Post-implementation conformance audit against PRD acceptance criteria, branch diff, and trap doors |
+| `/council-of-ricks` | implemented | Graphite PR stack review. Generates directives only and does not directly fix code |
+| `/pickle-debate "<question>"` | implemented | Multi-agent implementation debate |
+| `/plumbus <file.dot>` | implemented | Iterative DAG shaping on a single `.dot` file |
+| `/cronenberg "task"` | implemented | Meta-router that chooses the right workflow and optional cleanup chain |
+| `/meeseeks` | deprecated | Compatibility alias; use `/anatomy-park` or `/szechuan-sauce` |
+| `/meeseeks-zellij` | deprecated | Compatibility alias; use `/anatomy-park` or `/szechuan-sauce` |
+
+### PRD, Graph, And Migration
+
+| Command | Status | Description |
+|---|---|---|
+| `/pickle-dot [path]` | implemented | Convert PRD text to an attractor-compatible DOT digraph |
+| `/pickle-dot-patterns` | implemented | Inspect DOT builder patterns |
+| `/attract [file.dot]` | implemented | Submit a `.dot` pipeline to the attractor server |
+| `/portal-gun <source>` | implemented | Migration/transfusion inventory, scope confirmation, and migration PRD |
+| `/portal-fluid` | preview/report-plan | Prepare a GitNexus dependency graph artifact |
+| `/death-crystal` | preview/report-plan | Prepare a GitNexus impact-analysis artifact for a symbol |
+| `/operation-phoenix` | preview/report-plan | Prepare a GitNexus clone-analysis artifact skeleton |
+| `/blips-and-chitz` | preview/report-plan | Prepare a GitNexus coverage-analysis artifact skeleton |
+
+### Runtime, Environment, And Safety
+
+| Command | Status | Description |
+|---|---|---|
+| `/interdimensional-cable` | implemented | Parse and supervise service log streams |
+| `/glorzo` | preview/report-plan | Prepare a focused runtime observability view |
+| `/galactic-federation` | skeleton-only | Return a runtime observability audit skeleton; no runtime mutation is started |
+| `/ghost-in-a-jar` | skeleton-only | Return the persistence contract; no persistence layer is created or changed |
+| `/ricks-garage` | preview/report-plan | Prepare a deterministic local dev bootstrap environment plan |
+| `/microverse-battery` | preview/report-plan | Validate nested-container devstack plans without starting containers by default |
+| `/phoenix-person` | skeleton-only | Return the deploy rollback contract; no deploy or rollback is started |
+| `/nimbus` | skeleton-only | Return the cloud provisioning contract; no cloud resource is created |
+| `/interdimensional-customs` | preview/report-plan | Prepare a non-destructive downstream safety plan |
+| `/evil-morty` | preview/report-plan | Prepare a non-destructive security review plan |
+| `/fleeb-juice` | skeleton-only | Return the secret rotation contract; no secrets are rotated |
+| `/wendys` | skeleton-only | Return the destructive rollback contract; no destructive rollback is run |
+| `/froopyland` | skeleton-only | Return the sandbox safety contract; no sandbox/syscall action is run |
+| `/scary-terry` | preview/report-plan | Prepare a non-destructive API fuzz plan |
+
+### Performance, Frontend, And Workflow Probes
+
+| Command | Status | Description |
+|---|---|---|
+| `/get-schwifty` | preview/report-plan | Prepare a benchmark and load-profile report plan |
+| `/tiny-rick` | preview/report-plan | Prepare a build optimization report plan |
+| `/time-crystal` | preview/report-plan | Prepare a bundle and build timing report plan |
+| `/rickmobile` | preview/report-plan | Prepare a responsive frontend audit matrix |
+| `/ants-in-my-eyes-johnson` | preview/report-plan | Prepare an accessibility audit report plan |
+| `/vindicators` | implemented | Run fixture-driven multi-agent solver and judge workflow selection |
+| `/story-train` | implemented | Run a workflow routing probe with staged story output |
+| `/two-brothers` | implemented | Run a two-solver workflow routing probe |
+| `/wubba-lubba-dub-dub` | implemented | Run delivery analytics workflow probe |
+
+### Refactor, Scaffold, Batch, And Admin
+
+| Command | Status | Description |
+|---|---|---|
+| `/pickle-microverse` † | implemented | Metric convergence loop. `--metric` for numeric, `--goal` for LLM judge |
+| `/add-to-pickle-jar` | implemented | Queue a PRD/session for Night Shift |
+| `/pickle-jar-open` | implemented | Run queued jar tasks sequentially |
+| `/disable-pickle` | implemented | Disable Pickle Rick hooks globally |
+| `/enable-pickle` | implemented | Re-enable Pickle Rick hooks |
+| `/butter-robot` | preview/report-plan | Prepare a minimal daemon scaffold preview plan |
+| `/gazorpazorp` | preview/report-plan | Prepare a non-destructive monorepo scaffold plan |
+| `/ricks-flask` | preview/report-plan | Prepare schema-driven mock data seed previews |
+| `/morty-smith-database` | preview/report-plan | Prepare schema migration plan artifacts without applying migrations |
+| `/snake-jazz` | preview/report-plan | Prepare bounded retry plan artifacts without starting processes |
+| `/unity` | preview/report-plan | Prepare a package scaffold preview plan without writing package files |
+| `/project-mayhem` | implemented | Run chaos engineering workflow |
+| `/detoxifier` | preview/report-plan | Preview cleanup-oriented refactor suggestions |
+| `/doofus-rick` | preview/report-plan | Preview explainer-oriented code understanding notes |
+| `/jerry-detector` | preview/report-plan | Preview technical debt findings and remediation ideas |
+| `/memory-parasites` | preview/report-plan | Preview dead-code and stale-code findings |
+| `/simple-rick` | preview/report-plan | Preview simplicity-focused refactor suggestions |
+| `/squanch` | preview/report-plan | Preview regex search/replace changes with rollback artifacts |
+| `/mr-poopybutthole` | implemented | Summarize companion runtime session state |
+
+### Internal Worker Prompts
+
+| Command | Status | Description |
+|---|---|---|
+| `/send-to-morty` | internal | Internal implementation worker prompt, auto-sent by managers |
+| `/send-to-morty-review` | internal | Internal review worker prompt, auto-sent by managers |
 
 † accepts `--backend <claude\|codex>` to swap the worker/manager spawn backend (or set `PICKLE_BACKEND=codex`). `/council-of-ricks` has a separate Codex integration (Phase C adversarial reviewer, `--no-codex` / `--codex-timeout`). `/pickle` additionally accepts `--teams` (claude only) to spawn workers via harness team primitives — see [Agent Teams](README.md#agent-teams).
+
+Operator handoff: token accounting writes a token accounting JSON artifact and markdown summary under the session `memory/` directory when runtime finalization runs. Jerry Mode pause decisions use `pause_for_human`, set `human_help_recovery_command`, and point operators at `/pickle-retry <ticket-id>` when a ticket id is available. See [Runtime Settings And Operator Handoff](README.md#runtime-settings-and-operator-handoff).
 
 ## Flags
 

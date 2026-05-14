@@ -629,6 +629,33 @@ Every slash command and flag — including command-scoped families and the `†`
 
 ---
 
+## Runtime Settings And Operator Handoff
+
+Pickle Rick reads operator defaults from `pickle_settings.json`. Notification settings live under `notifications`; there is no separate top-level `notify_on` key. Treat `notifications.kinds` as the `notify_on` allowlist for event types:
+
+```json
+{
+  "notifications": {
+    "os_enabled": true,
+    "terminal_fallback": true,
+    "dedup_window_ms": 60000,
+    "kinds": {
+      "mux_session_end": true,
+      "pipeline_session_end": true,
+      "token_accounting_ready": true
+    }
+  }
+}
+```
+
+OS notification support is macOS-only because delivery probes `osascript`. Linux and other supported runtimes keep working; when OS delivery is unavailable or disabled, `terminal_fallback: true` prints a terminal notification instead. Deduplication keys on event kind plus session and suppresses repeats inside `dedup_window_ms` unless severity increases.
+
+Jerry Mode pauses noisy repeated failures before they burn the whole run. Set `jerry_mode_pause_threshold` at or below the same-error circuit-breaker threshold; invalid or too-high values fall back to the same-error threshold. When the threshold is reached, the decision action is `pause_for_human`, the session is marked inactive, and state flags include `human_help_recovery_command`. The recovery command is normally `/pickle-retry <ticket-id>` when the active ticket is known, otherwise `/pickle-retry`.
+
+Token accounting runs during runtime finalization. The `token_accounting` report writes a token accounting JSON artifact plus a markdown summary under the session `memory/` directory, and the summary points back to both artifact paths. Operators should use the JSON artifact for automation and the markdown summary for handoff notes; the `token_accounting_ready` notification fires when those artifacts are available.
+
+---
+
 > **Under the hood:** See [internals.md](internals.md) for the 8-phase ticket lifecycle, manager/worker model, stop-hook loop, context clearing, state schema, settings reference, and every internal system that makes this thing run.
 
 ---
