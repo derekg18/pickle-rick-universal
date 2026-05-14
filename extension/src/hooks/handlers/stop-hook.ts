@@ -2,13 +2,15 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
-import { State, HookInput, PromiseTokens, hasToken } from '../../types/index.js';
+import { State, HookInput, PromiseTokens, hasToken, type Backend } from '../../types/index.js';
 import { PROMISE_TOKENS } from '../../services/promise-tokens.js';
 import { resolveStateFile, approve } from '../resolve-state.js';
 import { getExtensionRoot, getDataRoot, safeErrorMessage } from '../../services/pickle-utils.js';
 import { StateManager } from '../../services/state-manager.js';
 import { logActivity } from '../../services/activity-logger.js';
 import { readRecoverableJsonObject } from '../../services/microverse-state.js';
+import { finalizeTokenAccounting } from '../../services/token-accounting/index.js';
+import { evaluateJerryMode } from '../../services/circuit-breaker.js';
 
 const sm = new StateManager();
 
@@ -327,6 +329,43 @@ function isCompletionToken(token: TokenKind): boolean {
   ].includes(token.kind);
 }
 
+function resolveRuntimeBackend(state: State): Backend {
+  return state.backend ?? 'claude';
+}
+
+function finalizeApprovedRuntime(
+  decision: ClassifiedResult,
+  state: State,
+  stateFile: string,
+  role: string,
+  log: (msg: string) => void,
+): void {
+  const isWorkerRole = role === 'worker' || role === 'refinement-worker';
+  if (!isCompletionToken(decision.token) || isWorkerRole || state.tmux_mode === true) return;
+
+  const sessionDir = path.dirname(stateFile);
+  const backend = resolveRuntimeBackend(state);
+  try {
+    log('Runtime finalization: token accounting start');
+    const artifacts = finalizeTokenAccounting(sessionDir, { backend, emitActivity: false });
+    log(`Runtime finalization: token accounting ${artifacts ? 'complete' : 'unavailable'}`);
+  } catch (err) {
+    log(`Runtime finalization: token accounting failed: ${safeErrorMessage(err)}`);
+  }
+
+  try {
+    const jerryDecision = evaluateJerryMode({
+      sessionDir,
+      backend,
+      currentTicket: state.current_ticket || null,
+      warn: msg => log(`WARN: ${msg}`),
+    });
+    log(`Runtime finalization: Jerry Mode check ${jerryDecision.action}`);
+  } catch (err) {
+    log(`Runtime finalization: Jerry Mode check failed: ${safeErrorMessage(err)}`);
+  }
+}
+
 function emitActivity(decision: ClassifiedResult, state: State, stateFile: string, isWorker: boolean): void {
   if (!decision.activity) return;
   const sessionId = path.basename(path.dirname(stateFile));
@@ -510,6 +549,7 @@ async function main() {
   }
 
   if (decision.decision === 'approve') {
+    finalizeApprovedRuntime(decision, state, stateFile, role || '', log);
     if (isCompletionToken(decision.token)) maybeSpawnUpdateCheck(extensionDir, log);
     emitActivity(decision, state, stateFile, isWorker);
     approve();

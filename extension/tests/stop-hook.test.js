@@ -281,6 +281,64 @@ test('stop-hook: recovered disabled auto-update settings suppress completion upd
   }
 });
 
+test('stop-hook: inline completion finalizes accounting and Jerry check before update spawn', () => {
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ph-finalize-'));
+  const sessionDir = path.join(tmpDir, 'session');
+  const stateFile = path.join(sessionDir, 'state.json');
+  const checkUpdateDir = path.join(tmpDir, 'extension', 'bin');
+  const checkUpdatePath = path.join(checkUpdateDir, 'check-update.js');
+  fs.mkdirSync(sessionDir, { recursive: true });
+  fs.mkdirSync(checkUpdateDir, { recursive: true });
+  fs.writeFileSync(stateFile, JSON.stringify(baseState({
+    session_dir: sessionDir,
+    backend: 'codex',
+    current_ticket: 'TICKET-1',
+  })));
+  fs.writeFileSync(path.join(sessionDir, 'circuit_breaker.json'), JSON.stringify({
+    state: 'CLOSED',
+    last_change: new Date().toISOString(),
+    consecutive_no_progress: 0,
+    consecutive_same_error: 0,
+    last_error_signature: null,
+    last_known_head: '',
+    last_known_step: null,
+    last_known_ticket: null,
+    last_progress_iteration: 0,
+    total_opens: 0,
+    reason: '',
+    opened_at: null,
+    history: [],
+  }));
+  fs.writeFileSync(checkUpdatePath, 'process.exit(0);\n');
+
+  const env = { ...process.env, EXTENSION_DIR: tmpDir, FORCE_COLOR: '0', PICKLE_STATE_FILE: stateFile };
+  delete env.PICKLE_ROLE;
+
+  try {
+    const stdout = execFileSync(process.execPath, [STOP_HOOK], {
+      input: JSON.stringify({ last_assistant_message: '<promise>TASK_COMPLETED</promise>' }),
+      encoding: 'utf-8',
+      env,
+    });
+    assert.deepEqual(JSON.parse(stdout.trim()), { decision: 'approve' });
+    const memoryDir = path.join(sessionDir, 'memory');
+    assert.equal(fs.existsSync(path.join(memoryDir, 'token-accounting.json')), true);
+    assert.equal(fs.existsSync(path.join(memoryDir, 'token-accounting.md')), true);
+
+    const debugLog = fs.readFileSync(path.join(tmpDir, 'debug.log'), 'utf-8');
+    const tokenStart = debugLog.indexOf('Runtime finalization: token accounting start');
+    const tokenComplete = debugLog.indexOf('Runtime finalization: token accounting complete');
+    const jerryCheck = debugLog.indexOf('Runtime finalization: Jerry Mode check continue');
+    const updateSpawn = debugLog.indexOf('Spawning detached check-update process');
+    assert.ok(tokenStart >= 0, debugLog);
+    assert.ok(tokenComplete > tokenStart, debugLog);
+    assert.ok(jerryCheck > tokenComplete, debugLog);
+    assert.ok(updateSpawn > jerryCheck, debugLog);
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+});
+
 test('stop-hook: EPIC_COMPLETED + tmux_mode → approve, active UNCHANGED (runner owns active)', () => {
   const { decision, state } = runHook({
     state: baseState({ tmux_mode: true }),

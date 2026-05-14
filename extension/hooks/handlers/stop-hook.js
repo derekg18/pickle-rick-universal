@@ -9,6 +9,8 @@ import { getExtensionRoot, getDataRoot, safeErrorMessage } from '../../services/
 import { StateManager } from '../../services/state-manager.js';
 import { logActivity } from '../../services/activity-logger.js';
 import { readRecoverableJsonObject } from '../../services/microverse-state.js';
+import { finalizeTokenAccounting } from '../../services/token-accounting/index.js';
+import { evaluateJerryMode } from '../../services/circuit-breaker.js';
 const sm = new StateManager();
 /**
  * Number of consecutive short manager responses tolerated before the degenerate-response
@@ -288,6 +290,36 @@ function isCompletionToken(token) {
         'worker-done',
     ].includes(token.kind);
 }
+function resolveRuntimeBackend(state) {
+    return state.backend ?? 'claude';
+}
+function finalizeApprovedRuntime(decision, state, stateFile, role, log) {
+    const isWorkerRole = role === 'worker' || role === 'refinement-worker';
+    if (!isCompletionToken(decision.token) || isWorkerRole || state.tmux_mode === true)
+        return;
+    const sessionDir = path.dirname(stateFile);
+    const backend = resolveRuntimeBackend(state);
+    try {
+        log('Runtime finalization: token accounting start');
+        const artifacts = finalizeTokenAccounting(sessionDir, { backend, emitActivity: false });
+        log(`Runtime finalization: token accounting ${artifacts ? 'complete' : 'unavailable'}`);
+    }
+    catch (err) {
+        log(`Runtime finalization: token accounting failed: ${safeErrorMessage(err)}`);
+    }
+    try {
+        const jerryDecision = evaluateJerryMode({
+            sessionDir,
+            backend,
+            currentTicket: state.current_ticket || null,
+            warn: msg => log(`WARN: ${msg}`),
+        });
+        log(`Runtime finalization: Jerry Mode check ${jerryDecision.action}`);
+    }
+    catch (err) {
+        log(`Runtime finalization: Jerry Mode check failed: ${safeErrorMessage(err)}`);
+    }
+}
 function emitActivity(decision, state, stateFile, isWorker) {
     if (!decision.activity)
         return;
@@ -470,6 +502,7 @@ async function main() {
         }
     }
     if (decision.decision === 'approve') {
+        finalizeApprovedRuntime(decision, state, stateFile, role || '', log);
         if (isCompletionToken(decision.token))
             maybeSpawnUpdateCheck(extensionDir, log);
         emitActivity(decision, state, stateFile, isWorker);

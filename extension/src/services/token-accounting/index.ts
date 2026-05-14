@@ -31,6 +31,7 @@ export interface WriteTokenAccountingOptions {
   now?: Date;
   notifyOptions?: NotifySessionEventOptions;
   emitNotification?: boolean;
+  emitActivity?: boolean;
 }
 
 function listCandidateFiles(sessionDir: string): string[] {
@@ -193,15 +194,17 @@ export function finalizeTokenAccounting(sessionDir: string, opts: WriteTokenAcco
   try {
     const artifacts = writeTokenAccountingReports(sessionDir, opts);
     const session = path.basename(sessionDir);
-    logActivity({
-      event: 'token_report',
-      source: 'pickle',
-      session,
-      backend: opts.backend,
-      tokens_in_estimated: artifacts.summary.totals.input_tokens ?? undefined,
-      tokens_out_estimated: artifacts.summary.totals.output_tokens ?? undefined,
-      model: artifacts.summary.records.find((record) => record.model)?.model,
-    });
+    if (opts.emitActivity !== false) {
+      logActivity({
+        event: 'token_report',
+        source: 'pickle',
+        session,
+        backend: opts.backend,
+        tokens_in_estimated: artifacts.summary.totals.input_tokens ?? undefined,
+        tokens_out_estimated: artifacts.summary.totals.output_tokens ?? undefined,
+        model: artifacts.summary.records.find((record) => record.model)?.model,
+      });
+    }
     if (opts.emitNotification !== false) {
       notifySessionEvent({
         kind: 'token_accounting_ready',
