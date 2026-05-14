@@ -634,6 +634,52 @@ test('buildReport: weekly grouping value preserved', () => {
     assert.equal(report.grouping, 'weekly');
 });
 
+test('buildReport: weekly grouping aggregates daily rows into ISO week buckets', () => {
+    const tokens = new Map([
+        ['weekly-project', new Map([
+            ['2026-02-23', { turns: 1, input: 10, output: 20, cache_read: 1, cache_create: 2 }],
+            ['2026-02-24', { turns: 2, input: 30, output: 40, cache_read: 3, cache_create: 4 }],
+            ['2026-03-02', { turns: 4, input: 50, output: 60, cache_read: 5, cache_create: 6 }],
+        ])],
+    ]);
+    const loc = new Map([
+        ['weekly-project', new Map([
+            ['2026-02-24', { commits: 1, added: 7, removed: 8 }],
+            ['2026-03-02', { commits: 2, added: 9, removed: 10 }],
+        ])],
+    ]);
+
+    const report = buildReport(tokens, loc, '2026-02-23', '2026-03-02', 'weekly');
+
+    assert.deepEqual(report.rows.map((row) => row.date), ['2026-02-23', '2026-03-02']);
+    assert.deepEqual(report.rows[0].projects['weekly-project'], {
+        turns: 3,
+        input: 40,
+        output: 60,
+        cache_read: 4,
+        cache_create: 6,
+    });
+    assert.deepEqual(report.rows[0].loc['weekly-project'], {
+        commits: 1,
+        added: 7,
+        removed: 8,
+    });
+    assert.deepEqual(report.rows[1].projects['weekly-project'], {
+        turns: 4,
+        input: 50,
+        output: 60,
+        cache_read: 5,
+        cache_create: 6,
+    });
+    assert.deepEqual(report.rows[1].loc['weekly-project'], {
+        commits: 2,
+        added: 9,
+        removed: 10,
+    });
+    assert.equal(report.totals.turns, 7);
+    assert.equal(report.totals.commits, 3);
+});
+
 test('buildReport: empty maps produce empty report', () => {
     const tokens = new Map();
     const loc = new Map();
@@ -1060,17 +1106,25 @@ test('CLI: --weekly --json returns weekly grouping', () => {
     const { root, cacheFile: _ } = makeTempProjectsDir();
     const repoRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'pickle-metrics-repos-'));
     try {
-        const today = formatLocalDateKey(new Date());
+        const monday = '2026-02-23';
+        const tuesday = '2026-02-24';
         writeSessionLine(root, 'weekly-proj', 'session.jsonl',
-            makeAssistantLine(`${today}T10:00:00Z`, 100, 200));
+            makeAssistantLine(`${monday}T10:00:00Z`, 100, 200));
+        writeSessionLine(root, 'weekly-proj', 'session.jsonl',
+            makeAssistantLine(`${tuesday}T10:00:00Z`, 300, 400));
 
-        const result = runMetricsCli(['--weekly', '--json'], {
+        const result = runMetricsCli(['--weekly', '--json', '--since', monday], {
             CLAUDE_PROJECTS_DIR: root,
             METRICS_REPO_ROOT: repoRoot,
         });
         assert.equal(result.status, 0, `stderr: ${result.stderr}`);
         const report = JSON.parse(result.stdout);
         assert.equal(report.grouping, 'weekly');
+        assert.equal(report.rows.length, 1);
+        assert.equal(report.rows[0].date, monday);
+        assert.equal(report.rows[0].projects['weekly-proj'].turns, 2);
+        assert.equal(report.rows[0].projects['weekly-proj'].input, 400);
+        assert.equal(report.rows[0].projects['weekly-proj'].output, 600);
     } finally {
         fs.rmSync(root, { recursive: true, force: true });
         fs.rmSync(repoRoot, { recursive: true, force: true });

@@ -343,6 +343,49 @@ export function scanGitRepos(repoRoot, since, until) {
 function emptyTotals() {
     return { turns: 0, input: 0, output: 0, cache_read: 0, cache_create: 0, commits: 0, added: 0, removed: 0 };
 }
+function parseLocalDateKey(date) {
+    const [year, month, day] = date.split('-').map(Number);
+    return new Date(year, month - 1, day);
+}
+function getISOWeekStartDateKey(date) {
+    const d = parseLocalDateKey(date);
+    const day = d.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    d.setDate(d.getDate() + diff);
+    return formatLocalDateKey(d);
+}
+function addDailyTokens(target, source) {
+    target.turns += source.turns;
+    target.input += source.input;
+    target.output += source.output;
+    target.cache_read += source.cache_read;
+    target.cache_create += source.cache_create;
+}
+function addDailyLoc(target, source) {
+    target.commits += source.commits;
+    target.added += source.added;
+    target.removed += source.removed;
+}
+function aggregateWeeklyRows(rows) {
+    const weekly = new Map();
+    for (const row of rows) {
+        const week = getISOWeekStartDateKey(row.date);
+        if (!weekly.has(week))
+            weekly.set(week, { date: week, projects: {}, loc: {} });
+        const target = weekly.get(week);
+        for (const [slug, tokens] of Object.entries(row.projects)) {
+            if (!target.projects[slug])
+                target.projects[slug] = emptyDailyTokens();
+            addDailyTokens(target.projects[slug], tokens);
+        }
+        for (const [slug, loc] of Object.entries(row.loc)) {
+            if (!target.loc[slug])
+                target.loc[slug] = { commits: 0, added: 0, removed: 0 };
+            addDailyLoc(target.loc[slug], loc);
+        }
+    }
+    return [...weekly.values()].sort((a, b) => a.date.localeCompare(b.date));
+}
 export function buildReport(tokens, loc, since, until, grouping) {
     const dateSet = new Set();
     for (const dateMap of tokens.values()) {
@@ -369,6 +412,7 @@ export function buildReport(tokens, loc, since, until, grouping) {
         }
         return { date, projects, loc: locData };
     });
+    const reportRows = grouping === 'weekly' ? aggregateWeeklyRows(rows) : rows;
     const projectTotals = new Map();
     for (const [slug, dateMap] of tokens) {
         const t = emptyTotals();
@@ -407,5 +451,5 @@ export function buildReport(tokens, loc, since, until, grouping) {
         totals.added += p.totals.added;
         totals.removed += p.totals.removed;
     }
-    return { since, until, grouping, rows, projects, totals };
+    return { since, until, grouping, rows: reportRows, projects, totals };
 }
